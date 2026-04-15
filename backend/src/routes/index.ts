@@ -7,6 +7,7 @@ import { prisma } from '../utils/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { getPortfolioState } from '../services/portfolio';
 import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '../agents/orchestrator';
+import backtestRoutes from './backtest';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 export const authRouter = Router();
@@ -223,3 +224,6 @@ killSwitchRouter.post('/deactivate', async (_req: Request, res: Response) => {
 killSwitchRouter.get('/status', async (_req: Request, res: Response) => {
   res.json({ active: isKillSwitchActive() });
 });
+
+// ── BACKTEST ROUTES (already defined in backtest.ts) ────────────────────────
+export { default as backtestRouter } from './backtest';

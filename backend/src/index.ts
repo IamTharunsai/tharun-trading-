@@ -21,6 +21,7 @@ import journalRoutes from './routes/journal';
 import settingsRoutes from './routes/settings';
 import killSwitchRoutes from './routes/killSwitch';
 import chatRoutes from './routes/chat';
+import backtestRoutes from './routes/backtest';
 
 const app = express();
 const server = http.createServer(app);
@@ -54,6 +55,7 @@ app.use('/api/journal', journalRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/kill-switch', killSwitchRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/backtest', backtestRoutes);
 
 // Health check
 app.get('/health', (_, res) => {
