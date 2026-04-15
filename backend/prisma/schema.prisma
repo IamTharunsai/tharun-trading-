@@ -1,0 +1,279 @@
+// APEX TRADER - Prisma Database Schema
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// OWNER AUTH
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  totpSecret   String?
+  totpEnabled  Boolean  @default(false)
+  lastLogin    DateTime?
+  sessionToken String?
+  ipWhitelist  String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// TRADES
+model Trade {
+  id               String        @id @default(cuid())
+  asset            String
+  market           String
+  type             TradeType
+  entryPrice       Float
+  exitPrice        Float?
+  quantity         Float
+  pnl              Float?
+  pnlPct           Float?
+  fees             Float         @default(0)
+  status           TradeStatus   @default(OPEN)
+  brokerOrderId    String?
+  brokerConfirmed  Boolean       @default(false)
+  agentDecisionId  String?
+  agentDecision    AgentDecision? @relation(fields: [agentDecisionId], references: [id])
+  openedAt         DateTime      @default(now())
+  closedAt         DateTime?
+  stopLossPrice    Float?
+  takeProfitPrice  Float?
+  exitReason       String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([asset])
+  @@index([status])
+  @@index([openedAt])
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+enum TradeStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+  FAILED
+}
+
+// AGENT DECISIONS
+model AgentDecision {
+  id              String   @id @default(cuid())
+  asset           String
+  signal          String
+  finalVote       String
+  totalVotes      Int
+  goVotes         Int
+  noGoVotes       Int
+  avgConfidence   Float
+  executed        Boolean  @default(false)
+  executionReason String?
+  agentVotes      Json
+  marketSnapshot  Json
+  timestamp       DateTime @default(now())
+  trades          Trade[]
+
+  @@index([asset])
+  @@index([timestamp])
+}
+
+// OPEN POSITIONS
+model Position {
+  id             String   @id @default(cuid())
+  asset          String   @unique
+  market         String
+  quantity       Float
+  entryPrice     Float
+  currentPrice   Float
+  stopLossPrice  Float
+  takeProfitPrice Float
+  unrealizedPnl  Float    @default(0)
+  unrealizedPnlPct Float  @default(0)
+  status         String   @default("OPEN")
+  openedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// PORTFOLIO SNAPSHOTS
+model PortfolioSnapshot {
+  id          String   @id @default(cuid())
+  totalValue  Float
+  cashBalance Float
+  invested    Float
+  pnlDay      Float    @default(0)
+  pnlDayPct   Float    @default(0)
+  pnlTotal    Float    @default(0)
+  pnlTotalPct Float    @default(0)
+  timestamp   DateTime @default(now())
+
+  @@index([timestamp])
+}
+
+// NEWS FEED
+model NewsItem {
+  id              String   @id @default(cuid())
+  headline        String
+  source          String
+  url             String?
+  sentimentScore  Float
+  sentimentLabel  String
+  assetsMentioned String[]
+  summary         String?
+  publishedAt     DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([publishedAt])
+  @@index([assetsMentioned])
+}
+
+// DAILY JOURNAL
+model DailyJournal {
+  id           String   @id @default(cuid())
+  date         String   @unique
+  summary      String
+  totalTrades  Int      @default(0)
+  pnlDay       Float    @default(0)
+  pnlDayPct    Float    @default(0)
+  bestTrade    Json?
+  worstTrade   Json?
+  marketNotes  String?
+  agentPerformance Json?
+  createdAt    DateTime @default(now())
+}
+
+// FUTURE PREDICTIONS
+model Prediction {
+  id              String    @id @default(cuid())
+  asset           String
+  direction       String
+  confidence      Float
+  targetPrice     Float
+  currentPrice    Float
+  timeHorizon     String
+  keyRisks        String[]
+  wasCorrect      Boolean?
+  resolvedAt      DateTime?
+  resolvedPrice   Float?
+  createdAt       DateTime  @default(now())
+
+  @@index([asset])
+  @@index([createdAt])
+}
+
+// MARKET EVENTS
+model MarketEvent {
+  id        String   @id @default(cuid())
+  asset     String
+  eventType String
+  data      Json
+  timestamp DateTime @default(now())
+
+  @@index([asset])
+  @@index([eventType])
+  @@index([timestamp])
+}
+
+// SYSTEM LOGS
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String
+  service   String
+  message   String
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@index([level])
+  @@index([service])
+  @@index([timestamp])
+}
+
+// AGENT CONVERSATIONS (Agent Chat System)
+model AgentConversation {
+  id              String   @id @default(cuid())
+  agentId         String
+  agentName       String
+  userMessage     String
+  agentResponse   String
+  context         Json?
+  sessionId       String?
+  reactions       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agentId])
+  @@index([createdAt])
+  @@index([sessionId])
+}
+
+// AGENT LESSONS (Self-Learning System)
+model AgentLesson {
+  id              String   @id @default(cuid())
+  agentId         String
+  agentName       String
+  asset           String
+  setupType       String
+  prediction      String
+  outcome         String
+  correct         Boolean
+  reasoning       String
+  confidenceScore Float
+  newWeighting    Float
+  tradeId         String?
+  performanceImpact Float
+  createdAt       DateTime @default(now())
+
+  @@index([agentId])
+  @@index([asset])
+  @@index([setupType])
+  @@index([createdAt])
+}
+
+// AGENT PERFORMANCE SUMMARY
+model AgentPerformance {
+  id                String   @id @default(cuid())
+  agentId           String   @unique
+  agentName         String
+  totalTrades       Int      @default(0)
+  winRate           Float    @default(0)
+  accuracy          Float    @default(0)
+  profitFactor      Float    @default(1)
+  sharpRatio        Float    @default(0)
+  maxDrawdown       Float    @default(0)
+  avgConfidence     Float    @default(0)
+  lessonsLearned    Int      @default(0)
+  status            String   @default("ACTIVE")
+  suspendedAt       DateTime?
+  lastUpdated       DateTime @default(now()) @updatedAt
+  weeklyReport      Json?
+
+  @@index([agentId])
+  @@index([status])
+}
+
+// AGENT ADJUSTMENTS (Owner-made tweaks)
+model AgentAdjustment {
+  id              String   @id @default(cuid())
+  agentId         String
+  agentName       String
+  adjustmentType  String
+  description     String
+  beforeValue     String
+  afterValue      String
+  reason          String
+  appliedAt       DateTime @default(now())
+  effectiveness   Float?
+  createdAt       DateTime @default(now())
+
+  @@index([agentId])
+  @@index([appliedAt])
+}

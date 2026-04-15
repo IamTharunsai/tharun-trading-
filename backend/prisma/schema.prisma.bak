@@ -1,0 +1,185 @@
+// APEX TRADER — Prisma Database Schema
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── OWNER AUTH ───────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  totpSecret   String?
+  totpEnabled  Boolean  @default(false)
+  lastLogin    DateTime?
+  sessionToken String?
+  ipWhitelist  String   @default("[]")  // JSON string array
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ── TRADES ───────────────────────────────────────────────────────────────────
+model Trade {
+  id               String   @id @default(cuid())
+  asset            String   // e.g. BTC, AAPL
+  market           String   // crypto | stocks | forex
+  type             String   // BUY | SELL
+  entryPrice       Float
+  exitPrice        Float?
+  quantity         Float
+  pnl              Float?   // in dollars
+  pnlPct           Float?   // in percentage
+  fees             Float    @default(0)
+  status           String   @default("OPEN") // OPEN | CLOSED | CANCELLED | FAILED
+  brokerOrderId    String?
+  brokerConfirmed  Boolean  @default(false)
+  agentDecisionId  String?
+  agentDecision    AgentDecision? @relation(fields: [agentDecisionId], references: [id])
+  openedAt         DateTime @default(now())
+  closedAt         DateTime?
+  stopLossPrice    Float?
+  takeProfitPrice  Float?
+  exitReason       String?  // stop_loss | take_profit | agent_signal | kill_switch | manual
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([asset])
+  @@index([status])
+  @@index([openedAt])
+}
+
+// ── AGENT DECISIONS ──────────────────────────────────────────────────────────
+model AgentDecision {
+  id              String   @id @default(cuid())
+  asset           String
+  signal          String   // BUY | SELL | HOLD
+  finalVote       String   // BUY | SELL | HOLD
+  totalVotes      Int
+  goVotes         Int
+  noGoVotes       Int
+  avgConfidence   Float
+  executed        Boolean  @default(false)
+  executionReason String?
+  agentVotes      String   // JSON string array of 10 agent vote objects
+  marketSnapshot  String   // JSON string of price data at decision time
+  timestamp       DateTime @default(now())
+  trades          Trade[]
+
+  @@index([asset])
+  @@index([timestamp])
+}
+
+// ── OPEN POSITIONS ───────────────────────────────────────────────────────────
+model Position {
+  id             String   @id @default(cuid())
+  asset          String   @unique
+  market         String
+  quantity       Float
+  entryPrice     Float
+  currentPrice   Float
+  stopLossPrice  Float
+  takeProfitPrice Float
+  unrealizedPnl  Float    @default(0)
+  unrealizedPnlPct Float  @default(0)
+  status         String   @default("OPEN")  // OPEN | CLOSED
+  openedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ── PORTFOLIO SNAPSHOTS ──────────────────────────────────────────────────────
+model PortfolioSnapshot {
+  id          String   @id @default(cuid())
+  totalValue  Float
+  cashBalance Float
+  invested    Float
+  pnlDay      Float    @default(0)
+  pnlDayPct   Float    @default(0)
+  pnlTotal    Float    @default(0)
+  pnlTotalPct Float    @default(0)
+  timestamp   DateTime @default(now())
+
+  @@index([timestamp])
+}
+
+// ── NEWS FEED ─────────────────────────────────────────────────────────────────
+model NewsItem {
+  id              String   @id @default(cuid())
+  headline        String
+  source          String
+  url             String?
+  sentimentScore  Float    // -1 to 1
+  sentimentLabel  String   // POSITIVE | NEGATIVE | NEUTRAL
+  assetsMentioned String   @default("[]") // JSON string array
+  summary         String?
+  publishedAt     DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([publishedAt])
+}
+
+// ── DAILY JOURNAL ─────────────────────────────────────────────────────────────
+model DailyJournal {
+  id           String   @id @default(cuid())
+  date         String   @unique  // YYYY-MM-DD
+  summary      String   // AI-generated full summary
+  totalTrades  Int      @default(0)
+  pnlDay       Float    @default(0)
+  pnlDayPct    Float    @default(0)
+  bestTrade    String?  // JSON string { asset, pnl, reasoning }
+  worstTrade   String?  // JSON string { asset, pnl, reasoning }
+  marketNotes  String?
+  agentPerformance String? // JSON string - Which agents were most accurate
+  createdAt    DateTime @default(now())
+}
+
+// ── FUTURE PREDICTIONS ────────────────────────────────────────────────────────
+model Prediction {
+  id              String    @id @default(cuid())
+  asset           String
+  direction       String    // UP | DOWN | SIDEWAYS
+  confidence      Float
+  targetPrice     Float
+  currentPrice    Float
+  timeHorizon     String    // 1h | 4h | 1D | 1W
+  keyRisks        String    @default("[]") // JSON string array
+  wasCorrect      Boolean?
+  resolvedAt      DateTime?
+  resolvedPrice   Float?
+  createdAt       DateTime  @default(now())
+
+  @@index([asset])
+  @@index([createdAt])
+}
+
+// ── MARKET EVENTS ─────────────────────────────────────────────────────────────
+model MarketEvent {
+  id        String   @id @default(cuid())
+  asset     String
+  eventType String   // PRICE_ALERT | VOLUME_SPIKE | PATTERN_DETECTED | NEWS | GUARDRAIL_TRIGGER
+  data      String   // JSON string
+  timestamp DateTime @default(now())
+
+  @@index([asset])
+  @@index([eventType])
+  @@index([timestamp])
+}
+
+// ── SYSTEM LOGS ───────────────────────────────────────────────────────────────
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   // INFO | WARN | ERROR | CRITICAL
+  service   String
+  message   String
+  metadata  String?  // JSON string
+  timestamp DateTime @default(now())
+
+  @@index([level])
+  @@index([service])
+  @@index([timestamp])
+}

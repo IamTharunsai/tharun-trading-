@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --apex-bg: #080C14;
+  --apex-surface: #0D1421;
+  --apex-card: #111827;
+  --apex-border: #1E2D45;
+  --apex-accent: #00D4FF;
+  --apex-green: #00FF88;
+  --apex-red: #FF3B5C;
+  --apex-yellow: #FFD700;
+  --apex-text: #E2EAF4;
+  --apex-muted: #4B6280;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  background-color: var(--apex-bg);
+  color: var(--apex-text);
+  font-family: 'Syne', sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--apex-surface); }
+::-webkit-scrollbar-thumb { background: var(--apex-border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--apex-accent); }
+
+.font-mono { font-family: 'Space Mono', monospace !important; }
+
+.pnl-positive { color: var(--apex-green); }
+.pnl-negative { color: var(--apex-red); }
+.pnl-neutral  { color: var(--apex-muted); }
+
+.card {
+  background: var(--apex-card);
+  border: 1px solid var(--apex-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.card-glow {
+  border-color: var(--apex-accent);
+  box-shadow: 0 0 20px #00D4FF15;
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+.status-dot.live { background: var(--apex-green); box-shadow: 0 0 6px var(--apex-green); }
+.status-dot.analyzing { background: var(--apex-yellow); box-shadow: 0 0 6px var(--apex-yellow); animation: pulse 1s infinite; }
+.status-dot.offline { background: var(--apex-muted); }
+.status-dot.error { background: var(--apex-red); box-shadow: 0 0 6px var(--apex-red); }
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.scanline::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(to right, transparent, #00D4FF20, transparent);
+  animation: scanline 8s linear infinite;
+  pointer-events: none;
+  z-index: 9999;
+}
