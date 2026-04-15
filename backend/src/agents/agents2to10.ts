@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AgentVote, MarketSnapshot } from './types';
 import { logger } from '../utils/logger';
 import axios from 'axios';
+import { expertPrompts } from './expertPrompts';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -42,7 +43,7 @@ export async function runAgent2Newshound(snapshot: MarketSnapshot): Promise<Agen
       }
     } catch (_) { /* use default */ }
 
-    const system = `You are Agent 2: THE NEWSHOUND — an elite news analyst at a top hedge fund. Analyze only news and events. Respond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent2_newshound;
     const user = `Asset: ${snapshot.asset} | Price: $${snapshot.price} | 24h Change: ${snapshot.priceChangePct24h.toFixed(2)}%\n\nRecent News Headlines:\n${newsContext}\n\nAnalyze news sentiment. Should we BUY, SELL, or HOLD?`;
 
     const parsed = await callClaude(system, user);
@@ -60,7 +61,7 @@ export async function runAgent3Sentiment(snapshot: MarketSnapshot): Promise<Agen
       fearGreed = parseInt(res.data?.data?.[0]?.value || '50');
     } catch (_) {}
 
-    const system = `You are Agent 3: THE SENTIMENT ANALYST. You analyze market sentiment, social mood, and psychological factors. Respond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent3_sentiment;
     const user = `Asset: ${snapshot.asset} | Price: $${snapshot.price} | 24h Change: ${snapshot.priceChangePct24h.toFixed(2)}%\n\nFear & Greed Index: ${fearGreed}/100 (${fearGreed < 25 ? 'EXTREME FEAR' : fearGreed < 45 ? 'FEAR' : fearGreed < 55 ? 'NEUTRAL' : fearGreed < 75 ? 'GREED' : 'EXTREME GREED'})\n24h Volume change: ${((snapshot.volumeChange || 0) * 100).toFixed(1)}%\nSpread: ${((snapshot.spread / snapshot.price) * 100).toFixed(3)}%\n\nVOTE: BUY, SELL, or HOLD based on market sentiment?`;
 
     const parsed = await callClaude(system, user);
@@ -72,7 +73,7 @@ export async function runAgent3Sentiment(snapshot: MarketSnapshot): Promise<Agen
 export async function runAgent4Fundamental(snapshot: MarketSnapshot): Promise<AgentVote> {
   const start = Date.now();
   try {
-    const system = `You are Agent 4: THE FUNDAMENTAL ANALYST. You evaluate the intrinsic value and growth prospects of assets. For crypto: tokenomics, adoption, network activity. For stocks: P/E, revenue, margins, competitive moat. Respond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent4_fundamental;
     const user = `Asset: ${snapshot.asset} (${snapshot.market}) | Price: $${snapshot.price} | Market Cap: ${snapshot.marketCap ? '$' + (snapshot.marketCap / 1e9).toFixed(2) + 'B' : 'N/A'}\n24h Change: ${snapshot.priceChangePct24h.toFixed(2)}% | Volume: ${snapshot.volume24h.toLocaleString()}\n\nBased on your knowledge of ${snapshot.asset}'s fundamentals, provide your fundamental analysis vote.`;
 
     const parsed = await callClaude(system, user);
@@ -84,7 +85,7 @@ export async function runAgent4Fundamental(snapshot: MarketSnapshot): Promise<Ag
 export async function runAgent5RiskManager(snapshot: MarketSnapshot, portfolioState: any): Promise<AgentVote> {
   const start = Date.now();
   try {
-    const system = `You are Agent 5: THE RISK MANAGER — you have ABSOLUTE VETO POWER. Your ONLY job is capital preservation. If you vote HOLD, NO TRADE EXECUTES regardless of other agents. You are the last line of defense.\n\nCritical: Vote HOLD if:\n- Portfolio daily loss is near the 5% limit\n- Drawdown is approaching limits\n- Position would exceed 10% portfolio concentration\n- Market conditions are extreme/unstable\n- Risk/reward is unfavorable\n\nRespond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent5_risk;
     const user = `Asset: ${snapshot.asset} | Price: $${snapshot.price}\n\nPORTFOLIO STATE:\n- Total Value: $${portfolioState.totalValue?.toFixed(2)}\n- Daily Loss Today: ${portfolioState.pnlDayPct?.toFixed(2)}%\n- Drawdown from Peak: ${portfolioState.drawdownFromPeak?.toFixed(2)}%\n- Trades Today: ${portfolioState.tradesExecutedToday}\n- Cash Available: $${portfolioState.cashBalance?.toFixed(2)}\n- Current Positions: ${portfolioState.positions?.length || 0}\n\nGUARDRAIL LIMITS:\n- Daily Loss Limit: ${process.env.DAILY_LOSS_LIMIT_PCT || 5}%\n- Max Drawdown: ${process.env.MAX_DRAWDOWN_ALL_TIME_PCT || 20}%\n- Max Trades/Day: ${process.env.MAX_TRADES_PER_DAY || 50}\n\nIs it SAFE to trade ${snapshot.asset} right now? Use your veto if needed.`;
 
     const parsed = await callClaude(system, user);
@@ -99,7 +100,7 @@ export async function runAgent6TrendProphet(snapshot: MarketSnapshot): Promise<A
     const priceHistory = snapshot.candles.slice(-20).map(c => c.close);
     const trend = priceHistory.length > 1 ? ((priceHistory[priceHistory.length-1] - priceHistory[0]) / priceHistory[0] * 100).toFixed(2) : '0';
 
-    const system = `You are Agent 6: THE TREND PROPHET — a quantitative forecaster combining AI pattern recognition, time-series analysis, and macro trend modeling. Your job is to predict FUTURE price direction.\n\nAnalyze: momentum, trend persistence, mean-reversion probability, macro calendar events, seasonal patterns.\n\nAlso output a prediction object.\nRespond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."],"prediction":{"direction":"UP"|"DOWN"|"SIDEWAYS","targetPrice":<number>,"timeHorizon":"4h","probabilityPct":<number>}}`;
+    const system = expertPrompts.agent6_trend;
     const user = `Asset: ${snapshot.asset} | Current Price: $${snapshot.price}\n20-candle trend: ${trend}%\nRSI: ${snapshot.indicators.rsi14.toFixed(1)} | MACD: ${snapshot.indicators.macd.histogram > 0 ? 'BULLISH' : 'BEARISH'}\n\nPredict the next 4-hour price direction and vote.`;
 
     const parsed = await callClaude(system, user);
@@ -114,7 +115,7 @@ export async function runAgent7VolumeDetective(snapshot: MarketSnapshot): Promis
     const volRatio = snapshot.volume24h / (snapshot.indicators.volumeAvg20 || snapshot.volume24h);
     const isVolumeSpike = volRatio > 2;
 
-    const system = `You are Agent 7: THE VOLUME DETECTIVE. Volume is the fuel of all price moves. You analyze OBV, volume spikes, accumulation/distribution, and confirm or deny price moves with volume. No volume confirmation = no trade.\n\nRespond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent7_volume;
     const user = `Asset: ${snapshot.asset} | Price: $${snapshot.price} | Change: ${snapshot.priceChangePct24h.toFixed(2)}%\n\nVOLUME DATA:\n- 24h Volume: ${snapshot.volume24h.toLocaleString()}\n- 20-day avg volume: ${snapshot.indicators.volumeAvg20.toLocaleString()}\n- Volume ratio: ${volRatio.toFixed(2)}x ${isVolumeSpike ? '⚠️ SPIKE DETECTED' : ''}\n- OBV: ${snapshot.indicators.obv > 0 ? 'POSITIVE (accumulation)' : 'NEGATIVE (distribution)'}\n- Bid/Ask spread: ${((snapshot.spread / snapshot.price) * 100).toFixed(3)}%\n\nDoes volume CONFIRM a trade here?`;
 
     const parsed = await callClaude(system, user);
@@ -126,7 +127,7 @@ export async function runAgent7VolumeDetective(snapshot: MarketSnapshot): Promis
 export async function runAgent8WhaleWatcher(snapshot: MarketSnapshot): Promise<AgentVote> {
   const start = Date.now();
   try {
-    const system = `You are Agent 8: THE WHALE WATCHER. You track large institutional money flows, on-chain whale movements (for crypto), dark pool activity, and smart money positioning. Where whales go, price follows.\n\nRespond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent8_whale;
     const user = `Asset: ${snapshot.asset} (${snapshot.market}) | Price: $${snapshot.price}\nMarket Cap: ${snapshot.marketCap ? '$' + (snapshot.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}\nVolume vs avg: ${((snapshot.volume24h / (snapshot.indicators.volumeAvg20 || snapshot.volume24h)) * 100).toFixed(0)}%\n\nBased on your knowledge of institutional and whale behavior patterns for ${snapshot.asset}, and the current volume/price action, assess if whales are accumulating or distributing. Vote accordingly.`;
 
     const parsed = await callClaude(system, user);
@@ -138,7 +139,7 @@ export async function runAgent8WhaleWatcher(snapshot: MarketSnapshot): Promise<A
 export async function runAgent9MacroEconomist(snapshot: MarketSnapshot): Promise<AgentVote> {
   const start = Date.now();
   try {
-    const system = `You are Agent 9: THE MACRO ECONOMIST. You assess macroeconomic conditions: Fed policy, interest rates, inflation, DXY, global risk-on/risk-off sentiment, geopolitical risks, and cross-asset correlations.\n\nRespond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent9_macro;
     const user = `Asset: ${snapshot.asset} (${snapshot.market}) | Price: $${snapshot.price} | 24h: ${snapshot.priceChangePct24h.toFixed(2)}%\n\nBased on current macro environment (Fed policy, rates, inflation, global risk sentiment), and ${snapshot.asset}'s historical correlation to macro factors, provide your macroeconomic vote for this potential trade.`;
 
     const parsed = await callClaude(system, user);
@@ -153,7 +154,7 @@ export async function runAgent10DevilsAdvocate(snapshot: MarketSnapshot, otherVo
     const voteSummary = otherVotes.map(v => `- Agent ${v.agentId} (${v.agentName}): ${v.vote} (${v.confidence}% confidence) — ${v.reasoning}`).join('\n');
     const goVotes = otherVotes.filter(v => v.vote !== 'HOLD').length;
 
-    const system = `You are Agent 10: THE DEVIL'S ADVOCATE. Your SOLE PURPOSE is to argue AGAINST the trade. You look for every reason why the other agents are WRONG. You are a professional skeptic.\n\nIf the other 9 agents all say BUY — you argue SELL or HOLD.\nIf they say SELL — you argue BUY or HOLD.\nYour job: expose blind spots, hidden risks, and false assumptions.\n\nYou have a "blocking threshold": if you genuinely believe the trade is catastrophically bad, vote HOLD with 90+ confidence.\n\nRespond ONLY in JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"reasoning":"...","keyFactors":["..."],"riskWarnings":["..."]}`;
+    const system = expertPrompts.agent10_devil;
     const user = `Asset: ${snapshot.asset} | Price: $${snapshot.price}\n\nThe other 9 agents have voted:\n${voteSummary}\n\nTotal GO votes: ${goVotes}/9\n\nNow argue AGAINST this trade. Find every weakness, risk, and reason they could all be wrong. What are they all missing?`;
 
     const parsed = await callClaude(system, user);

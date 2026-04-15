@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AgentVote, MarketSnapshot } from './types';
 import { logger } from '../utils/logger';
+import { expertPrompts } from './expertPrompts';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
