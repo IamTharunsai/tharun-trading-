@@ -229,3 +229,4 @@ killSwitchRouter.get('/status', async (_req: Request, res: Response) => {
 // ── BACKTEST ROUTES (already defined in backtest.ts) ────────────────────────
 export { default as backtestRouter } from './backtest';
 export { chatRouter };
+export { default as agentMonitorRouter } from './agentMonitor';

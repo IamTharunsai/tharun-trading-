@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
   TrendingUp, BookOpen, Newspaper, Settings, History, LogOut,
-  Power, Zap
+  Power, Zap, Eye, Globe
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 
@@ -14,10 +14,12 @@ const navItems = [
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/trades', label: 'Trades', icon: ArrowLeftRight },
   { path: '/agents', label: 'Agent Council', icon: Bot },
+  { path: '/agents/monitor', label: 'Agent Monitor', icon: Eye },
   { path: '/charts', label: 'Charts', icon: BarChart2 },
   { path: '/analytics', label: 'Analytics', icon: TrendingUp },
   { path: '/journal', label: 'Journal', icon: BookOpen },
   { path: '/news', label: 'News', icon: Newspaper },
+  { path: '/news/geopolitics', label: 'News & Geo', icon: Globe },
   { path: '/investment', label: 'Investment Plan', icon: Briefcase },
   { path: '/history', label: 'History', icon: History },
   { path: '/settings', label: 'Settings', icon: Settings },

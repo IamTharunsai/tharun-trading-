@@ -11,10 +11,12 @@ import TradesPage from './pages/Trades';
 import AgentsPage from './pages/Agents';
 import AgentChatPage from './pages/AgentChat';
 import DebateRoomPage from './pages/DebateRoom';
+import AgentMonitorPage from './pages/AgentMonitor';
 import ChartsPage from './pages/Charts';
 import AnalyticsPage from './pages/Analytics';
 import JournalPage from './pages/Journal';
 import NewsPage from './pages/News';
+import NewsAndGeopoliticsPage from './pages/NewsAndGeopolitics';
 import InvestmentPage from './pages/Investment';
 import SettingsPage from './pages/Settings';
 import HistoryPage from './pages/History';
@@ -46,10 +48,12 @@ export default function App() {
           <Route path="agents" element={<AgentsPage />} />
           <Route path="agents/chat" element={<AgentChatPage />} />
           <Route path="agents/debate-room" element={<DebateRoomPage />} />
+          <Route path="agents/monitor" element={<AgentMonitorPage />} />
           <Route path="charts" element={<ChartsPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="journal" element={<JournalPage />} />
           <Route path="news" element={<NewsPage />} />
+          <Route path="news/geopolitics" element={<NewsAndGeopoliticsPage />} />
           <Route path="investment" element={<InvestmentPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="history" element={<HistoryPage />} />

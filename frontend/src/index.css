@@ -3,16 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --apex-bg: #F8FAFB;
+  --apex-bg: #FAF6F1;
   --apex-surface: #FFFFFF;
-  --apex-card: #F5F7FA;
-  --apex-border: #E2E7ED;
-  --apex-accent: #2563EB;
-  --apex-green: #059669;
+  --apex-card: #FFFBF7;
+  --apex-border: #E8D5C4;
+  --apex-accent: #FF8C42;
+  --apex-green: #2D8A4A;
   --apex-red: #DC2626;
-  --apex-yellow: #D97706;
-  --apex-text: #1F2937;
-  --apex-muted: #6B7280;
+  --apex-yellow: #F5A623;
+  --apex-text: #2C1810;
+  --apex-muted: #8B6F47;
+  --apex-cream: #FFF5E6;
+  --apex-orange: #FF8C42;
+  --apex-darkgreen: #1B5E3F;
 }
 
 * { box-sizing: border-box; }
@@ -45,8 +48,8 @@ html, body, #root {
 }
 
 .card-glow {
-  border-color: var(--apex-accent);
-  box-shadow: 0 0 20px #2563EB15;
+  border-color: var(--apex-orange);
+  box-shadow: 0 0 20px #FF8C4220;
 }
 
 .status-dot {

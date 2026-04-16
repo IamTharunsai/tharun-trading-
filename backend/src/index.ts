@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { initWebSocket } from './websocket/server';
 import { initScheduler } from './jobs/scheduler';
 import { initMarketData } from './services/marketData';
+import { geopoliticalDataService } from './services/geopoliticalDataService';
 import { logger } from './utils/logger';
 import { prisma } from './utils/prisma';
 
@@ -21,6 +22,7 @@ import journalRoutes from './routes/journal';
 import settingsRoutes from './routes/settings';
 import killSwitchRoutes from './routes/killSwitch';
 import chatRoutes from './routes/chat';
+import agentMonitorRoutes from './routes/agentMonitor';
 import backtestRoutes from './routes/backtest';
 
 const app = express();
@@ -55,6 +57,7 @@ app.use('/api/journal', journalRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/kill-switch', killSwitchRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/monitor', agentMonitorRoutes);
 app.use('/api/backtest', backtestRoutes);
 
 // Health check
@@ -100,6 +103,14 @@ async function boot() {
       logger.info('✅ Job scheduler started');
     } catch (err) {
       logger.warn('⚠️ Job scheduler failed to start', { error: err instanceof Error ? err.message : String(err) });
+    }
+
+    // Init geopolitical data service
+    try {
+      await geopoliticalDataService.initialize();
+      logger.info('📡 Geopolitical & news data service initialized');
+    } catch (err) {
+      logger.warn('⚠️ Geopolitical service failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     server.listen(PORT, () => {
