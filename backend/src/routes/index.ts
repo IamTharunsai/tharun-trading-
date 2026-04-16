@@ -9,6 +9,7 @@ import { getPortfolioState } from '../services/portfolio';
 import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '../agents/orchestrator';
 import backtestRoutes from './backtest';
 import { chatRouter } from './chat';
+import intelligenceRouter from './intelligence';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 export const authRouter = Router();
@@ -230,3 +231,4 @@ killSwitchRouter.get('/status', async (_req: Request, res: Response) => {
 export { default as backtestRouter } from './backtest';
 export { chatRouter };
 export { default as agentMonitorRouter } from './agentMonitor';
+export { default as intelligenceRouter } from './intelligence';

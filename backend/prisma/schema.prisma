@@ -277,3 +277,112 @@ model AgentAdjustment {
   @@index([agentId])
   @@index([appliedAt])
 }
+
+// LEARNING RESOURCES (External data that agents learn from)
+model LearningResource {
+  id                String   @id @default(cuid())
+  type              String   // 'news', 'fundamental', 'macro', 'on_chain'
+  asset             String
+  title             String
+  content           String
+  sentiment         String   // 'bullish', 'bearish', 'neutral'
+  sentimentScore    Float    // -1 to 1
+  confidence        Float    // 0 to 1
+  source            String
+  relevanceScore    Float
+  metadata          Json?
+  timestamp         DateTime @default(now())
+  expiresAt         DateTime?
+  createdAt         DateTime @default(now())
+
+  @@index([type])
+  @@index([asset])
+  @@index([sentiment])
+  @@index([timestamp])
+}
+
+// GEOPOLITICAL EVENTS
+model GeopoliticalEvent {
+  id                String   @id @default(cuid())
+  title             String
+  description       String
+  eventType         String   // 'sanctions', 'regulation', 'war', 'election', 'trade', 'policy', 'natural_disaster'
+  severity          Int      // 1-10 scale
+  countries         String[]
+  affectedAssets    String[]
+  geoRiskScore      Float    // 0-100
+  impactDuration    String
+  marketImpact      String   // 'negative', 'positive', 'neutral'
+  source            String
+  timestamp         DateTime @default(now())
+  followUpRequired  Boolean  @default(false)
+  metadata          Json?
+  createdAt         DateTime @default(now())
+
+  @@index([eventType])
+  @@index([geoRiskScore])
+  @@index([timestamp])
+}
+
+// MACRO INDICATORS
+model MacroIndicator {
+  id                String   @id @default(cuid())
+  name              String   // 'FED_RATE', 'INFLATION', 'UNEMPLOYMENT', 'VIX', 'USD_EUR', etc
+  value             Float
+  previousValue     Float?
+  unit              String
+  importance        String   // 'critical', 'high', 'medium', 'low'
+  direction         String   // 'up', 'down', 'stable'
+  source            String
+  lastUpdated       DateTime
+  nextRelease       DateTime?
+  expectedValue     Float?
+  impact            String   // 'bullish', 'bearish', 'neutral'
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  @@index([name])
+  @@index([importance])
+  @@index([lastUpdated])
+}
+
+// AGENT LEARNING STATE (Snapshot of learning for specific asset)
+model AgentLearningState {
+  id                String   @id @default(cuid())
+  agentId           String
+  assetId           String
+  fundamentalScore  Float    // 0-100
+  technicalScore    Float    // 0-100
+  sentimentScore    Float    // 0-100
+  riskScore         Float    // 0-100
+  confidenceAdjustment Float
+  overallScore      Float    // 0-100, weighted combination
+  learningSources   Json     // { news: [...], fundamentals: [...], macro: [...], onChain: [...] }
+  recommendations   String   // 'BUY', 'SELL', 'HOLD'
+  lastUpdated       DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@unique([agentId, assetId])
+  @@index([agentId])
+  @@index([assetId])
+  @@index([overallScore])
+}
+
+// GEO RISK ASSESSMENT (Summary of global risk)
+model GeoRiskAssessment {
+  id                String   @id @default(cuid())
+  timestamp         DateTime @default(now())
+  overallRisk       Int      // 0-100
+  geoRisk           Int      // 0-100
+  policyRisk        Int      // 0-100
+  marketRisk        Int      // 0-100
+  activeEvents      Int      // Number of active events
+  tradingMode       String   // 'aggressive', 'balanced', 'conservative', 'hibernation'
+  recommendations   String   // Trading advice based on risk
+  criticalEvents    Json?    // Array of events triggering high risk
+  metadata          Json?
+  createdAt         DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([overallRisk])
+}
