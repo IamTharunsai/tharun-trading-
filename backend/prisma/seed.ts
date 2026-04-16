@@ -9,7 +9,7 @@ async function main() {
   await prisma.user.deleteMany();
 
   // Create the owner user with the credentials from frontend
-  const passwordHash = await bcrypt.hash('Tharunsai@2081', 12);
+  const passwordHash = await bcrypt.hash('Tharunsai@2081as', 12);
   const secret = speakeasy.generateSecret({ name: 'APEX TRADER', issuer: 'ApexTrader' });
 
   const user = await prisma.user.create({
@@ -19,6 +19,7 @@ async function main() {
       totpSecret: secret.base32,
       totpEnabled: false, // Disable 2FA for now for testing
       lastLogin: new Date(),
+      ipWhitelist: [],
     },
   });
 

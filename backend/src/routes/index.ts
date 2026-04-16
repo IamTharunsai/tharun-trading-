@@ -8,6 +8,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { getPortfolioState } from '../services/portfolio';
 import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '../agents/orchestrator';
 import backtestRoutes from './backtest';
+import { chatRouter } from './chat';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 export const authRouter = Router();
@@ -227,3 +228,4 @@ killSwitchRouter.get('/status', async (_req: Request, res: Response) => {
 
 // ── BACKTEST ROUTES (already defined in backtest.ts) ────────────────────────
 export { default as backtestRouter } from './backtest';
+export { chatRouter };

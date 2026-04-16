@@ -3,16 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --apex-bg: #080C14;
-  --apex-surface: #0D1421;
-  --apex-card: #111827;
-  --apex-border: #1E2D45;
-  --apex-accent: #00D4FF;
-  --apex-green: #00FF88;
-  --apex-red: #FF3B5C;
-  --apex-yellow: #FFD700;
-  --apex-text: #E2EAF4;
-  --apex-muted: #4B6280;
+  --apex-bg: #F8FAFB;
+  --apex-surface: #FFFFFF;
+  --apex-card: #F5F7FA;
+  --apex-border: #E2E7ED;
+  --apex-accent: #2563EB;
+  --apex-green: #059669;
+  --apex-red: #DC2626;
+  --apex-yellow: #D97706;
+  --apex-text: #1F2937;
+  --apex-muted: #6B7280;
 }
 
 * { box-sizing: border-box; }
@@ -27,9 +27,9 @@ html, body, #root {
 }
 
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: var(--apex-surface); }
-::-webkit-scrollbar-thumb { background: var(--apex-border); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--apex-accent); }
+::-webkit-scrollbar-track { background: var(--apex-bg); }
+::-webkit-scrollbar-thumb { background: var(--apex-accent); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #1D4ED8; }
 
 .font-mono { font-family: 'Space Mono', monospace !important; }
 
@@ -46,7 +46,7 @@ html, body, #root {
 
 .card-glow {
   border-color: var(--apex-accent);
-  box-shadow: 0 0 20px #00D4FF15;
+  box-shadow: 0 0 20px #2563EB15;
 }
 
 .status-dot {
@@ -70,7 +70,7 @@ html, body, #root {
   position: fixed;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(to right, transparent, #00D4FF20, transparent);
+  background: linear-gradient(to right, transparent, #2563EB08, transparent);
   animation: scanline 8s linear infinite;
   pointer-events: none;
   z-index: 9999;

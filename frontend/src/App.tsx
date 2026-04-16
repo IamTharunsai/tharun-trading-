@@ -9,6 +9,8 @@ import DashboardPage from './pages/Dashboard';
 import PortfolioPage from './pages/Portfolio';
 import TradesPage from './pages/Trades';
 import AgentsPage from './pages/Agents';
+import AgentChatPage from './pages/AgentChat';
+import DebateRoomPage from './pages/DebateRoom';
 import ChartsPage from './pages/Charts';
 import AnalyticsPage from './pages/Analytics';
 import JournalPage from './pages/Journal';
@@ -42,6 +44,8 @@ export default function App() {
           <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="trades" element={<TradesPage />} />
           <Route path="agents" element={<AgentsPage />} />
+          <Route path="agents/chat" element={<AgentChatPage />} />
+          <Route path="agents/debate-room" element={<DebateRoomPage />} />
           <Route path="charts" element={<ChartsPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="journal" element={<JournalPage />} />
