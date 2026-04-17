@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
   TrendingUp, BookOpen, Newspaper, Settings, History, LogOut,
-  Power, Zap, Eye, Globe
+  Power, Zap, Eye, Globe, MessageSquare, Users
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 
@@ -14,6 +14,8 @@ const navItems = [
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/trades', label: 'Trades', icon: ArrowLeftRight },
   { path: '/agents', label: 'Agent Council', icon: Bot },
+  { path: '/agents/debate-room', label: 'Debate Room', icon: Users },
+  { path: '/agents/chat', label: 'Agent Chat', icon: MessageSquare },
   { path: '/agents/monitor', label: 'Agent Monitor', icon: Eye },
   { path: '/charts', label: 'Charts', icon: BarChart2 },
   { path: '/analytics', label: 'Analytics', icon: TrendingUp },
@@ -53,13 +55,15 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 py-5 border-b border-apex-border">
           <div className="flex items-center gap-2">
-            <Zap size={20} className="text-apex-accent" />
-            <span className="font-sans font-bold text-lg text-apex-text tracking-wider">APEX</span>
-            <span className="font-sans font-bold text-lg text-apex-accent tracking-wider">TRADER</span>
+            <Zap size={18} className="text-apex-accent" />
+            <div>
+              <div className="font-sans font-bold text-sm text-apex-text tracking-wide leading-tight">THARUN</div>
+              <div className="font-sans font-bold text-sm text-apex-accent tracking-wide leading-tight">TRADING AGENT</div>
+            </div>
           </div>
           <div className="mt-1 flex items-center gap-1.5">
             <span className="status-dot live" />
-            <span className="font-mono text-xs text-apex-green">AUTONOMOUS • LIVE</span>
+            <span className="font-mono text-xs text-apex-green">AI TRADING • LIVE</span>
           </div>
         </div>
 

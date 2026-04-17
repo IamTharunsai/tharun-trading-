@@ -1,12 +1,16 @@
 import { Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { getSettings } from '../../services/api';
 
 export default function RiskMonitor({ portfolio }: { portfolio: any }) {
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: getSettings, staleTime: 60000 });
+
   if (!portfolio) return null;
 
-  const dailyLossLimit = 5;
-  const weeklyLimit = 10;
-  const maxDrawdown = 20;
-  const maxTradesPerDay = 50;
+  const dailyLossLimit = settings?.dailyLossLimit ?? 5;
+  const weeklyLimit = settings?.weeklyDrawdownLimit ?? 10;
+  const maxDrawdown = settings?.maxDrawdown ?? 20;
+  const maxTradesPerDay = settings?.maxTradesPerDay ?? 50;
 
   const dailyUsed = Math.abs(Math.min(0, portfolio.pnlDayPct || 0));
   const drawdown = portfolio.drawdownFromPeak || 0;
@@ -14,7 +18,7 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
 
   const RiskBar = ({ label, used, limit, unit = '%' }: { label: string; used: number; limit: number; unit?: string }) => {
     const pct = (used / limit) * 100;
-    const color = pct >= 90 ? '#FF3B5C' : pct >= 70 ? '#FFD700' : '#00FF88';
+    const color = pct >= 90 ? '#DC2626' : pct >= 70 ? '#F5A623' : '#2D8A4A';
     const status = pct >= 90 ? 'CRITICAL' : pct >= 70 ? 'WARNING' : 'OK';
     return (
       <div className="space-y-1">

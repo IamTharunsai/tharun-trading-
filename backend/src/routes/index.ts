@@ -127,6 +127,18 @@ portfolioRouter.get('/positions', async (_req: Request, res: Response) => {
 export const agentsRouter = Router();
 agentsRouter.use(requireAuth);
 
+agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
+  try {
+    const { asset = 'BTC', market = 'crypto' } = req.body;
+    const { runDebateForAsset } = await import('../jobs/scheduler');
+    res.json({ message: `Debate triggered for ${asset}`, asset, status: 'running' });
+    // Fire and forget — result arrives via WebSocket
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex').catch(() => {});
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to trigger debate' });
+  }
+});
+
 agentsRouter.get('/decisions', async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query;
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);

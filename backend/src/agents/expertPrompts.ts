@@ -1,5 +1,5 @@
 /**
- * APEX TRADER - EXPERT KNOWLEDGE BASE
+ * THARUN TRADING AGENT - EXPERT KNOWLEDGE BASE
  * 15 AI Agents with Professional Trading Prompts
  * Each prompt: 500-800 words covering theory + patterns + failure modes + decision logic
  * Impact: +20-30% win rate improvement

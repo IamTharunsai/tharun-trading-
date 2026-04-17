@@ -1,14 +1,20 @@
 // ── TRADES PAGE ───────────────────────────────────────────────────────────────
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getTrades, getTradeStats } from '../services/api';
 import { format } from 'date-fns';
-import { TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, ArrowLeftRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
 
+const PAGE_SIZE = 25;
+
 export function TradesPage() {
-  const { data } = useQuery({ queryKey: ['trades-full'], queryFn: () => getTrades(1, 100), refetchInterval: 15000 });
+  const [page, setPage] = useState(1);
+  const { data } = useQuery({ queryKey: ['trades-full', page], queryFn: () => getTrades(page, PAGE_SIZE), refetchInterval: 15000 });
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats });
   const trades = data?.trades || [];
+  const total = data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
@@ -60,6 +66,44 @@ export function TradesPage() {
           </tbody>
         </table>
         {trades.length === 0 && <div className="text-center py-12 font-mono text-xs text-apex-muted">No trades recorded yet</div>}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-4 border-t border-apex-border mt-2">
+            <span className="font-mono text-xs text-apex-muted">
+              {total} trades · page {page} of {totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded-lg border border-apex-border text-apex-muted hover:text-apex-text hover:border-apex-accent disabled:opacity-40 transition"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+                const p = start + i;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-7 h-7 rounded-lg font-mono text-xs transition ${p === page ? 'bg-apex-accent text-white' : 'border border-apex-border text-apex-muted hover:text-apex-text'}`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded-lg border border-apex-border text-apex-muted hover:text-apex-text hover:border-apex-accent disabled:opacity-40 transition"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

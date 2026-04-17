@@ -68,7 +68,7 @@ export function connectSocket() {
     const icon = data.reason === 'stop_loss' ? '🛑' : data.reason === 'take_profit' ? '🎯' : '✅';
     toast(`${icon} ${data.asset} closed: ${pnlStr} (${data.reason.replace('_', ' ')})`, {
       duration: 6000,
-      style: { borderLeft: `3px solid ${data.pnl >= 0 ? '#00FF88' : '#FF3B5C'}` }
+      style: { borderLeft: `3px solid ${data.pnl >= 0 ? '#2D8A4A' : '#DC2626'}` }
     });
   });
 

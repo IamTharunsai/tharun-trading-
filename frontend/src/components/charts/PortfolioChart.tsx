@@ -45,15 +45,15 @@ export default function PortfolioChart() {
           <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
             <defs>
               <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={isPositive ? '#00FF88' : '#FF3B5C'} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={isPositive ? '#00FF88' : '#FF3B5C'} stopOpacity={0} />
+                <stop offset="5%" stopColor={isPositive ? '#2D8A4A' : '#DC2626'} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={isPositive ? '#2D8A4A' : '#DC2626'} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1E2D45" vertical={false} />
-            <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#4B6280', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10, fill: '#4B6280', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E8D5C4" vertical={false} />
+            <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
             <Tooltip content={<CustomTooltip />} />
-            <Area type="monotone" dataKey="value" stroke={isPositive ? '#00FF88' : '#FF3B5C'} strokeWidth={2} fill="url(#portfolioGrad)" />
+            <Area type="monotone" dataKey="value" stroke={isPositive ? '#2D8A4A' : '#DC2626'} strokeWidth={2} fill="url(#portfolioGrad)" />
           </AreaChart>
         </ResponsiveContainer>
       ) : (

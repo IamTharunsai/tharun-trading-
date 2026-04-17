@@ -4,16 +4,16 @@ import { Send, Loader } from 'lucide-react';
 import { useStore } from '../store';
 
 const AGENTS = [
-  { id: 1, name: 'Technician', icon: '📊', color: '#00D4FF' },
-  { id: 2, name: 'Newshound', icon: '📰', color: '#FFD700' },
-  { id: 3, name: 'Sentiment', icon: '🧠', color: '#9945FF' },
-  { id: 4, name: 'Fundamental', icon: '📈', color: '#00FF88' },
-  { id: 5, name: 'Risk Mgr', icon: '🛡️', color: '#FF3B5C' },
-  { id: 6, name: 'Trend', icon: '🔮', color: '#00D4FF' },
-  { id: 7, name: 'Volume', icon: '🔍', color: '#FFD700' },
-  { id: 8, name: 'Whale Watch', icon: '🐋', color: '#00FF88' },
-  { id: 9, name: 'Macro', icon: '🌍', color: '#9945FF' },
-  { id: 10, name: 'Devil Adv', icon: '😈', color: '#FF3B5C' },
+  { id: 1,  name: 'Technician',  icon: '📊', color: '#FF8C42' },
+  { id: 2,  name: 'Newshound',   icon: '📰', color: '#F5A623' },
+  { id: 3,  name: 'Sentiment',   icon: '🧠', color: '#2D8A4A' },
+  { id: 4,  name: 'Fundamental', icon: '📈', color: '#FF8C42' },
+  { id: 5,  name: 'Risk Mgr',    icon: '🛡️', color: '#DC2626' },
+  { id: 6,  name: 'Trend',       icon: '🔮', color: '#2D8A4A' },
+  { id: 7,  name: 'Volume',      icon: '🔍', color: '#F5A623' },
+  { id: 8,  name: 'Whale Watch', icon: '🐋', color: '#2D8A4A' },
+  { id: 9,  name: 'Macro',       icon: '🌍', color: '#FF8C42' },
+  { id: 10, name: 'Devil Adv',   icon: '😈', color: '#DC2626' },
 ];
 
 interface Message {
@@ -131,8 +131,8 @@ export default function AgentChatPage() {
               {msg.role === 'assistant' && <div style={{ fontSize: 18 }}>{selectedAgent.icon}</div>}
               <div style={{
                 maxWidth: '70%', padding: '10px 14px', borderRadius: 8,
-                background: msg.role === 'user' ? 'rgba(0,212,255,.15)' : 'var(--apex-surface)',
-                border: `1px solid ${msg.role === 'user' ? 'rgba(0,212,255,.3)' : 'var(--apex-border)'}`
+                background: msg.role === 'user' ? 'rgba(255,140,66,.15)' : 'var(--apex-surface)',
+                border: `1px solid ${msg.role === 'user' ? 'rgba(255,140,66,.4)' : 'var(--apex-border)'}`
               }}>
                 <div style={{ fontSize: 13, color: 'var(--apex-text)', lineHeight: 1.6 }}>{msg.content}</div>
               </div>

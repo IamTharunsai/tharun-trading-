@@ -27,7 +27,7 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
     const loadHistory = async () => {
       try {
         const response = await axios.get(
-          `http://localhost:4000/api/chat/${agentId}/history?limit=10`,
+          `/api/chat/${agentId}/history?limit=10`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
@@ -81,17 +81,18 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
 
     try {
       const response = await axios.post(
-        `http://localhost:4000/api/chat/${agentId}`,
+        `/api/chat/${agentId}`,
         { message: userMessage },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      if (response.data.agentResponse) {
+      const reply = response.data.reply || response.data.agentResponse || '';
+      if (reply) {
         setMessages(prev => [
           ...prev,
           {
             role: 'agent',
-            content: response.data.agentResponse,
+            content: reply,
             timestamp: new Date().toLocaleTimeString()
           }
         ]);
@@ -112,52 +113,43 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
   };
 
   return (
-    <div className="fixed bottom-4 right-4 w-96 h-96 bg-slate-800 border border-slate-700 rounded-lg flex flex-col shadow-2xl z-50">
+    <div className="fixed bottom-4 right-4 w-96 h-96 bg-apex-card border border-apex-border rounded-xl flex flex-col shadow-2xl z-50">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-900">
+      <div className="flex items-center justify-between p-4 border-b border-apex-border bg-apex-surface rounded-t-xl">
         <div className="flex items-center gap-2">
-          <MessageCircle size={18} className="text-blue-400" />
+          <MessageCircle size={18} className="text-apex-accent" />
           <div>
-            <div className="font-semibold text-slate-100">{agentName}</div>
-            <div className="text-xs text-slate-500">Always online • Ask anything</div>
+            <div className="font-sans font-semibold text-apex-text">{agentName}</div>
+            <div className="font-mono text-xs text-apex-muted">Always online • Ask anything</div>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-slate-200 transition"
-          aria-label="Close chat"
-        >
+        <button onClick={onClose} className="text-apex-muted hover:text-apex-red transition" aria-label="Close chat">
           <X size={18} />
         </button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-800">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loadingHistory ? (
           <div className="flex items-center justify-center h-full">
-            <Loader size={20} className="text-blue-400 animate-spin" />
+            <Loader size={20} className="text-apex-accent animate-spin" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center text-slate-500">
-            <MessageCircle size={32} className="mb-2 opacity-50" />
-            <p className="text-sm">No previous conversations yet.</p>
-            <p className="text-xs mt-1">Ask {agentName} a question!</p>
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <MessageCircle size={32} className="mb-2 text-apex-muted opacity-50" />
+            <p className="font-mono text-sm text-apex-muted">No previous conversations yet.</p>
+            <p className="font-mono text-xs text-apex-muted mt-1">Ask {agentName} a question!</p>
           </div>
         ) : (
           messages.map((msg, idx) => (
-            <div
-              key={idx}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700 text-slate-100'
-                }`}
-              >
+            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-xs px-3 py-2 rounded-lg text-sm font-mono ${
+                msg.role === 'user'
+                  ? 'bg-apex-accent text-white'
+                  : 'bg-apex-surface border border-apex-border text-apex-text'
+              }`}>
                 <p className="break-words">{msg.content}</p>
-                <p className="text-xs mt-1 opacity-70">{msg.timestamp}</p>
+                <p className="text-xs mt-1 opacity-60">{msg.timestamp}</p>
               </div>
             </div>
           ))
@@ -166,10 +158,7 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
       </div>
 
       {/* Input */}
-      <form
-        onSubmit={handleSendMessage}
-        className="p-3 border-t border-slate-700 bg-slate-900"
-      >
+      <form onSubmit={handleSendMessage} className="p-3 border-t border-apex-border">
         <div className="flex gap-2">
           <input
             type="text"
@@ -177,12 +166,12 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
             onChange={e => setInputValue(e.target.value)}
             placeholder="Ask something..."
             disabled={loading}
-            className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
+            className="flex-1 px-3 py-2 bg-apex-surface border border-apex-border rounded-lg font-mono text-sm text-apex-text placeholder-apex-muted focus:outline-none focus:border-apex-accent disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!inputValue.trim() || loading}
-            className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition text-sm flex items-center gap-1"
+            className="px-3 py-2 bg-apex-accent text-white rounded-lg hover:bg-apex-accent/90 disabled:opacity-50 transition flex items-center gap-1"
           >
             {loading ? <Loader size={14} className="animate-spin" /> : <Send size={14} />}
           </button>

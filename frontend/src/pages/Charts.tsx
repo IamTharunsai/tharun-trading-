@@ -11,6 +11,8 @@ export default function ChartsPage() {
   const chartInstance = useRef<any>(null);
   const seriesRef = useRef<any>(null);
   const [chartLoaded, setChartLoaded] = useState(false);
+  const [high24, setHigh24] = useState<number | null>(null);
+  const [low24, setLow24] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -28,20 +30,20 @@ export default function ChartsPage() {
       const chart = createChart(chartRef.current, {
         width: chartRef.current.clientWidth,
         height: 480,
-        layout: { background: { color: '#0D1421' }, textColor: '#4B6280' },
-        grid: { vertLines: { color: '#1E2D45' }, horzLines: { color: '#1E2D45' } },
+        layout: { background: { color: '#FFFBF7' }, textColor: '#8B6F47' },
+        grid: { vertLines: { color: '#E8D5C4' }, horzLines: { color: '#E8D5C4' } },
         crosshair: { mode: 1 },
-        rightPriceScale: { borderColor: '#1E2D45' },
-        timeScale: { borderColor: '#1E2D45', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: '#E8D5C4' },
+        timeScale: { borderColor: '#E8D5C4', timeVisible: true, secondsVisible: false },
       });
 
       const series = chart.addCandlestickSeries({
-        upColor: '#00FF88',
-        downColor: '#FF3B5C',
-        borderUpColor: '#00FF88',
-        borderDownColor: '#FF3B5C',
-        wickUpColor: '#00FF88',
-        wickDownColor: '#FF3B5C',
+        upColor: '#2D8A4A',
+        downColor: '#DC2626',
+        borderUpColor: '#2D8A4A',
+        borderDownColor: '#DC2626',
+        wickUpColor: '#2D8A4A',
+        wickDownColor: '#DC2626',
       });
 
       chartInstance.current = chart;
@@ -60,13 +62,17 @@ export default function ChartsPage() {
         }));
         series.setData(candles);
         chart.timeScale().fitContent();
+        // Calculate 24h high/low from last 24 candles (1H * 24 = 24h)
+        const last24 = candles.slice(-24);
+        setHigh24(Math.max(...last24.map((c: any) => c.high)));
+        setLow24(Math.min(...last24.map((c: any) => c.low)));
       } catch {
         // If fetch fails, show placeholder
       }
 
       // Add volume series
       const volumeSeries = chart.addHistogramSeries({
-        color: '#00D4FF20',
+        color: '#FF8C4220',
         priceFormat: { type: 'volume' },
         priceScaleId: '',
       });
@@ -136,8 +142,8 @@ export default function ChartsPage() {
       {currentPrice && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: '24h High', value: `$${currentPrice.price?.toFixed(2)}` },
-            { label: '24h Low', value: `$${currentPrice.price?.toFixed(2)}` },
+            { label: '24h High', value: high24 ? `$${high24.toFixed(2)}` : `$${currentPrice.price?.toFixed(2)}` },
+            { label: '24h Low',  value: low24  ? `$${low24.toFixed(2)}`  : `$${currentPrice.price?.toFixed(2)}` },
             { label: '24h Volume', value: (currentPrice.volume24h || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }) },
             { label: '24h Change', value: `${(currentPrice.change24h || 0).toFixed(2)}%` },
           ].map(({ label, value }) => (

@@ -38,7 +38,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-apex-bg flex items-center justify-center p-4">
       {/* Background grid */}
       <div className="absolute inset-0 opacity-5" style={{
-        backgroundImage: 'linear-gradient(#00D4FF 1px, transparent 1px), linear-gradient(90deg, #00D4FF 1px, transparent 1px)',
+        backgroundImage: 'linear-gradient(#E8D5C4 1px, transparent 1px), linear-gradient(90deg, #E8D5C4 1px, transparent 1px)',
         backgroundSize: '50px 50px'
       }} />
 
@@ -48,8 +48,8 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-apex-accent/10 border border-apex-accent/30 mb-4">
             <Zap size={32} className="text-apex-accent" />
           </div>
-          <h1 className="font-sans font-bold text-3xl text-apex-text">APEX TRADER</h1>
-          <p className="font-mono text-xs text-apex-muted mt-1 tracking-widest">AUTONOMOUS TRADING SYSTEM</p>
+          <h1 className="font-sans font-bold text-3xl text-apex-text">THARUN TRADING AGENT</h1>
+          <p className="font-mono text-xs text-apex-muted mt-1 tracking-widest">AI-POWERED AUTONOMOUS TRADING</p>
         </div>
 
         {/* Card */}
@@ -77,7 +77,7 @@ export default function LoginPage() {
               <div className="relative">
                 <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-apex-muted" />
                 <input
-                  type="Tharunsai@2081" value={password} onChange={e => setPassword(e.target.value)} required
+                  type="password" value={password} onChange={e => setPassword(e.target.value)} required
                   className="w-full bg-apex-surface border border-apex-border rounded-lg pl-9 pr-4 py-2.5 font-mono text-sm text-apex-text placeholder-apex-muted focus:outline-none focus:border-apex-accent transition-colors"
                   placeholder="••••••••••••"
                 />

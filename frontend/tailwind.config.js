@@ -9,30 +9,33 @@ export default {
       },
       colors: {
         apex: {
-          bg:       '#080C14',
-          surface:  '#0D1421',
-          card:     '#111827',
-          border:   '#1E2D45',
-          accent:   '#00D4FF',
-          green:    '#00FF88',
-          red:      '#FF3B5C',
-          yellow:   '#FFD700',
-          muted:    '#4B6280',
-          text:     '#E2EAF4',
+          bg:        '#FAF6F1',
+          surface:   '#FFFFFF',
+          card:      '#FFFBF7',
+          border:    '#E8D5C4',
+          accent:    '#FF8C42',
+          orange:    '#FF8C42',
+          green:     '#2D8A4A',
+          red:       '#DC2626',
+          yellow:    '#F5A623',
+          muted:     '#8B6F47',
+          text:      '#2C1810',
+          cream:     '#FFF5E6',
+          darkgreen: '#1B5E3F',
         }
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'glow': 'glow 2s ease-in-out infinite alternate',
+        'glow':   'glow 2s ease-in-out infinite alternate',
         'ticker': 'ticker 30s linear infinite',
       },
       keyframes: {
         glow: {
-          '0%': { boxShadow: '0 0 5px #00D4FF40' },
-          '100%': { boxShadow: '0 0 20px #00D4FF80, 0 0 40px #00D4FF20' }
+          '0%':   { boxShadow: '0 0 5px #FF8C4240' },
+          '100%': { boxShadow: '0 0 20px #FF8C4280, 0 0 40px #FF8C4220' }
         },
         ticker: {
-          '0%': { transform: 'translateX(0)' },
+          '0%':   { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(-50%)' }
         }
       }

@@ -1,177 +1,135 @@
-import React, { useEffect, useState } from 'react';
-import { Pie, PieChart, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { getPortfolio, getPositions, getTradeStats } from '../services/api';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { TrendingUp, TrendingDown, DollarSign, Target, Shield, BarChart2, Clock, Zap } from 'lucide-react';
 
-interface CapitalAllocation {
-  name: string;
-  percentage: number;
-  amount: number;
-  expectedReturn: string;
-  strategy: string;
-  status: 'optimal' | 'underutilized' | 'overweight';
+const STRATEGY_COLORS = ['#FF8C42', '#2D8A4A', '#F5A623', '#DC2626', '#8B6F47', '#1B5E3F'];
+
+const STRATEGIES = [
+  { name: 'Crypto Momentum',    pct: 30, return: '8–15%',  timeframe: 'Days–Weeks',  icon: '₿', risk: 'High' },
+  { name: 'Stock Momentum',     pct: 20, return: '5–10%',  timeframe: 'Weeks',       icon: '📈', risk: 'Medium' },
+  { name: 'Prediction Markets', pct: 15, return: '10–20%', timeframe: 'Event-based', icon: '🎯', risk: 'High' },
+  { name: 'Options Premium',    pct: 15, return: '3–5%',   timeframe: 'Monthly',     icon: '📉', risk: 'Medium' },
+  { name: 'Arbitrage',          pct: 10, return: '2–4%',   timeframe: 'Instant',     icon: '⚖️', risk: 'Low' },
+  { name: 'Cash Reserve',       pct: 10, return: '0%',     timeframe: 'Always',      icon: '💵', risk: 'None' },
+];
+
+const LONG_TERM_HOLDINGS = [
+  { asset: 'BTC',  name: 'Bitcoin',    allocation: 40, horizon: '3–5 years',  thesis: 'Store of value, institutional adoption, limited supply' },
+  { asset: 'ETH',  name: 'Ethereum',   allocation: 25, horizon: '3–5 years',  thesis: 'Smart contract leader, DeFi backbone, deflationary post-merge' },
+  { asset: 'SOL',  name: 'Solana',     allocation: 10, horizon: '2–3 years',  thesis: 'High-throughput L1, growing DeFi/NFT ecosystem' },
+  { asset: 'NVDA', name: 'NVIDIA',     allocation: 15, horizon: '5–10 years', thesis: 'AI compute dominance, GPU monopoly for ML training' },
+  { asset: 'MSFT', name: 'Microsoft',  allocation: 10, horizon: '5–10 years', thesis: 'Cloud (Azure), AI integration, stable dividend growth' },
+];
+
+const DCA_PLAN = [
+  { asset: 'BTC',  weekly: 100, monthly: 400, strategy: 'Buy regardless of price — dollar cost average over market cycles' },
+  { asset: 'ETH',  weekly: 50,  monthly: 200, strategy: 'Accumulate during corrections > 20% from ATH' },
+  { asset: 'NVDA', weekly: 75,  monthly: 300, strategy: 'Buy on earnings dips, accumulate before AI product cycles' },
+];
+
+function compoundGrowth(principal: number, annualRate: number, years: number) {
+  return principal * Math.pow(1 + annualRate / 100, years);
 }
 
-const COLORS = ['#3b82f6', '#ec4899', '#8b5cf6', '#f59e0b', '#10b981', '#6b7280'];
-
 export default function InvestmentPage() {
-  const [totalCapital] = useState(100000);
-  const [allocations, setAllocations] = useState<CapitalAllocation[]>([
-    {
-      name: 'Crypto Momentum',
-      percentage: 30,
-      amount: 30000,
-      expectedReturn: '8–15%',
-      strategy: 'BTC, ETH, SOL swing trades based on technical signals',
-      status: 'optimal'
-    },
-    {
-      name: 'Stock Momentum',
-      percentage: 20,
-      amount: 20000,
-      expectedReturn: '5–10%',
-      strategy: 'NVDA, AAPL, TSLA based on earnings + technical',
-      status: 'optimal'
-    },
-    {
-      name: 'Prediction Markets',
-      percentage: 15,
-      amount: 15000,
-      expectedReturn: '10–20%',
-      strategy: 'Polymarket probability arbitrage on news events',
-      status: 'underutilized'
-    },
-    {
-      name: 'Options Premium',
-      percentage: 15,
-      amount: 15000,
-      expectedReturn: '3–5%',
-      strategy: 'Selling covered calls and puts — collect premium',
-      status: 'optimal'
-    },
-    {
-      name: 'Arbitrage',
-      percentage: 10,
-      amount: 10000,
-      expectedReturn: '2–4%',
-      strategy: 'Cross-exchange price differences',
-      status: 'overweight'
-    },
-    {
-      name: 'Cash Reserve',
-      percentage: 10,
-      amount: 10000,
-      expectedReturn: '0%',
-      strategy: 'Always kept in stable assets — never deployed',
-      status: 'optimal'
-    }
-  ]);
+  const { data: portfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 10000 });
+  const { data: positions = [] } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 10000 });
+  const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats });
 
-  const chartData = allocations.map(a => ({
-    name: a.name,
-    value: a.percentage
+  const totalCapital = portfolio?.totalValue || 10000;
+  const cashBalance  = portfolio?.cashBalance || 0;
+  const invested     = portfolio?.invested || 0;
+  const pnlTotal     = portfolio?.pnlTotal || 0;
+  const openPositions = (positions as any[]).length;
+
+  const pieData = STRATEGIES.map(s => ({ name: s.name, value: s.pct }));
+
+  // Projection scenarios for long-term compounding
+  const projections = [1, 3, 5, 10].map(years => ({
+    years,
+    conservative: compoundGrowth(totalCapital, 12, years),
+    base:         compoundGrowth(totalCapital, 22, years),
+    optimistic:   compoundGrowth(totalCapital, 40, years),
   }));
 
-  const expectedMonthlyReturn = (() => {
-    const returns = [12.5, 7.5, 15, 4, 3, 0].map((r, i) => (allocations[i].amount * r) / 100);
-    return returns.reduce((a, b) => a + b, 0);
-  })();
+  const projChartData = projections.map(p => ({
+    years: `${p.years}Y`,
+    conservative: Math.round(p.conservative),
+    base:         Math.round(p.base),
+    optimistic:   Math.round(p.optimistic),
+  }));
 
-  const expectedAnnualReturn = expectedMonthlyReturn * 12;
+  // DCA monthly totals
+  const monthlyDCA = DCA_PLAN.reduce((s, d) => s + d.monthly, 0);
+  const yearlyDCA  = monthlyDCA * 12;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">💰 Investment Plan</h1>
-        <p className="text-slate-400">
-          Strategic capital allocation across 6 distinct trading strategies
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-sans font-bold text-2xl text-apex-text">Investment Plan</h1>
+        <p className="font-mono text-xs text-apex-muted mt-1">
+          Active trading strategies + long-term compounding portfolio
         </p>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <div className="text-slate-400 text-sm">Total Capital</div>
-          <div className="text-2xl font-bold text-blue-400">${totalCapital.toLocaleString()}</div>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <div className="text-slate-400 text-sm">Expected Monthly Return</div>
-          <div className="text-2xl font-bold text-green-400">+${expectedMonthlyReturn.toFixed(0)}</div>
-          <div className="text-xs text-slate-400">Avg {((expectedMonthlyReturn / totalCapital) * 100).toFixed(1)}%</div>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <div className="text-slate-400 text-sm">Expected Annual Return</div>
-          <div className="text-2xl font-bold text-blue-400">+${expectedAnnualReturn.toFixed(0)}</div>
-          <div className="text-xs text-slate-400">{((expectedAnnualReturn / totalCapital) * 100).toFixed(0)}% APY</div>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <div className="text-slate-400 text-sm">Deployed Capital</div>
-          <div className="text-2xl font-bold text-orange-400">
-            ${allocations
-              .filter(a => a.name !== 'Cash Reserve')
-              .reduce((s, a) => s + a.amount, 0)
-              .toLocaleString()}
+      {/* Live Portfolio Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Portfolio Value',   value: `$${totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: <DollarSign size={16} />, color: 'text-apex-accent' },
+          { label: 'Deployed Capital',  value: `$${invested.toFixed(2)}`,                                                                          icon: <BarChart2 size={16} />,  color: 'text-apex-green' },
+          { label: 'Cash Available',    value: `$${cashBalance.toFixed(2)}`,                                                                        icon: <Shield size={16} />,     color: 'text-apex-muted' },
+          { label: 'Total P&L',         value: `${pnlTotal >= 0 ? '+' : ''}$${pnlTotal.toFixed(2)}`,                                               icon: pnlTotal >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />, color: pnlTotal >= 0 ? 'text-apex-green' : 'text-apex-red' },
+        ].map(s => (
+          <div key={s.label} className="card">
+            <div className="flex items-center gap-2 mb-2 text-apex-muted">{s.icon}<span className="font-mono text-xs uppercase tracking-widest">{s.label}</span></div>
+            <div className={`font-sans font-bold text-xl ${s.color}`}>{s.value}</div>
           </div>
-          <div className="text-xs text-slate-400">90% of portfolio</div>
-        </div>
+        ))}
       </div>
 
-      {/* Pie Chart & Allocations */}
-      <div className="grid grid-cols-3 gap-6 mb-8">
-        {/* Chart */}
-        <div className="col-span-1 bg-slate-800 p-6 rounded-lg border border-slate-700">
-          <h2 className="font-semibold mb-4">Capital Allocation</h2>
-          <ResponsiveContainer width="100%" height={300}>
+      {/* Active Strategies */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Allocation Pie */}
+        <div className="card">
+          <h2 className="font-sans font-semibold text-apex-text mb-4">Capital Allocation</h2>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {allocations.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                {STRATEGIES.map((_, i) => <Cell key={i} fill={STRATEGY_COLORS[i]} />)}
               </Pie>
-              <Tooltip
-                formatter={value => `${value}%`}
-                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
-              />
-              <Legend />
+              <Tooltip formatter={(v: any) => [`${v}%`]} contentStyle={{ background: '#FFFBF7', border: '1px solid #E8D5C4', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
             </PieChart>
           </ResponsiveContainer>
+          <div className="space-y-1 mt-2">
+            {STRATEGIES.map((s, i) => (
+              <div key={s.name} className="flex items-center gap-2 text-xs font-mono">
+                <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: STRATEGY_COLORS[i] }} />
+                <span className="text-apex-text flex-1 truncate">{s.name}</span>
+                <span className="text-apex-muted">{s.pct}%</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Legend with details */}
-        <div className="col-span-2 bg-slate-800 p-6 rounded-lg border border-slate-700">
-          <h2 className="font-semibold mb-4">Allocation Breakdown</h2>
-          <div className="space-y-3 max-h-80 overflow-y-auto">
-            {allocations.map((alloc, idx) => (
-              <div
-                key={idx}
-                className="flex items-start gap-3 p-3 bg-slate-700 rounded border border-slate-600"
-              >
-                <div
-                  className="w-4 h-4 rounded mt-1"
-                  style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                />
-                <div className="flex-1">
-                  <div className="font-semibold flex items-center gap-2">
-                    {alloc.name}
-                    <span className="text-xs font-normal text-slate-400">
-                      ({alloc.percentage}% / ${alloc.amount.toLocaleString()})
-                    </span>
-                    {alloc.status === 'optimal' && <span className="text-green-400">✓ Optimal</span>}
-                    {alloc.status === 'underutilized' && (
-                      <span className="text-yellow-400">⚠️ Underutilized</span>
-                    )}
-                    {alloc.status === 'overweight' && <span className="text-orange-400">⬆️ Overweight</span>}
+        {/* Strategy Details */}
+        <div className="lg:col-span-2 card">
+          <h2 className="font-sans font-semibold text-apex-text mb-4">Active Strategies</h2>
+          <div className="space-y-2">
+            {STRATEGIES.map((s, i) => (
+              <div key={s.name} className="flex items-start gap-3 p-3 rounded-lg" style={{ background: `${STRATEGY_COLORS[i]}10`, border: `1px solid ${STRATEGY_COLORS[i]}30` }}>
+                <span className="text-lg">{s.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-sans font-semibold text-sm text-apex-text">{s.name}</span>
+                    <span className="font-mono text-xs text-apex-muted">{s.pct}% · ${((totalCapital * s.pct) / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
                   </div>
-                  <div className="text-sm text-slate-400 mt-1">{alloc.strategy}</div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    Expected return: <span className="text-slate-300">{alloc.expectedReturn}</span>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="font-mono text-xs text-apex-green">↑ {s.return}/yr</span>
+                    <span className="font-mono text-xs text-apex-muted">⏱ {s.timeframe}</span>
+                    <span className={`font-mono text-xs ${s.risk === 'High' ? 'text-apex-red' : s.risk === 'Medium' ? 'text-apex-yellow' : s.risk === 'Low' ? 'text-apex-green' : 'text-apex-muted'}`}>
+                      {s.risk} risk
+                    </span>
                   </div>
                 </div>
               </div>
@@ -180,107 +138,143 @@ export default function InvestmentPage() {
         </div>
       </div>
 
-      {/* Recommendations */}
-      <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 mb-8">
-        <h2 className="font-semibold mb-4">Portfolio Optimization Recommendations</h2>
-        <div className="space-y-3 text-sm">
-          <div className="flex items-start gap-3 p-3 bg-slate-700 rounded">
-            <span className="text-blue-400">→</span>
-            <div>
-              <strong>Increase Prediction Markets to 20%:</strong> Polymarket opportunities are
-              offering exceptional risk/reward. Current volatility creates arbitrage opportunities.
+      {/* Long-Term Holdings */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <Clock size={16} className="text-apex-accent" />
+          <h2 className="font-sans font-semibold text-apex-text">Long-Term Holdings (HODL Portfolio)</h2>
+          <span className="font-mono text-xs text-apex-muted ml-auto">Buy & Hold · Years-long horizon</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {LONG_TERM_HOLDINGS.map(h => (
+            <div key={h.asset} className="p-3 rounded-lg border border-apex-border bg-apex-surface">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <span className="font-sans font-bold text-apex-text">{h.asset}</span>
+                  <span className="font-mono text-xs text-apex-muted ml-2">{h.name}</span>
+                </div>
+                <span className="font-mono text-sm font-bold text-apex-accent">{h.allocation}%</span>
+              </div>
+              <div className="font-mono text-[10px] text-apex-muted mb-1">⏱ {h.horizon}</div>
+              <div className="font-mono text-[10px] text-apex-text leading-relaxed">{h.thesis}</div>
+              <div className="mt-2 h-1 bg-apex-border rounded-full overflow-hidden">
+                <div className="h-full bg-apex-accent rounded-full" style={{ width: `${h.allocation}%` }} />
+              </div>
             </div>
-          </div>
-          <div className="flex items-start gap-3 p-3 bg-slate-700 rounded">
-            <span className="text-yellow-400">⚠️</span>
-            <div>
-              <strong>Review Arbitrage Strategy:</strong> Funding rates on Bybit are declining.
-              Consider reallocating 5% to Crypto Momentum during this cycle.
-            </div>
-          </div>
-          <div className="flex items-start gap-3 p-3 bg-slate-700 rounded">
-            <span className="text-green-400">✓</span>
-            <div>
-              <strong>Cash Reserve is Well-Positioned:</strong> Maintaining 10% in USDC provides
-              flexibility for flash crashes or new opportunities.
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Asset Details Table */}
-      <div className="bg-slate-800 p-6 rounded-lg border border-slate-700">
-        <h2 className="font-semibold mb-4">Active Assets & Target Allocations</h2>
+      {/* DCA Plan */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <Zap size={16} className="text-apex-accent" />
+          <h2 className="font-sans font-semibold text-apex-text">Dollar Cost Averaging (DCA) Plan</h2>
+          <div className="ml-auto font-mono text-xs text-apex-muted">
+            ${monthlyDCA}/month · ${yearlyDCA.toLocaleString()}/year
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-600">
-                <th className="text-left py-2 text-slate-400">Strategy Bucket</th>
-                <th className="text-right py-2 text-slate-400">Allocation %</th>
-                <th className="text-right py-2 text-slate-400">Amount</th>
-                <th className="text-left py-2 text-slate-400">Target Assets</th>
-                <th className="text-right py-2 text-slate-400">Current Positions</th>
+              <tr className="border-b border-apex-border">
+                <th className="text-left py-2 font-mono text-xs text-apex-muted uppercase">Asset</th>
+                <th className="text-right py-2 font-mono text-xs text-apex-muted uppercase">Weekly</th>
+                <th className="text-right py-2 font-mono text-xs text-apex-muted uppercase">Monthly</th>
+                <th className="text-left py-2 pl-4 font-mono text-xs text-apex-muted uppercase">Strategy</th>
               </tr>
             </thead>
-            <tbody className="text-slate-300">
-              <tr className="border-b border-slate-700 hover:bg-slate-700 transition">
-                <td className="py-3">Crypto Momentum</td>
-                <td className="text-right">30%</td>
-                <td className="text-right font-semibold">$30,000</td>
-                <td>BTC, ETH, SOL</td>
-                <td className="text-right">2/3 deployed</td>
-              </tr>
-              <tr className="border-b border-slate-700 hover:bg-slate-700 transition">
-                <td className="py-3">Stock Momentum</td>
-                <td className="text-right">20%</td>
-                <td className="text-right font-semibold">$20,000</td>
-                <td>NVDA, AAPL, TSLA</td>
-                <td className="text-right">1/3 deployed</td>
-              </tr>
-              <tr className="border-b border-slate-700 hover:bg-slate-700 transition">
-                <td className="py-3">Prediction Markets</td>
-                <td className="text-right">15%</td>
-                <td className="text-right font-semibold">$15,000</td>
-                <td>Polymarket USDC</td>
-                <td className="text-right">0 deployed</td>
-              </tr>
-              <tr className="border-b border-slate-700 hover:bg-slate-700 transition">
-                <td className="py-3">Options Premium</td>
-                <td className="text-right">15%</td>
-                <td className="text-right font-semibold">$15,000</td>
-                <td>Calls, Puts (Alpaca)</td>
-                <td className="text-right">0 deployed</td>
-              </tr>
-              <tr className="border-b border-slate-700 hover:bg-slate-700 transition">
-                <td className="py-3">Arbitrage</td>
-                <td className="text-right">10%</td>
-                <td className="text-right font-semibold">$10,000</td>
-                <td>Cross-exchange spreads</td>
-                <td className="text-right">0 deployed</td>
-              </tr>
-              <tr className="hover:bg-slate-700 transition">
-                <td className="py-3">Cash Reserve</td>
-                <td className="text-right">10%</td>
-                <td className="text-right font-semibold">$10,000</td>
-                <td>USDC, USD</td>
-                <td className="text-right">100% held</td>
+            <tbody>
+              {DCA_PLAN.map(d => (
+                <tr key={d.asset} className="border-b border-apex-border/50 hover:bg-apex-cream/40 transition-colors">
+                  <td className="py-3 font-sans font-bold text-apex-text">{d.asset}</td>
+                  <td className="py-3 text-right font-mono text-apex-muted">${d.weekly}</td>
+                  <td className="py-3 text-right font-mono font-bold text-apex-green">${d.monthly}</td>
+                  <td className="py-3 pl-4 font-mono text-xs text-apex-muted">{d.strategy}</td>
+                </tr>
+              ))}
+              <tr className="bg-apex-cream/50">
+                <td className="py-2 font-sans font-bold text-apex-text">TOTAL</td>
+                <td className="py-2 text-right font-mono font-bold text-apex-accent">${DCA_PLAN.reduce((s, d) => s + d.weekly, 0)}</td>
+                <td className="py-2 text-right font-mono font-bold text-apex-accent">${monthlyDCA}</td>
+                <td className="py-2 pl-4 font-mono text-xs text-apex-green">+${yearlyDCA.toLocaleString()} annually</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Notes */}
-      <div className="mt-8 p-4 bg-blue-800 bg-opacity-20 border border-blue-600 rounded-lg text-sm">
-        <div className="font-semibold text-blue-300 mb-2">💡 How Capital Allocation Works</div>
-        <p className="text-slate-300">
-          The 6 capital buckets are designed to maximize risk-adjusted returns while maintaining
-          diversification. Each bucket has a specific strategy, target assets, and expected return
-          range. The Master Coordinator agent monitors allocations and recommends rebalancing when
-          market conditions change. As the platform learns which strategies perform best, capital
-          automatically allocates to higher-accuracy agents.
-        </p>
+      {/* Compounding Projections */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <Target size={16} className="text-apex-accent" />
+          <h2 className="font-sans font-semibold text-apex-text">Long-Term Growth Projections</h2>
+          <span className="font-mono text-xs text-apex-muted ml-auto">Starting: ${totalCapital.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {projections.map(p => (
+            <div key={p.years} className="p-3 rounded-lg border border-apex-border bg-apex-surface">
+              <div className="font-mono text-xs text-apex-muted mb-2 uppercase">{p.years} Year{p.years > 1 ? 's' : ''}</div>
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="font-mono text-[10px] text-apex-muted">Conservative</span>
+                  <span className="font-mono text-[10px] font-bold text-apex-muted">${p.conservative.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-mono text-[10px] text-apex-green">Base Case</span>
+                  <span className="font-mono text-[10px] font-bold text-apex-green">${p.base.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-mono text-[10px] text-apex-accent">Optimistic</span>
+                  <span className="font-mono text-[10px] font-bold text-apex-accent">${p.optimistic.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-xs font-mono text-apex-muted p-3 bg-apex-cream/50 rounded-lg">
+          <strong className="text-apex-text">Assumptions:</strong> Conservative = 12% APY (S&P average) · Base Case = 22% APY (active trading) · Optimistic = 40% APY (bull market).
+          Projections compound annually and do not include DCA contributions. Past performance does not guarantee future results.
+        </div>
       </div>
+
+      {/* Current Open Positions */}
+      {openPositions > 0 && (
+        <div className="card">
+          <h2 className="font-sans font-semibold text-apex-text mb-4">
+            Open Positions ({openPositions})
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-apex-border">
+                  {['Asset', 'Entry', 'Current', 'Qty', 'Unr. P&L', 'Stop Loss', 'Take Profit'].map(h => (
+                    <th key={h} className="py-2 text-left font-mono text-xs text-apex-muted uppercase first:pr-4 last:text-right">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(positions as any[]).map((pos: any) => {
+                  const pnl = pos.unrealizedPnl || 0;
+                  return (
+                    <tr key={pos.id} className="border-b border-apex-border/50 hover:bg-apex-cream/30 transition-colors">
+                      <td className="py-3 font-sans font-bold text-apex-text pr-4">{pos.asset}</td>
+                      <td className="py-3 font-mono text-apex-muted">${pos.entryPrice?.toFixed(4)}</td>
+                      <td className="py-3 font-mono text-apex-text">${pos.currentPrice?.toFixed(4)}</td>
+                      <td className="py-3 font-mono text-apex-muted">{pos.quantity?.toFixed(4)}</td>
+                      <td className={`py-3 font-mono font-bold ${pnl >= 0 ? 'text-apex-green' : 'text-apex-red'}`}>{pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</td>
+                      <td className="py-3 font-mono text-apex-red">{pos.stopLossPrice ? `$${pos.stopLossPrice.toFixed(4)}` : '—'}</td>
+                      <td className="py-3 font-mono text-apex-green text-right">{pos.takeProfitPrice ? `$${pos.takeProfitPrice.toFixed(4)}` : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,9 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <App />
       <Toaster position="top-right" toastOptions={{
-        style: { background: '#111827', color: '#E2EAF4', border: '1px solid #1E2D45', fontFamily: 'Space Mono' },
-        success: { iconTheme: { primary: '#00FF88', secondary: '#111827' } },
-        error: { iconTheme: { primary: '#FF3B5C', secondary: '#111827' } },
+        style: { background: '#FFFBF7', color: '#2C1810', border: '1px solid #E8D5C4', fontFamily: 'Space Mono', fontSize: 12 },
+        success: { iconTheme: { primary: '#2D8A4A', secondary: '#FFFBF7' } },
+        error: { iconTheme: { primary: '#DC2626', secondary: '#FFFBF7' } },
       }} />
     </QueryClientProvider>
   </React.StrictMode>

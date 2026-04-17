@@ -23,7 +23,7 @@ const voteColor = (vote?: string) => {
 };
 
 const confidenceBar = (conf: number) => {
-  const color = conf >= 75 ? '#00FF88' : conf >= 50 ? '#FFD700' : '#FF3B5C';
+  const color = conf >= 75 ? '#2D8A4A' : conf >= 50 ? '#F5A623' : '#DC2626';
   return (
     <div className="mt-1 h-1 bg-apex-border rounded-full overflow-hidden">
       <div style={{ width: `${conf}%`, background: color, height: '100%', borderRadius: '99px', transition: 'width 0.5s ease' }} />

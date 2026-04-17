@@ -424,7 +424,9 @@ export async function runInvestmentCommitteeDebate(
       return result;
     } catch (err) {
       logger.error(`Agent ${agent.id} Round 1 failed`, { err });
-      return { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD', confidence: 0, openingArgument: 'Failed', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
+      const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable — defaulting to HOLD', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
+      io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
+      return fallback;
     }
   });
 
@@ -461,6 +463,10 @@ export async function runInvestmentCommitteeDebate(
     }
   } catch (err) {
     logger.error('Devil\'s Advocate Round 1 failed', { err });
+    const fallback = { agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
+    round1Results.push(fallback);
+    transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: 'HOLD', argument: 'Analysis unavailable' });
+    io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
   }
 
   logger.info('\n⚔️  ROUND 2: CROSS-EXAMINATION');

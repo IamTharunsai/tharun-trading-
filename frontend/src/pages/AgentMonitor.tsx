@@ -63,7 +63,7 @@ export default function AgentMonitorPage() {
     };
 
     pollActivities();
-    const interval = setInterval(pollActivities, 2000); // Poll every 2 seconds
+    const interval = setInterval(pollActivities, 5000);
     return () => clearInterval(interval);
   }, [token, selectedAgent, filterType]);
 
