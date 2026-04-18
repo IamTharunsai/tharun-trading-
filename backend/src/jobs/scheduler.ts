@@ -70,8 +70,8 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
 
 export function initScheduler() {
 
-  // ── EVERY 90 SECONDS: Run Investment Committee Debate ─────────────────────
-  cron.schedule('*/90 * * * * *', async () => {
+  // ── EVERY 2 HOURS: Run Investment Committee Debate (paper mode — save credits) ─
+  cron.schedule('0 */2 * * *', async () => {
     if (isKillSwitchActive()) return;
     const assetsToAnalyze = CRYPTO_ASSETS.slice(0, 5);
     const asset = assetsToAnalyze[Math.floor(Math.random() * assetsToAnalyze.length)];
