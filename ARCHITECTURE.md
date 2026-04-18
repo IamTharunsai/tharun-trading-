@@ -1,581 +1,909 @@
 # THARUN TRADING AGENT — Complete System Architecture
-## End-to-End Technical & Operational Documentation
+## End-to-End Technical, API, Deployment & Trading Documentation
 
 ---
 
 ## 1. WHAT IS THARUN TRADING AGENT?
 
-Tharun Trading Agent is a fully autonomous AI trading system that operates like a Wall Street investment committee running 24/7 on your behalf. It monitors markets in real-time, convenes a 15-agent AI debate before every trade, manages risk automatically, and executes trades across crypto and stocks — all without you lifting a finger.
+Tharun Trading Agent is a fully autonomous AI trading platform that runs 24/7 on your behalf. Before every single trade, 25 specialized AI agents debate in 12 mandatory stages. The system trades on Alpaca (stocks, zero commission) and Polymarket (prediction markets, zero fees) — both in paper mode first. Starting capital: $100. Every cent is tracked, compounded, and protected by 25 hard-coded safety laws.
 
-**The core philosophy:** No single AI signal. Every trade requires a 3-round debate between 15 specialized AI agents, a risk validation layer, and market regime confirmation before a single dollar moves.
+**Core philosophy:** A trade must pass 25 laws, a viability check, 12 analysis stages, and 25-agent consensus — or it never happens.
 
 ---
 
-## 2. SYSTEM OVERVIEW — 7 OPERATIONAL STAGES
+## 2. COMPLETE TECH STACK
 
 ```
-STAGE 1: MARKET DATA INGESTION
-         ↓
-STAGE 2: MARKET SNAPSHOT CONSTRUCTION
-         ↓
-STAGE 3: 15-AGENT INVESTMENT COMMITTEE DEBATE (3 rounds)
-         ↓
-STAGE 4: RISK VALIDATION & GUARDRAILS
-         ↓
-STAGE 5: TRADE EXECUTION (Paper / Alpaca / Binance)
-         ↓
-STAGE 6: POSITION MONITORING (10-second stop-loss checks)
-         ↓
-STAGE 7: SELF-LEARNING & JOURNAL GENERATION
-```
-
----
-
-## 3. FRONTEND ARCHITECTURE
-
-**Technology Stack:**
-- React 18 + Vite + TypeScript
-- Zustand (global state: token, prices, agent council, kill switch)
-- @tanstack/react-query (API data fetching with 5–30s refresh intervals)
-- Socket.io-client (real-time WebSocket events)
-- Recharts (analytics charts), lightweight-charts (TradingView-style candlesticks)
-- Tailwind CSS + CSS variables (warm cream/orange theme)
-- Google Fonts: Syne (headings) + Space Mono (data)
-
-**Pages & Features:**
-
-| Page | Purpose |
-|------|---------|
-| Login | JWT auth, TOTP 2FA ready |
-| Dashboard | Command center — P&L, portfolio, risk monitor, agent council |
-| Portfolio | Pie allocation, 90-day value history, open positions |
-| Trades | Full paginated trade history (25/page) |
-| Agent Council | Live view of all 10 core agents voting |
-| Debate Room | 15-agent live debate — trigger manually or watch auto debates |
-| Agent Chat | Chat 1-on-1 with any of the 10 agents about any asset |
-| Agent Monitor | Real-time feed of what agents are doing every 5 seconds |
-| Charts | TradingView candlestick charts (Binance data, 5 assets) |
-| Analytics | Daily P&L bar charts, portfolio area chart, win rate stats |
-| Journal | AI-generated daily trading journal entries |
-| News | Market news with sentiment scores from agents |
-| News & Geopolitics | Geopolitical events that affect trading decisions |
-| Investment Plan | Long-term holdings, DCA plan, compounding projections |
-| History | Full archived trade history |
-| Settings | Live system settings from backend |
-
-**Real-time Events (WebSocket → Frontend):**
-- `price:update` → live price ticker in header
-- `debate:start`, `debate:agent-voted`, `debate:complete` → Debate Room live feed
-- `council:start`, `agent:status`, `council:complete` → Agent Council panel
-- `position:closed` → toast notification with P&L
-- `guardrail:triggered` → alert banner
-
----
-
-## 4. BACKEND ARCHITECTURE
-
-**Technology Stack:**
-- Node.js + Express + TypeScript
-- Prisma ORM → PostgreSQL (Supabase cloud)
-- Socket.io (WebSocket server, emits real-time events)
-- node-cron (4 scheduled jobs)
-- JWT (8hr expiry) + bcrypt + speakeasy TOTP
-- Anthropic SDK (Claude claude-sonnet-4-20250514)
-- Winston logger
-
-**API Routes:**
-
-| Route | Function |
-|-------|---------|
-| POST /api/auth/login | Login with email + password + optional TOTP |
-| GET  /api/auth/me | Get current user profile |
-| GET  /api/portfolio | Portfolio state (value, P&L, positions) |
-| GET  /api/portfolio/positions | Open positions with live P&L |
-| GET  /api/portfolio/snapshots | Historical value snapshots |
-| GET  /api/trades | Paginated trade history |
-| GET  /api/trades/stats | Win rate, profit factor, best/worst trade |
-| GET  /api/agents/decisions | Council voting history |
-| POST /api/agents/trigger-debate | Manually trigger a debate for any asset |
-| GET  /api/market/prices | Current prices for all tracked assets |
-| GET  /api/market/news | News articles with sentiment analysis |
-| GET  /api/chat/:agentId | Chat with a specific AI agent |
-| GET  /api/journal | Daily trading journals |
-| GET  /api/settings | System configuration |
-| POST /api/kill-switch/activate | Emergency halt all trading |
-| GET  /api/monitor/activities | Agent activity feed |
-| GET  /api/monitor/news | Real-time news feed |
-| GET  /api/monitor/geopolitics | Geopolitical event tracker |
-
-**Scheduled Jobs (node-cron):**
-
-| Interval | Job |
-|----------|-----|
-| Every 90 seconds | Pick a random crypto asset and run the full 15-agent debate |
-| Every 10 seconds | Scan all open positions for stop-loss / take-profit breach |
-| Every 5 minutes | Save portfolio snapshot to database |
-| Every hour | Detect market regime (trending, ranging, volatile) |
-| 11:59 PM daily | Generate AI daily journal entry |
-| Every Sunday | Generate weekly performance report |
-
----
-
-## 5. DATABASE SCHEMA (PostgreSQL via Prisma)
-
-**Core Tables:**
-- `User` — owner account, JWT secret, TOTP secret
-- `Portfolio` — cash balance, total value, P&L (day/total), drawdown, trade count
-- `Position` — open positions (asset, quantity, entry price, stop loss, take profit)
-- `Trade` — full trade record (entry, exit, P&L, exit reason, agent decision ID)
-- `AgentDecision` — every council vote (asset, votes array, final decision, confidence, executed)
-- `PortfolioSnapshot` — 5-minute value snapshots for charts
-- `NewsArticle` — news with sentiment scores
-- `TradingJournal` — daily AI-written journal entries
-- `SystemSettings` — trading parameters (risk %, stop loss, vote thresholds)
-- `ChatHistory` — conversation history per agent per user
-
----
-
-## 6. THE 15-AGENT INVESTMENT COMMITTEE
-
-### How Agents Think
-
-Each agent is a specialized Claude claude-sonnet-4-20250514 instance with a 500-800 word expert system prompt encoding:
-1. **Core Theory** — the discipline's first principles
-2. **Signal Patterns** — 10 specific BUY conditions, 10 SELL conditions
-3. **Confidence Modifiers** — what raises/lowers conviction
-4. **Failure Modes** — when this agent's analysis is wrong
-5. **Decision Framework** — exact if/then logic for votes
-
-### The 15 Agents
-
-| # | Agent | Expertise | Data Sources |
-|---|-------|-----------|-------------|
-| 1 | The Technician | RSI, MACD, Bollinger Bands, candlestick patterns | Computed indicators |
-| 2 | The Newshound | News sentiment, events, earnings | Finnhub API |
-| 3 | The Sentiment Analyst | Fear & Greed index, market psychology | Alternative.me |
-| 4 | The Fundamental Analyst | Market cap, volume, protocol fundamentals | Internal snapshot |
-| 5 | The Risk Manager ⚡ | Drawdown, volatility, position sizing — HAS VETO | Portfolio state |
-| 6 | The Trend Prophet | EMA crosses, trend direction, momentum | 200-day EMA |
-| 7 | The Volume Detective | Volume patterns, accumulation/distribution | Volume indicators |
-| 8 | The Whale Watcher | Large order flows, institutional moves | On-chain data proxy |
-| 9 | The Macro Economist | Interest rates, DXY, global macro | Macro context |
-| 10 | The Devil's Advocate | Counter-argument, why the trade could fail | All signals |
-| 11 | The Elliott Wave Master | Wave counting, Fibonacci retracements | Candle data |
-| 12 | The Options Flow Analyst | Put/call ratios, unusual options activity | Market context |
-| 13 | The Polymarket Oracle | Prediction market probabilities | Polymarket API |
-| 14 | The Arbitrageur | Cross-exchange price gaps, funding rates | Price feeds |
-| 15 | The Coordinator 👑 | Synthesizes all votes, makes final decision | All 14 agents |
-
-### The 3-Round Debate Process
-
-**Round 1 — Opening Arguments (15 min budget)**
-- All 14 agents simultaneously analyze the market snapshot
-- Each submits: BUY/SELL/HOLD vote + confidence 0-100% + reasoning + key factors + risk warnings
-- Devil's Advocate argues against the majority
-
-**Round 2 — Cross-Examination**
-- Agents with high confidence challenge agents with opposing views
-- The Coordinator identifies the key points of disagreement
-- Confidence scores may shift up or down based on new arguments
-
-**Round 3 — Final Verdict**
-- Each agent reaffirms or changes their vote after hearing all arguments
-- Risk Manager can VETO any trade (overrides consensus)
-- Coordinator synthesizes a master analysis and final decision
-- Execution requires: ≥7/10 go votes + avg confidence ≥65% + no Risk Manager veto
-
----
-
-## 7. STAGE 2: MARKET SNAPSHOT CONSTRUCTION
-
-Before the debate begins, the system builds a complete MarketSnapshot object:
-
-```
-Price Data:
-  - Current price, 24h change %, volume, bid/ask spread
-  
-Technical Indicators (computed from Binance candle data):
-  - RSI (14-period)
-  - MACD (12/26/9) + histogram
-  - Bollinger Bands (20-period, 2 std dev)
-  - EMA 9, EMA 21, EMA 200
-  - ATR (14-period) for volatility
-  - Volume 20-day average
-  
-Candle History:
-  - Last 200 hourly candles (OHLCV)
-  - Last 5 candles shown to agents verbatim
-  
-Market Context:
-  - 24h High / Low
-  - Market cap (if available)
-  - Market regime (trending / ranging / volatile / breakout)
-  
-Portfolio State:
-  - Current cash balance
-  - Existing positions
-  - Today's P&L
-  - Drawdown from peak
+┌─────────────────────────────────────────────────────────────────────────┐
+│  FRONTEND                                                               │
+│  React 18 + Vite + TypeScript                                           │
+│  Zustand (global state) + TanStack Query (data fetching)                │
+│  Socket.io-client (real-time WebSocket)                                 │
+│  Recharts + lightweight-charts (TradingView-style candlesticks)         │
+│  Tailwind CSS (cream/orange warm theme)                                 │
+│  Google Fonts: Syne (headings) + Space Mono (data)                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│  BACKEND                                                                │
+│  Node.js 20 + Express + TypeScript                                      │
+│  Prisma ORM (PostgreSQL on Supabase)                                    │
+│  Socket.io (WebSocket server)                                           │
+│  node-cron (scheduled jobs)                                             │
+│  JWT + bcrypt + speakeasy TOTP (auth)                                   │
+│  Winston (structured logging)                                           │
+│  ethers.js v6 (Polygon wallet for Polymarket)                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│  AI ENGINE                                                              │
+│  Anthropic SDK → Claude claude-sonnet-4-20250514                             │
+│  25 specialist agents with MASTER_TRADING_KNOWLEDGE                    │
+│  12-stage analysis pipeline                                             │
+│  TopTrader 25 laws validation                                           │
+│  Kelly Criterion position sizing                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  BROKERS / MARKETS                                                      │
+│  Alpaca (stocks + crypto, zero commission, paper + live)                │
+│  Polymarket CLOB (prediction markets, zero fees, Polygon chain)         │
+│  Binance.US (crypto, 0.1% fee — secondary)                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│  DATA SOURCES                                                           │
+│  Binance WebSocket + REST (crypto prices + candles)                     │
+│  Polygon.io (stock prices, options flow)                                │
+│  Finnhub (stock news, earnings calendar)                                │
+│  Alpha Vantage (forex rates, economic data)                             │
+│  NewsAPI (broad market news)                                            │
+│  Alternative.me (Fear & Greed index)                                    │
+│  Polymarket Gamma API (prediction market probabilities)                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│  INFRASTRUCTURE                                                         │
+│  Frontend → Vercel (auto-deploys from GitHub)                           │
+│  Backend  → Railway or Render (Node.js, persistent WebSocket)           │
+│  Database → Supabase (PostgreSQL, managed)                              │
+│  Auth     → Supabase Auth + custom JWT                                  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 8. STAGE 4: RISK VALIDATION GUARDRAILS
-
-Before ANY trade executes, it passes through 7 guardrail checks:
-
-| Check | Rule | Action if Breached |
-|-------|------|-------------------|
-| Kill Switch | Is emergency stop active? | BLOCK all trades |
-| Daily Loss Limit | Is today's loss > 5%? | HALT trading for the day |
-| Weekly Drawdown | Is weekly drawdown > 10%? | PAUSE until next week |
-| Max Drawdown | Is drawdown from peak > 20%? | ACTIVATE kill switch |
-| Max Position Size | Would this trade exceed 10% of portfolio? | REDUCE position size |
-| Cash Reserve | Would cash drop below 30%? | REDUCE or BLOCK |
-| Max Trades/Day | Already executed 50 trades today? | BLOCK |
-
-After passing guardrails → `validateTradeSignal()` computes:
-- **Position size** = (Portfolio Value × Risk%) ÷ (Entry Price − Stop Loss)
-- **Stop loss** = Set by agent council (typically 3% crypto, 2% stocks)
-- **Take profit** = Set by agent council (typically 6% = 2:1 risk/reward)
-
----
-
-## 9. STAGE 5: TRADE EXECUTION
-
-**Trading Modes:**
+## 3. SYSTEM FLOW — 12-STAGE PIPELINE
 
 ```
-PAPER MODE (default, safe):
-  - All trades recorded in database only
-  - No real money moves
-  - Perfect for testing and backtesting
-  
-ALPACA MODE (stocks + crypto):
-  - Real brokerage via Alpaca API
-  - Paper trading: paper-api.alpaca.markets
-  - Live trading: api.alpaca.markets
-  - Supports: AAPL, TSLA, NVDA, MSFT + 200+ stocks
-  - Also supports crypto via Alpaca Crypto API
-  
-BINANCE MODE (crypto only):
-  - Direct execution on Binance.US
-  - Uses Binance Spot API
-  - Supports: BTC, ETH, SOL, BNB, ADA, etc.
+Every 90 seconds, for each monitored asset:
+
+STAGE  1 ── Macro Environment Check  (Agents 13, 16 — Macro + Intermarket)
+STAGE  2 ── News & Catalyst Screen   (Agents 14, 15 — News + Geopolitical)
+STAGE  3 ── Institutional Flow       (Agents 10, 12 — Sector Rotation + Inst.)
+STAGE  4 ── Fundamental Gate         (Agents 8, 9, 11 — Fundamentals)
+STAGE  5 ── Multi-Timeframe Trend    (Agent 5  — mandatory gate)
+STAGE  6 ── Key Level Identification (Agent 6  — mandatory gate, draws chart)
+STAGE  7 ── Pattern Recognition      (Agents 1, 7 — Chart Master + Elliott)
+STAGE  8 ── Indicator Confirmation   (Agents 2, 3 — mandatory gate)
+STAGE  9 ── Volume & Smart Money     (Agents 4, 22 — mandatory gate)
+STAGE 10 ── Sentiment & Psychology   (Agents 21, 23)
+STAGE 11 ── Risk Validation          (Agents 17-20 — Risk Commander VETO)
+STAGE 12 ── Investment Committee     (Agents 24, 25 — Master + Devil's Advocate)
+         ↓
+25 TOP TRADER LAWS CHECK             (topTraderRules.ts — hard veto)
+         ↓
+TRADE VIABILITY CHECK                (microAccountEngine.ts — fee/profit check)
+         ↓
+MICRO POSITION SIZING                (Kelly fraction × confidence × portfolio)
+         ↓
+EXECUTION                            (Alpaca paper / Polymarket paper)
+         ↓
+POSITION MONITOR                     (10-second stop-loss scan)
+         ↓
+POST-TRADE LEARNING                  (self-learning agents update accuracy)
 ```
 
-**Alpaca Integration — How to Activate:**
-1. Sign up at alpaca.markets (free)
-2. Get paper API keys from the dashboard
-3. Set in .env: `ALPACA_API_KEY=PK...` and `ALPACA_SECRET_KEY=...`
-4. Set `ALPACA_BASE_URL=https://paper-api.alpaca.markets`
-5. Set `TRADING_MODE=paper` (or `live` for real money)
-6. Alpaca provides: fractional shares, after-hours trading, no commission
+---
 
-**Polymarket Integration — How It Works:**
-- Agent 13 (The Polymarket Oracle) queries Polymarket prediction markets
-- APIs: Gamma API (markets), CLOB API (order book), Data API (prices)
-- Polymarket shows crowd-sourced probability on events (election odds, Fed decisions, etc.)
-- If Polymarket shows >70% probability of an event that affects your asset, agents factor this in
-- Example: If Polymarket shows 80% chance of rate cut → increases BUY confidence for growth stocks
-- The `POLYMARKET_PRIVATE_KEY` and `POLYMARKET_WALLET_ADDRESS` are for placing trades directly on Polymarket (prediction market trading)
+## 4. THE 25 SPECIALIST AGENTS
+
+| # | Name | Category | Specialty | Has Veto? |
+|---|------|----------|-----------|-----------|
+| 1 | The Chart Master | TECHNICAL | Price action, chart patterns (H&S, Cup) | No |
+| 2 | The Indicator King | TECHNICAL | RSI, MACD, Bollinger, EMA confluence | No |
+| 3 | The Candlestick Oracle | TECHNICAL | 50+ candlestick patterns + win rates | No |
+| 4 | The Volume Whisperer | TECHNICAL | Wyckoff phases, OBV, accumulation | No |
+| 5 | The Multi-Timeframe Analyst | TECHNICAL | Elder Triple Screen (monthly→hourly) | No |
+| 6 | The S/R Expert | TECHNICAL | Supply/demand zones, polarity principle | No |
+| 7 | The Elliott Wave Master | TECHNICAL | Wave counts, Fibonacci targets | No |
+| 8 | The Fundamental Analyst | FUNDAMENTAL | DCF, FCF, quality scoring (8+ = buy) | No |
+| 9 | The Earnings Specialist | FUNDAMENTAL | PEAD drift, conference call analysis | No |
+| 10 | The Sector Rotation Expert | FUNDAMENTAL | Economic cycle → sector money flows | No |
+| 11 | The Crypto Native | FUNDAMENTAL | MVRV Z-score, on-chain, halving cycles | No |
+| 12 | The Institutional Tracker | FUNDAMENTAL | 13F filings, COT, dark pool prints | No |
+| 13 | The Macro Strategist | MACRO | Dalio debt cycles, Fed policy, DXY | No |
+| 14 | The News Catalyst Expert | MACRO | Tier 1-3 news impact, rumor/news trade | No |
+| 15 | The Geopolitical Analyst | MACRO | War/election/regulation risk playbook | No |
+| 16 | The Intermarket Analyst | MACRO | Bond/dollar/gold/copper correlations | No |
+| 17 | The Risk Commander | RISK | Capital preservation, 7 absolute rules | **YES** |
+| 18 | The Execution Specialist | RISK | Order types, slippage, time-of-day | No |
+| 19 | The Stop Loss Architect | RISK | ATR stops, trailing stops, TP structure | No |
+| 20 | The Portfolio Optimizer | RISK | Kelly, correlation, Sharpe ratio | No |
+| 21 | The Sentiment Oracle | INTELLIGENCE | Fear/Greed, put/call, short squeeze | No |
+| 22 | The Whale Intelligence Agent | INTELLIGENCE | Funding rates, exchange flows, dark pool | No |
+| 23 | The Pattern Recognition AI | INTELLIGENCE | Historical base rates, anomaly detection | No |
+| 24 | The Master Coordinator | STRATEGY | CIO — synthesizes all 24, final decision | No |
+| 25 | The Devil's Advocate | STRATEGY | Destroys every thesis — speaks last | No |
+
+**Every agent has read 20 trading books encoded in MASTER_TRADING_KNOWLEDGE:**
+Murphy's Technical Analysis, Van Tharp's Position Sizing, Taleb's Black Swan, Ray Dalio's Principles, Mark Douglas's Trading in the Zone, and 15 more.
 
 ---
 
-## 10. INVESTMENT KNOWLEDGE — HOW TO TRADE LIKE TOP 1%
+## 5. THE 25 TOP TRADER LAWS (Hard-coded, Cannot Be Overridden)
 
-The system is built on the same principles used by Renaissance Technologies, Bridgewater, and Two Sigma:
-
-### Crypto Strategy (Short-term + Long-term)
-**Day Trading (auto):**
-- 15-agent debate every 90 seconds on BTC, ETH, SOL, BNB, ADA
-- Only trades when ≥7 agents agree + high confidence
-- 2:1 minimum risk/reward ratio (6% TP vs 3% SL)
-- Never risks more than 1% portfolio per trade
-
-**Long-term Holds (managed manually via Investment page):**
-- BTC: Digital gold, store of value, 4-year cycle plays
-- ETH: Infrastructure bet, fee revenue, staking yield
-- SOL: High-throughput L1, developer activity proxy
-
-### Stock Strategy
-**Momentum + Fundamental (Alpaca):**
-- NVDA, AAPL, TSLA, MSFT as core holdings
-- Agent 4 (Fundamentals) and Agent 6 (Trend) drive stock decisions
-- Earnings season awareness from Agent 2 (Newshound)
-- Macro rate environment from Agent 9 (Macro Economist)
-
-### Dollar Cost Averaging (DCA)
-The Investment page tracks automated DCA schedules:
-- Weekly: $50 BTC + $30 ETH
-- Monthly: $200 BTC + $100 ETH + $100 NVDA
-- Removes emotion — best strategy for 5-10 year horizons
-
-### Compounding Projections (How $10,000 grows)
-| Years | 12% APY | 22% APY | 40% APY |
-|-------|---------|---------|---------|
-| 1 year | $11,200 | $12,200 | $14,000 |
-| 3 years | $14,049 | $18,154 | $27,440 |
-| 5 years | $17,623 | $27,027 | $53,782 |
-| 10 years | $31,058 | $73,046 | $289,254 |
-
-The system targets 22-40% APY through:
-1. High-quality trades (≥65% win rate)
-2. Strict 2:1 risk/reward
-3. Never losing more than 5% in a day
-4. DCA into winners
-5. Self-learning from every trade
+| Law | Rule |
+|-----|------|
+| 1 | Never risk more than 1% of portfolio on any single trade |
+| 2 | Trading fees must be less than 20% of expected profit |
+| 3 | Minimum 2:1 risk/reward ratio (target 3:1+) |
+| 4 | No new trades during 2-7 AM UTC (low liquidity hours) |
+| 5 | DEFEND mode = no new trades until portfolio recovers |
+| 6 | Minimum trade liquidity required |
+| 7 | No chasing — entry within 0.5% of ideal price |
+| 8 | Every trade MUST have a stop loss. No exceptions. Ever. |
+| 9 | Minimum 70% agent consensus required |
+| 10 | Minimum 65% average confidence required |
+| 11 | No holding stocks into earnings without deliberate intent |
+| 12 | Daily loss limit: -3% → halt all trading |
+| 13 | Max drawdown from peak: 15% → emergency stop |
+| 14 | Cash reserve must stay above 15% at all times |
+| 15 | Max 3 correlated positions (all crypto = 1 bucket) |
+| 16 | Cooling-off period after 3 consecutive losses |
+| 17 | Every trade must have reasoning recorded in DB |
+| 18 | Marginal confidence (65-75%) = 50% normal size |
+| 19 | High VIX = smaller positions |
+| 20 | Trail stops aggressively when profitable |
+| 21 | Take profit must be defined BEFORE entering the trade |
+| 22 | Stock market must be open for stock trades (9:30-4:00 PM ET) |
+| 23 | Account under $500 → prefer Polymarket + Alpaca (zero fees) |
+| 24 | NEVER average down a losing position |
+| 25 | Meta-law: 3+ warnings with no violations = SKIP anyway |
 
 ---
 
-## 11. STAGE 7: SELF-LEARNING SYSTEM
+## 6. MARKET APIS — COMPLETE LIST & HOW TO TEST EACH
 
-After every trade closes, the system runs post-trade analysis:
-1. Was the debate outcome correct?
-2. Which agents voted correctly vs incorrectly?
-3. What indicator best predicted the outcome?
-4. Agent accuracy scores are tracked over time
+### 6.1 APIs You Need (Priority Order for Paper Trading)
 
-**Daily Journal (11:59 PM):**
-Claude generates a human-readable journal entry covering:
-- Total trades today and win rate
-- Best and worst trade with reasoning
-- What the agents got right/wrong
-- Lessons learned for tomorrow
-
-**Weekly Report (Sunday midnight):**
-- Performance vs benchmark (BTC buy-and-hold)
-- Most profitable assets this week
-- Agent performance rankings
-- Regime analysis (was it trending, ranging, volatile?)
+| Priority | API | Purpose | Cost | Sign Up |
+|----------|-----|---------|------|---------|
+| 🔴 MUST | Anthropic (Claude) | Powers all 25 agents | $0.003/1K tokens | console.anthropic.com |
+| 🔴 MUST | Supabase | Database | Free tier (500MB) | supabase.com |
+| 🔴 MUST | Alpaca Paper | Stock trading (zero commission) | Free | alpaca.markets |
+| 🟡 HIGH | Polygon.io | Stock price data | Free tier (5 calls/min) | polygon.io |
+| 🟡 HIGH | Finnhub | Stock news + earnings | Free tier (60 calls/min) | finnhub.io |
+| 🟡 HIGH | Polymarket Gamma | Prediction market data | Free (public) | No key needed |
+| 🟢 MED | Binance WebSocket | Crypto prices (real-time) | Free (public) | No key needed |
+| 🟢 MED | Alpha Vantage | Forex + economic data | Free tier (5 calls/min) | alphavantage.co |
+| 🟢 MED | NewsAPI | Market news | Free tier (100 calls/day) | newsapi.org |
+| 🔵 LOW | Alternative.me | Fear & Greed index | Free (public) | No key needed |
 
 ---
 
-## 12. MARKET REGIME DETECTION
+### 6.2 HOW TO TEST EACH API (curl commands)
 
-Before each debate, the system classifies the current market regime:
-
-| Regime | Conditions | Agent Behavior |
-|--------|-----------|----------------|
-| TRENDING_BULL | RSI > 55, EMA9 > EMA21 > EMA200, price rising | Trend agents get +15% weight |
-| TRENDING_BEAR | RSI < 45, EMA9 < EMA21 < EMA200, price falling | Risk agents get +20% weight |
-| RANGING | Bollinger width < 0.05, ADX < 25 | Oscillator agents preferred, small position sizes |
-| VOLATILE | ATR > 3%, Bollinger width > 0.15 | Risk Manager gets veto authority, 50% position sizes |
-| BREAKOUT | Price breaks Bollinger with volume > 150% | Momentum agents get +20% weight |
-
----
-
-## 13. DATA SOURCES & EXTERNAL APIs
-
-| Source | Data | Used By |
-|--------|------|---------|
-| Binance WebSocket | Live crypto prices (BTC, ETH, SOL, BNB, ADA) | All price displays, stop-loss monitor |
-| Binance REST | 1h OHLCV candles for indicators | All 15 agents |
-| Finnhub | Stock news, earnings calendar | Agent 2 (Newshound) |
-| Alternative.me | Fear & Greed Index | Agent 3 (Sentiment) |
-| Polygon.io | Stock price data, options flow | Agents 4, 12 |
-| Alpha Vantage | Forex rates, economic data | Agent 9 (Macro) |
-| NewsAPI | Broad market news | News page |
-| Polymarket APIs | Prediction market probabilities | Agent 13 (Polymarket Oracle) |
-| Supabase | Database hosting (PostgreSQL) | All data persistence |
-
----
-
-## 14. GSTACK — HOW TO USE IN THIS PROJECT
-
-**What is GStack?**
-GStack is an open-source framework created by Garry Tan (Y Combinator President) that structures Claude Code (Anthropic's AI coding assistant) to work like a 23-person startup team. Each "role" (CEO, engineer, QA, designer, security) has its own set of responsibilities and constraints.
-
-**How GStack helps Tharun Trading Agent:**
-
-### Option A: Development Workflow (Immediate Use)
-Install GStack to supercharge how you develop and maintain this codebase:
+**Test 1 — Anthropic (Claude API)**
 ```bash
-# Install Claude Code CLI
-npm install -g @anthropic-ai/claude-code
-
-# GStack gives Claude Code a CLAUDE.md that defines:
-# - An "Engineer" role for backend changes
-# - A "QA" role that runs tests before merging
-# - A "Security Reviewer" that checks API key exposure
-# - A "Product Manager" that tracks feature progress
+curl https://api.anthropic.com/v1/messages \
+  -H "x-api-key: YOUR_ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 100,
+    "messages": [{"role":"user","content":"Say OK if you can hear me"}]
+  }'
+# Expected: {"content":[{"text":"OK"}]...}
 ```
 
-### Option B: Agent Enhancement (Advanced)
-Use GStack's agent orchestration pattern to add more agents to the committee:
-- Create a "Research Director" agent that coordinates Agents 1-15
-- Add specialized agents for specific sectors (Healthcare, Energy, Commodities)
-- Build a "Backtester" agent that validates strategies against 5 years of data
+**Test 2 — Alpaca Paper Trading (account info)**
+```bash
+curl https://paper-api.alpaca.markets/v2/account \
+  -H "APCA-API-KEY-ID: YOUR_ALPACA_API_KEY" \
+  -H "APCA-API-SECRET-KEY: YOUR_ALPACA_SECRET"
+# Expected: {"buying_power":"...","portfolio_value":"100000",...}
+```
 
-### Option C: Deployment Pipeline
-GStack's deployment skills can automate:
-- Auto-deploy backend updates to Railway/Render
-- Frontend deploys to Vercel on every git push
-- Database migrations via Prisma applied automatically
+**Test 3 — Alpaca Paper: Place a paper order**
+```bash
+curl -X POST https://paper-api.alpaca.markets/v2/orders \
+  -H "APCA-API-KEY-ID: YOUR_ALPACA_API_KEY" \
+  -H "APCA-API-SECRET-KEY: YOUR_ALPACA_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "qty": "1",
+    "side": "buy",
+    "type": "market",
+    "time_in_force": "day"
+  }'
+# Expected: {"id":"...","status":"accepted","symbol":"AAPL",...}
+```
 
-**Recommended immediate step:** Add `CLAUDE.md` to this project's root with GStack structure — it makes every future Claude Code session instantly aware of the codebase architecture.
+**Test 4 — Alpaca: Get latest stock price**
+```bash
+curl "https://data.alpaca.markets/v2/stocks/AAPL/bars/latest" \
+  -H "APCA-API-KEY-ID: YOUR_ALPACA_API_KEY" \
+  -H "APCA-API-SECRET-KEY: YOUR_ALPACA_SECRET"
+# Expected: {"bar":{"c":195.5,"h":196,"l":194,"o":195,"v":5000000,...}}
+```
+
+**Test 5 — Polymarket (no key needed)**
+```bash
+# Get active prediction markets
+curl "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=5"
+# Expected: array of markets with yesPrice, noPrice, question fields
+
+# Get specific market data
+curl "https://clob.polymarket.com/markets?next_cursor=&limit=3"
+# Expected: markets with orderbook data
+```
+
+**Test 6 — Polygon.io (stock data)**
+```bash
+curl "https://api.polygon.io/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-10?apiKey=YOUR_POLYGON_KEY"
+# Expected: {"results":[{"c":185,"h":186,"l":184,"o":185,"v":60000000,...}]}
+```
+
+**Test 7 — Finnhub (news + earnings)**
+```bash
+# Stock news
+curl "https://finnhub.io/api/v1/company-news?symbol=AAPL&from=2024-01-01&to=2024-01-10&token=YOUR_FINNHUB_KEY"
+# Expected: [{"headline":"Apple reports...","sentiment":0.8,...}]
+
+# Earnings calendar
+curl "https://finnhub.io/api/v1/calendar/earnings?from=2024-01-01&to=2024-01-31&token=YOUR_FINNHUB_KEY"
+```
+
+**Test 8 — Binance (crypto prices, no key needed)**
+```bash
+# Latest BTC price
+curl "https://api.binance.us/api/v3/ticker/price?symbol=BTCUSDT"
+# Expected: {"symbol":"BTCUSDT","price":"67432.50"}
+
+# 1h candles for BTC
+curl "https://api.binance.us/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=10"
+# Expected: [[timestamp,open,high,low,close,volume,...],...]
+```
+
+**Test 9 — Alpha Vantage (forex + macro)**
+```bash
+curl "https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=USD&to_symbol=EUR&apikey=YOUR_AV_KEY"
+# Expected: {"Time Series FX (Daily)":{"2024-01-10":{"4. close":"0.91",...}}}
+```
+
+**Test 10 — NewsAPI**
+```bash
+curl "https://newsapi.org/v2/everything?q=bitcoin+stock+market&sortBy=publishedAt&pageSize=3&apiKey=YOUR_NEWSAPI_KEY"
+# Expected: {"articles":[{"title":"...","description":"...","publishedAt":"..."}]}
+```
+
+**Test 11 — Alternative.me (Fear & Greed, no key)**
+```bash
+curl "https://api.alternative.me/fng/?limit=1"
+# Expected: {"data":[{"value":"45","value_classification":"Fear","timestamp":"..."}]}
+```
+
+**Test 12 — Supabase (database connection)**
+```bash
+# Test via your backend's health endpoint after setup:
+curl http://localhost:4000/api/auth/me
+# Expected: 401 (means server is running and DB connected)
+```
 
 ---
 
-## 15. HOW THE SYSTEM TRADES ON YOUR BEHALF (Top 1% Approach)
+### 6.3 API KEY SETUP — EXACT STEPS
 
-**24/7 Autonomous Loop:**
+**STEP 1 — Anthropic (Claude)**
+1. Go to console.anthropic.com → API Keys → Create Key
+2. Copy the key (starts with `sk-ant-api03-`)
+3. Add to `.env`: `ANTHROPIC_API_KEY=sk-ant-api03-...`
+4. Budget: $20/month handles ~2,000 full debates (25 agents × 8 rounds each)
 
-```
-00:00 - 23:59:  Every 90 seconds:
-  1. Pick asset (BTC, ETH, SOL, BNB, or ADA randomly)
-  2. Fetch live price + build technical snapshot
-  3. Detect market regime
-  4. Convene 15-agent debate (3 rounds, ~8-12 minutes)
-  5. Risk Manager reviews the verdict
-  6. If approved: calculate position size, set stops, execute
-  7. Open position enters 10-second monitoring loop
-  8. Stop-loss hit → auto-close with predefined loss
-  9. Take-profit hit → auto-close with gains
-  10. Post-trade analysis → self-learning update
+**STEP 2 — Alpaca Paper Trading**
+1. Go to alpaca.markets → Sign Up (free, no KYC for paper)
+2. Dashboard → Paper Trading section
+3. Click "View" under API Keys → Generate new key
+4. Copy API Key ID (starts with `PK`) and Secret Key
+5. Add to `.env`:
+   ```
+   ALPACA_API_KEY=PKXXXXXXXXXXXXXXXXXX
+   ALPACA_SECRET_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+   ALPACA_BASE_URL=https://paper-api.alpaca.markets
+   TRADING_MODE=paper
+   ```
+6. Paper account starts with $100,000 virtual cash (you can reset anytime)
 
-Every night at 11:59 PM:
-  11. Generate daily journal with performance analysis
+**STEP 3 — Polygon.io**
+1. Go to polygon.io → Sign Up → Free plan
+2. Dashboard → API Keys → Copy your key
+3. Add to `.env`: `POLYGON_API_KEY=your_key_here`
+4. Free tier: 5 calls/min, delayed data (15 min), 2 years history
 
-Every Sunday:
-  12. Generate weekly report with agent rankings
-```
+**STEP 4 — Finnhub**
+1. Go to finnhub.io → Sign Up → Free plan
+2. Dashboard → API Key → Copy
+3. Add to `.env`: `FINNHUB_API_KEY=your_key_here`
+4. Free tier: 60 calls/min, real-time stock data + news
 
-**What makes this top 1%:**
-1. **Multi-perspective analysis** — 15 independent AI experts, not one signal
-2. **Pre-mortem thinking** — Devil's Advocate always argues against the trade
-3. **Regime awareness** — strategy adjusts based on market conditions
-4. **Strict risk rules** — never risks more than 1% per trade, ever
-5. **Position sizing via Kelly Criterion proxy** — size = risk / stop distance
-6. **No emotional trading** — pure systematic execution
-7. **Continuous learning** — system improves with every trade
+**STEP 5 — Alpha Vantage**
+1. Go to alphavantage.co → Get Free API Key (just email needed)
+2. Add to `.env`: `ALPHA_VANTAGE_API_KEY=your_key_here`
+3. Free tier: 5 calls/min, 500 calls/day
+
+**STEP 6 — NewsAPI**
+1. Go to newsapi.org → Get API Key (free)
+2. Add to `.env`: `NEWSAPI_KEY=your_key_here`
+3. Free tier: 100 calls/day, 1 month history
+
+**STEP 7 — Polymarket (no key needed for reading)**
+- Reading market data is completely public — no registration
+- The `POLYMARKET_GAMMA_API`, `POLYMARKET_CLOB_API` in `.env` are just URLs, not keys
+- For paper trading: the system uses `isPaper=true` mode (no real transactions)
+- For live Polymarket trading later: you need a Polygon wallet + USDC.e
 
 ---
 
-## 16. ALPACA — COMPLETE SETUP GUIDE
+## 7. PAPER TRADING SETUP — ALPACA (COMPLETE GUIDE)
 
-**Step 1: Create Account**
-- Go to alpaca.markets → Create free account
-- Verify email, complete KYC for live trading
+### What Alpaca Paper Trading gives you:
+- $100,000 virtual paper money to test with
+- Same API as live trading — identical behavior
+- Real stock prices from real market data
+- Zero commission on all trades
+- Fractional shares (buy $5 of AAPL instead of full $195 share)
+- Crypto: BTC, ETH, SOL, DOGE, LINK (24/7)
 
-**Step 2: Get API Keys**
-- Dashboard → Paper Trading → Generate API Key
-- Copy `API Key ID` (starts with PK) and `Secret Key`
-
-**Step 3: Update .env**
+### Complete Setup:
 ```env
+# In apex-trader/backend/.env
+ALPACA_API_KEY=PKXXXXXXXXXXXXXXXXXX        ← from alpaca.markets dashboard
+ALPACA_SECRET_KEY=XXXXXXXXXXXXXXX          ← secret from same page
+ALPACA_BASE_URL=https://paper-api.alpaca.markets   ← paper, NOT live
+TRADING_MODE=paper                          ← THIS controls everything
+STARTING_CAPITAL=100                        ← our real target
+```
+
+### What happens when Alpaca is configured:
+1. Every debate that returns BUY/SELL → execution engine runs
+2. TopTrader 25 laws validate the trade (blocks bad ones)
+3. Viability check confirms fees < 20% of profit
+4. Micro position sizing: $100 × 0.5% risk = $0.50 max loss per trade
+5. Alpaca paper order placed → confirmed in DB
+6. 10-second monitor watches for stop/profit breach
+7. Trade closes → post-trade AI analysis runs
+
+### Testing Alpaca is working:
+```bash
+# 1. Start backend
+cd apex-trader/backend && npm run dev
+
+# 2. Trigger a debate manually
+curl -X POST http://localhost:4000/api/agents/trigger-debate \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"asset":"AAPL","market":"stocks"}'
+
+# 3. Check Alpaca paper dashboard
+# Go to → alpaca.markets → Paper Trading → Orders
+# You should see the order appear there
+```
+
+---
+
+## 8. PAPER TRADING SETUP — POLYMARKET (COMPLETE GUIDE)
+
+### What Polymarket Paper Trading gives you:
+- Zero fees (no maker/taker fees at all)
+- Binary outcomes (YES/NO on events) — easy to understand
+- $1 minimum bet
+- Our system scans 20+ markets every 30 minutes
+- Kelly criterion calculates optimal bet size
+- All bets saved to DB with `isPaper=true`
+- No real money, no Polygon wallet needed for paper mode
+
+### How our Polymarket engine works:
+```
+Every 30 minutes:
+1. Fetch top 20 active markets from Polymarket Gamma API
+2. For each market, ask Claude to estimate TRUE probability
+3. Compare to market's implied probability (the price)
+4. If our estimate differs by >8 cents = EDGE found
+5. Calculate Kelly fraction = optimal bet size
+6. Half-Kelly × portfolio value = actual bet size
+7. Skip if: edge < 8%, confidence < 60%, bet < $1
+8. Save paper bet to database
+9. Track position until market resolves
+```
+
+### Example opportunity detected:
+```
+Market: "Will Fed cut rates in March 2025?"
+Market price: YES at 42 cents (42% implied probability)
+Our estimate: 55% probability of YES
+Edge: +13 cents
+Half-Kelly bet: $3.50 on YES
+Expected profit: $3.50 × (1/0.42 - 1) × 0.55 = $2.80
+```
+
+### Polymarket env (paper mode — no wallet needed):
+```env
+POLYMARKET_GAMMA_API=https://gamma-api.polymarket.com
+POLYMARKET_CLOB_API=https://clob.polymarket.com
+POLYMARKET_DATA_API=https://data-api.polymarket.com
+# Paper mode: leave these blank for now
+POLYMARKET_PRIVATE_KEY=
+POLYMARKET_WALLET_ADDRESS=
+```
+
+### Testing Polymarket scanner:
+```bash
+# The scanner runs automatically every 30 minutes
+# To test immediately, call the scan endpoint:
+curl -X POST http://localhost:4000/api/agents/polymarket-scan \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Or watch the logs when scheduler runs:
+# You'll see: "🔍 SCANNING POLYMARKET FOR OPPORTUNITIES..."
+# Then: "✅ Found X actionable Polymarket opportunities"
+# Then: "📄 PAPER BET: YES $3.50 on Will Fed cut..."
+```
+
+### When to go LIVE on Polymarket (later, not now):
+1. Paper trade for 60+ days with positive results
+2. Create a Polygon wallet (MetaMask → switch to Polygon network)
+3. Buy USDC on Polygon (via bridge from Ethereum or direct purchase)
+4. Add to `.env`:
+   ```env
+   POLYMARKET_PRIVATE_KEY=0xYOUR_WALLET_PRIVATE_KEY
+   POLYMARKET_WALLET_ADDRESS=0xYOUR_WALLET_ADDRESS
+   ```
+5. Start with $20-30 in USDC, not full capital
+
+---
+
+## 9. LONG-TERM POSITION STRATEGY
+
+### $100 Capital Allocation Plan:
+```
+POLYMARKET (40% = $40)     ← Zero fees, pure probability edge
+  Bet $1-5 per event
+  Focus: Fed decisions, election outcomes, macro events
+  Hold: days to months until resolution
+  Target: 15-25% monthly return on allocated capital
+
+CRYPTO SWINGS (35% = $35)  ← Low fees via Bybit ($1 min order)
+  Position size: $0.50 max risk per trade
+  Hold: 2-7 days (swing trades, not scalping)
+  Target: 3:1 risk/reward, 2% gain per trade
+
+LONG-TERM HOLDS (15% = $15) ← Buy and hold quality assets
+  BTC: digital gold, 4-year cycle
+  ETH: staking yield + DeFi
+  Hold: 6-24 months
+  Never sell on dips — only adds on strength
+
+EMERGENCY RESERVE (10% = $10) ← Never trade this
+  Cash buffer for costs, fees, unexpected events
+```
+
+### Compounding Milestones ($100 → $1,000):
+```
+$100 → $200   (2x): Target 60-90 days
+$200 → $500   (2.5x): Target 90-150 days
+$500 → $1,000 (2x): Target 60-90 days
+
+At $200: extract $40 to separate safe account (locked profits)
+At $500: extract $100 to safe account
+At $1,000: extract $200 — compound the rest
+```
+
+---
+
+## 10. VERCEL DEPLOYMENT GUIDE (FRONTEND)
+
+### Step 1: Connect GitHub to Vercel
+1. Go to vercel.com → Sign up with GitHub
+2. Click **"Add New Project"**
+3. Click **"Import Git Repository"**
+4. Select your `tharun-trading-` repository
+
+### Step 2: Configure the Project on Vercel
+When Vercel asks for project settings, fill in EXACTLY:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  PROJECT CONFIGURATION ON VERCEL                    │
+├─────────────────────────────────────────────────────┤
+│  Framework Preset:     Vite                         │
+│  Root Directory:       apex-trader/frontend         │
+│  Build Command:        npm run build                │
+│  Output Directory:     dist                         │
+│  Install Command:      npm install                  │
+│  Node.js Version:      20.x                         │
+└─────────────────────────────────────────────────────┘
+```
+
+> **Why Root Directory = `apex-trader/frontend`?**
+> Your GitHub repo has both backend and frontend. Vercel only needs the frontend. You must tell it where to look.
+
+### Step 3: Add Environment Variables in Vercel
+In Vercel → Project Settings → Environment Variables, add:
+
+```
+VITE_API_URL          =  https://your-backend-url.railway.app
+VITE_WS_URL           =  wss://your-backend-url.railway.app
+VITE_TRADING_MODE     =  paper
+```
+
+> **Note:** All frontend env vars MUST start with `VITE_` to be visible in the browser.
+> You get the backend URL after deploying backend on Railway (Section 11).
+
+### Step 4: Deploy
+- Click **Deploy** → Vercel builds and deploys automatically
+- Every future git push to `main` branch → auto-redeploys frontend
+- Deployment takes ~2 minutes
+
+### Step 5: Update VITE_API_URL
+After backend is deployed (Section 11):
+1. Go to Vercel → Project → Settings → Environment Variables
+2. Update `VITE_API_URL` with actual Railway/Render backend URL
+3. Redeploy: Vercel → Deployments → Redeploy
+
+---
+
+## 11. BACKEND DEPLOYMENT (RAILWAY — RECOMMENDED)
+
+> Vercel cannot host the backend because Socket.io requires **persistent WebSocket connections**. Vercel serverless functions timeout after 10 seconds. Use Railway or Render instead.
+
+### Railway (Easiest — $5/month)
+
+**Step 1:** Go to railway.app → Connect GitHub
+**Step 2:** New Project → Deploy from GitHub → Select repo
+**Step 3:** Set Root Directory to `apex-trader/backend`
+**Step 4:** Railway auto-detects Node.js
+
+**Step 5: Add ALL environment variables in Railway:**
+```env
+PORT=4000
+NODE_ENV=production
+TRADING_MODE=paper
+DATABASE_URL=postgresql://...supabase...
+JWT_SECRET=your_secure_random_string_32chars
+ENCRYPTION_KEY=your_secure_random_string_32chars
+ANTHROPIC_API_KEY=sk-ant-api03-...
+ALPACA_API_KEY=PKXXXXXXXXXX
+ALPACA_SECRET_KEY=XXXXXXXXXX
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
+POLYGON_API_KEY=...
+FINNHUB_API_KEY=...
+ALPHA_VANTAGE_API_KEY=...
+NEWSAPI_KEY=...
+STARTING_CAPITAL=100
+MAX_RISK_PER_TRADE_PCT=0.5
+MAX_POSITION_SIZE_PCT=10
+POLYMARKET_GAMMA_API=https://gamma-api.polymarket.com
+POLYMARKET_CLOB_API=https://clob.polymarket.com
+POLYMARKET_PRIVATE_KEY=
+POLYMARKET_WALLET_ADDRESS=
+```
+
+**Step 6:** Railway gives you a URL like `https://tharun-trading.up.railway.app`
+**Step 7:** Copy this URL → paste into Vercel `VITE_API_URL` env variable
+
+### Alternative: Render (Free tier — slower cold starts)
+- Same process as Railway
+- Free tier: service sleeps after 15min of inactivity
+- Railway recommended for trading (must stay awake 24/7)
+
+---
+
+## 12. FRONTEND env FILE (Local Development)
+
+Create `apex-trader/frontend/.env.local`:
+```env
+VITE_API_URL=http://localhost:4000
+VITE_WS_URL=ws://localhost:4000
+VITE_TRADING_MODE=paper
+```
+
+This file is git-ignored. Never commit it.
+
+---
+
+## 13. BACKEND .env FILE (Local Development)
+
+Located at `apex-trader/backend/.env`:
+```env
+# Server
+PORT=4000
+NODE_ENV=development
+TRADING_MODE=paper
+
+# Database
+DATABASE_URL=postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres
+
+# Auth
+JWT_SECRET=change_this_to_random_32_char_string
+ENCRYPTION_KEY=change_this_to_random_32_char_string
+
+# AI
+ANTHROPIC_API_KEY=sk-ant-api03-YOUR_KEY
+
+# Trading — Paper First
 ALPACA_API_KEY=PKXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ALPACA_SECRET_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ALPACA_BASE_URL=https://paper-api.alpaca.markets
-TRADING_MODE=paper
-```
 
-**Step 4: Test**
-- Start backend → trigger a debate for AAPL
-- Check Alpaca dashboard → should see paper order placed
+# Market Data
+POLYGON_API_KEY=mVVNKbjo9fZF523sen8wPITwz7esJXFm
+ALPHA_VANTAGE_API_KEY=8WSVRCCM2WJW14PN
+NEWSAPI_KEY=289b7f5a-52d6-48da-a554-1a4af03595db
+FINNHUB_API_KEY=d7e4rupr01qkuebivk00d7e4rupr01qkuebivk0g
 
-**Step 5: Go Live (when ready)**
-```env
-ALPACA_BASE_URL=https://api.alpaca.markets
-TRADING_MODE=live
-```
+# Capital (Paper Trading)
+STARTING_CAPITAL=100
+MAX_RISK_PER_TRADE_PCT=0.5
+MAX_POSITION_SIZE_PCT=10
 
-**Supported assets on Alpaca:**
-- 8,000+ US stocks and ETFs
-- BTC, ETH, SOL, DOGE, LINK, UNI, AAVE (crypto)
-- No commission, fractional shares, 24/7 crypto
+# Polymarket (paper — no wallet needed yet)
+POLYMARKET_GAMMA_API=https://gamma-api.polymarket.com
+POLYMARKET_DATA_API=https://data-api.polymarket.com
+POLYMARKET_CLOB_API=https://clob.polymarket.com
+POLYMARKET_PRIVATE_KEY=
+POLYMARKET_WALLET_ADDRESS=
 
----
-
-## 17. POLYMARKET — COMPLETE SETUP GUIDE
-
-**What Polymarket offers:**
-Polymarket is the world's largest prediction market. Prices show the crowd's probability estimate of events (0-100%). These are more accurate than polls or analyst forecasts.
-
-**Example predictions affecting trades:**
-- "Fed cuts rates in 2025?" → YES at 72% → Bullish for growth stocks
-- "Bitcoin above $100k by Dec 2025?" → YES at 45% → Neutral for BTC
-- "US enters recession?" → YES at 30% → Bearish for small-caps
-
-**How Agent 13 uses Polymarket:**
-```
-For every asset being debated:
-1. Query relevant open markets on Polymarket
-2. Extract probability estimates for macro events
-3. Convert to directional bias (>60% YES = bullish, <40% = bearish)
-4. Include in vote reasoning
-```
-
-**Setup Polymarket trading (prediction market positions):**
-```env
-POLYMARKET_PRIVATE_KEY=0x...  (Polygon wallet private key)
-POLYMARKET_WALLET_ADDRESS=0x... (your Polygon wallet address)
-```
-
-**Note:** Polymarket uses Polygon (MATIC) blockchain. You need USDC.e on Polygon to place bets. Not regulated in the US — use with caution.
-
----
-
-## 18. TRADEVIEW / TRADINGVIEW INTEGRATION (Future)
-
-TradingView webhooks can push signals to this system:
-1. Create a TradingView alert on any indicator
-2. Set webhook URL to `https://your-backend/api/agents/trigger-debate`
-3. When your TradingView alert fires, it triggers the full 15-agent debate
-4. Combine human chart analysis with AI committee vote
-
-**Pine Script webhook format:**
-```json
-{
-  "asset": "BTC",
-  "market": "crypto",
-  "signal": "BUY",
-  "source": "tradingview_alert"
-}
+# Supabase
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_KEY=your_service_key
 ```
 
 ---
 
-## 19. PRODUCTION DEPLOYMENT CHECKLIST
+## 14. HOW TO RUN LOCALLY (Step by Step)
 
-**Backend (Railway / Render / VPS):**
-- [ ] Add all .env variables to deployment environment
-- [ ] Set `NODE_ENV=production`
-- [ ] Set `TRADING_MODE=paper` until tested
-- [ ] Ensure PostgreSQL (Supabase) is accessible from deployment
-- [ ] Set `ANTHROPIC_API_KEY` with sufficient credits
+```bash
+# Terminal 1 — Backend
+cd "apex-trader/backend"
+npm install
+npx prisma db push        # creates all DB tables
+npm run dev               # starts on port 4000
 
-**Frontend (Vercel / Netlify):**
-- [ ] Set `VITE_API_URL` to backend URL
-- [ ] Set `VITE_TRADING_MODE=paper`
-- [ ] Enable automatic deploys from git main branch
+# Terminal 2 — Frontend
+cd "apex-trader/frontend"
+npm install
+npm run dev               # starts on port 5173
 
-**When going live:**
-1. Test with paper trading for at least 30 days
-2. Verify risk guardrails by simulating a loss scenario
-3. Start with $500–$1000 real capital
-4. Add Claude API credits ($20/month handles ~500 debates/day)
-5. Set `TRADING_MODE=live` only when confident
-
----
-
-## 20. TECHNOLOGY STACK SUMMARY
-
+# Open browser: http://localhost:5173
+# Login: nandigam2081@gmail.com / Tharunsai@2081
 ```
-Frontend:    React 18 + Vite + TypeScript + Tailwind CSS
-Backend:     Node.js + Express + TypeScript
-Database:    PostgreSQL + Prisma ORM (hosted on Supabase)
-AI Engine:   Anthropic Claude claude-sonnet-4-20250514 (15 agent instances)
-Real-time:   Socket.io (WebSocket)
-Scheduling:  node-cron (4 jobs)
-Charts:      Recharts + lightweight-charts (TradingView engine)
-Brokers:     Alpaca (stocks + crypto), Binance.US (crypto)
-Markets:     Polymarket (prediction markets)
-Data:        Binance WS + Finnhub + Polygon.io + Alpha Vantage + NewsAPI
-Auth:        JWT (8hr) + bcrypt + speakeasy TOTP
-Hosting:     Local → Railway (backend) + Vercel (frontend) + Supabase (DB)
+
+**Expected backend log on start:**
+```
+✅ Tharun Trading Scheduler initialized:
+   ⏱️ Investment Committee debates every 90 seconds
+   🛑 Stop-loss monitor every 10 seconds
+   📸 Portfolio snapshots every 5 minutes
+   🌍 Market regime detection every hour
+   🎯 Polymarket opportunity scan every 30 minutes
+   📓 Daily journal at 11:59 PM
+   📊 Weekly report every Sunday 8 AM
+   🎓 Post-trade learning every 2 minutes
 ```
 
 ---
 
-*Tharun Trading Agent — Built by Tharun. Powered by Claude AI. Designed to trade like the top 1%.*
+## 15. API TESTING CHECKLIST (Run These Before Deploying)
+
+Run each test in order. All must pass before deploying to production.
+
+```bash
+# ✅ Test 1: Backend is running
+curl http://localhost:4000/api/settings
+# Expected: 200 OK with settings JSON
+
+# ✅ Test 2: Authentication works
+curl -X POST http://localhost:4000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"nandigam2081@gmail.com","password":"Tharunsai@2081"}'
+# Expected: {"token":"eyJ...","user":{...}}
+
+# ✅ Test 3: Market prices loading
+curl http://localhost:4000/api/market/prices \
+  -H "Authorization: Bearer TOKEN_FROM_ABOVE"
+# Expected: [{"asset":"BTC","price":67432,"change24h":2.1},...]
+
+# ✅ Test 4: Portfolio loads
+curl http://localhost:4000/api/portfolio \
+  -H "Authorization: Bearer TOKEN"
+# Expected: {"totalValue":100,"cashBalance":100,"positions":[]}
+
+# ✅ Test 5: Polymarket data accessible
+curl "https://gamma-api.polymarket.com/markets?active=true&limit=3"
+# Expected: Array of 3 prediction markets
+
+# ✅ Test 6: Trigger a test debate
+curl -X POST http://localhost:4000/api/agents/trigger-debate \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"asset":"BTC","market":"crypto"}'
+# Expected: Debate starts, watch logs for 25 agents analyzing
+
+# ✅ Test 7: Alpaca paper account
+curl https://paper-api.alpaca.markets/v2/account \
+  -H "APCA-API-KEY-ID: YOUR_ALPACA_KEY" \
+  -H "APCA-API-SECRET-KEY: YOUR_ALPACA_SECRET"
+# Expected: account JSON with buying_power
+
+# ✅ Test 8: Kill switch works
+curl -X POST http://localhost:4000/api/kill-switch/activate \
+  -H "Authorization: Bearer TOKEN"
+# Expected: All trading halts immediately
+```
+
+---
+
+## 16. SCHEDULED JOBS — WHAT RUNS WHEN
+
+| Schedule | Job | File |
+|----------|-----|------|
+| Every 90 seconds | 25-agent debate on random crypto asset | scheduler.ts |
+| Every 10 seconds | Stop-loss and take-profit monitor | riskManager.ts |
+| Every 5 minutes | Portfolio snapshot saved to DB | scheduler.ts |
+| Every 30 minutes | Polymarket opportunity scan | polymarket.ts |
+| Every hour | Market regime detection for all assets | regimeDetector.ts |
+| Every 2 minutes | Post-trade learning for closed trades | selfLearning.ts |
+| 11:59 PM daily | AI daily journal generation | journalGenerator.ts |
+| Every Sunday 8 AM | Weekly performance report | selfLearning.ts |
+
+---
+
+## 17. ACCOUNT PROTECTION MODES
+
+The system automatically switches between 4 modes based on portfolio performance:
+
+| Mode | Triggers When | Risk Multiplier | Rules |
+|------|--------------|-----------------|-------|
+| **NORMAL** | Default, healthy state | 100% (0.5% per trade) | Full operation |
+| **CAUTION** | Down 6-12% from peak OR -1.5% today | 60% (0.3% per trade) | Swing trades only, no scalping |
+| **RECOVERY** | Down 12-20% from peak OR -3% today | 40% (0.2% per trade) | 80%+ confidence needed, 1 trade at a time |
+| **DEFEND** | Down 20%+ from peak OR -5% today | 20% (0.1% per trade) | Polymarket only, no crypto/stocks |
+
+---
+
+## 18. GOING LIVE — CHECKLIST (AFTER PAPER TRADING WORKS)
+
+### Before switching `TRADING_MODE=live`:
+
+**Alpaca Live Trading:**
+- [ ] Paper traded for 30+ days with positive overall P&L
+- [ ] Win rate consistently above 55%
+- [ ] No single trade lost more than 1.5% of portfolio
+- [ ] Kill switch tested and confirmed working
+- [ ] Daily loss limit tested (auto-stops at -3%)
+- [ ] Funded Alpaca live account with real money ($100+)
+- [ ] Updated `.env`: `ALPACA_BASE_URL=https://api.alpaca.markets`
+- [ ] Updated `.env`: `TRADING_MODE=live`
+
+**Polymarket Live Trading:**
+- [ ] Paper bet system showing positive expected value over 60 days
+- [ ] Created MetaMask wallet
+- [ ] Switched MetaMask to Polygon network
+- [ ] Purchased USDC.e on Polygon (start with $20-40)
+- [ ] Added wallet private key to `.env`
+- [ ] Tested with $1 bet first before larger bets
+- [ ] Confirmed: `isPaper=false` in bet placement call
+
+---
+
+## 19. WEBSOCKET EVENTS (Frontend ↔ Backend)
+
+| Event | Direction | Data | Used In |
+|-------|-----------|------|---------|
+| `price:update` | Server→Client | `{asset, price, change24h}` | Live Ticker |
+| `debate:start` | Server→Client | `{asset, totalAgents:25}` | Debate Room |
+| `debate:stage-complete` | Server→Client | `{stage, result}` | Pipeline view |
+| `agent:voted` | Server→Client | `{agentId, vote, confidence}` | Agent Council |
+| `debate:complete` | Server→Client | `{decision, confidence}` | Dashboard |
+| `trade:executed` | Server→Client | `{trade, mode}` | Trades page |
+| `position:closed` | Server→Client | `{asset, pnl, reason}` | Toast alert |
+| `polymarket:scanning` | Server→Client | `{portfolioValue}` | Dashboard |
+| `polymarket:scan-complete` | Server→Client | `{opportunities[]}` | Dashboard |
+| `guardrail:triggered` | Server→Client | `{law, reason}` | Alert banner |
+| `analysis:stage-start` | Server→Client | `{stage, name}` | Pipeline |
+
+---
+
+## 20. DATABASE SCHEMA (Key Tables)
+
+```
+User          — email, passwordHash, jwtSecret
+Portfolio     — totalValue, cashBalance, pnlDay, pnlTotal, drawdownFromPeak
+Position      — asset, market, quantity, entryPrice, stopLoss, takeProfit
+Trade         — asset, type, entryPrice, exitPrice, pnlUSD, status, agentDecisionId
+AgentDecision — asset, signal, agentVotes[], avgConfidence, executed
+PortfolioSnapshot — totalValue (every 5 min for charts)
+Prediction    — Polymarket paper bets (asset=POLYMARKET, direction, confidence)
+SystemLog     — tax events, errors, important events
+NewsArticle   — title, sentiment, source, timestamp
+TradingJournal — date, content (AI-written daily diary)
+```
+
+---
+
+## 21. TECHNOLOGY STACK SUMMARY (Quick Reference)
+
+```
+Layer          Technology                    Version
+─────────────────────────────────────────────────────
+Frontend       React                         18.x
+               Vite                          5.x
+               TypeScript                    5.x
+               Tailwind CSS                  3.x
+               Zustand                       4.x
+               TanStack Query                5.x
+               Socket.io-client              4.x
+               Recharts                      2.x
+               lightweight-charts            4.x
+               lucide-react                  (icons)
+
+Backend        Node.js                       20.x
+               Express                       4.x
+               TypeScript                    5.x
+               Prisma                        5.x
+               Socket.io                     4.x
+               node-cron                     3.x
+               ethers                        6.x
+               axios                         1.x
+               jsonwebtoken                  9.x
+               bcryptjs                      2.x
+               speakeasy                     2.x (TOTP)
+               winston                       3.x
+
+Database       PostgreSQL (via Supabase)      15.x
+               Prisma ORM                    5.x
+
+AI             @anthropic-ai/sdk             0.30+
+               Model: claude-sonnet-4-20250514
+               Agents: 25 specialists
+               Pipeline: 12 mandatory stages
+
+Brokers        @alpacahq/alpaca-trade-api    3.x
+               ethers.js                     (Polymarket)
+               @binance/connector            (crypto)
+
+Hosting        Frontend → Vercel
+               Backend  → Railway ($5/mo) or Render (free)
+               Database → Supabase (free 500MB)
+               Total cost: ~$5-15/month
+```
+
+---
+
+## 22. PAPER TRADING → LIVE TRADING TRANSITION
+
+```
+PHASE 1 (NOW) — Paper Everything:
+  Trading mode: paper
+  Alpaca: paper-api.alpaca.markets ($100,000 virtual)
+  Polymarket: isPaper=true (saved to DB only)
+  Goal: Prove the system works, tune the 25 laws
+
+PHASE 2 (30 days later) — Alpaca Live + Polymarket Paper:
+  Alpaca: api.alpaca.markets (real $100)
+  Polymarket: still isPaper=true
+  Goal: Verify execution, slippage, real order behavior
+
+PHASE 3 (60 days later) — Full Live:
+  Alpaca: live ($100 growing toward $1,000)
+  Polymarket: real USDC bets ($1-5 per event)
+  Goal: Let the compound engine run
+```
+
+---
+
+*Tharun Trading Agent — Built for $100. Protected by 25 laws. Powered by 25 AI agents. Paper first, profit second.*
