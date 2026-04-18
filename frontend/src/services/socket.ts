@@ -7,7 +7,7 @@ let socket: Socket | null = null;
 export function connectSocket() {
   if (socket?.connected) return socket;
 
-  socket = io('/', {
+  socket = io(import.meta.env.VITE_API_URL || '/', {
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 2000,
