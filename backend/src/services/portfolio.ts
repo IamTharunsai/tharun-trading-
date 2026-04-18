@@ -2,7 +2,7 @@ import { prisma } from '../utils/prisma';
 import { PortfolioState } from '../agents/types';
 import { getCurrentPrices } from './marketData';
 
-const STARTING_CAPITAL = 10000; // Default starting capital in USD
+const STARTING_CAPITAL = parseFloat(process.env.STARTING_CAPITAL || '100000');
 
 export async function getPortfolioState(): Promise<PortfolioState> {
   const prices = getCurrentPrices();
