@@ -567,15 +567,21 @@ export async function runInvestmentCommitteeDebate(
     }
   }
 
+  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '8');
+  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '80');
+  const dominantVotes = masterDecision.finalDecision === 'BUY' ? buyCount
+    : masterDecision.finalDecision === 'SELL' ? sellCount : 0;
+
   let approved = masterDecision.finalDecision !== 'HOLD';
   let blockReason = masterDecision.blockReason || null;
 
   if (approved) {
-    if (portfolio.pnlDayPct <= -(parseFloat(process.env.DAILY_LOSS_LIMIT_PCT || '3'))) {
+    if (dominantVotes < minVotes) {
+      approved = false; blockReason = `Not enough votes: ${dominantVotes}/${finalVotes.length} (need ${minVotes})`;
+    } else if (avgConfidence < minConfidence) {
+      approved = false; blockReason = `Low confidence: ${avgConfidence}% (need ${minConfidence}%)`;
+    } else if (portfolio.pnlDayPct <= -(parseFloat(process.env.DAILY_LOSS_LIMIT_PCT || '3'))) {
       approved = false; blockReason = `Daily loss: ${portfolio.pnlDayPct.toFixed(2)}%`;
-    }
-    if (avgConfidence < 65) {
-      approved = false; blockReason = `Low confidence: ${avgConfidence}%`;
     }
   }
 
