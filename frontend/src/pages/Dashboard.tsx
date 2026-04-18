@@ -7,7 +7,7 @@ import RecentTrades from '../components/portfolio/RecentTrades';
 import PortfolioChart from '../components/charts/PortfolioChart';
 import ActivePositions from '../components/portfolio/ActivePositions';
 import RiskMonitor from '../components/portfolio/RiskMonitor';
-import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2, Zap } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function DashboardPage() {
@@ -16,33 +16,38 @@ export default function DashboardPage() {
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
   const { killSwitchActive, currentAnalysis } = useStore();
 
-  const pnlDayPos = (portfolio?.pnlDayPct || 0) >= 0;
-  const pnlTotalPos = (portfolio?.pnlTotal || 0) >= 0;
+  const pnlDayPos   = (portfolio?.pnlDayPct || 0) >= 0;
+  const pnlTotalPos = (portfolio?.pnlTotal   || 0) >= 0;
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, color: '#2C1810' }}>
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 className="font-sans font-bold text-2xl text-apex-text">Command Center</h1>
-          <p className="font-mono text-xs text-apex-muted mt-0.5">{format(new Date(), 'EEEE, MMMM d yyyy • HH:mm:ss')}</p>
+          <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 24, color: '#2C1810', margin: 0 }}>
+            Command Center
+          </h1>
+          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: '#8B6F47', margin: '4px 0 0' }}>
+            {format(new Date(), 'EEEE, MMMM d yyyy • HH:mm')}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {killSwitchActive ? (
-            <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-apex-red/10 border border-apex-red font-mono text-xs text-apex-red">
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.08)', border: '1px solid #DC2626', fontFamily: 'Space Mono', fontSize: 11, color: '#DC2626', fontWeight: 700 }}>
               <span className="status-dot error" /> KILL SWITCH ACTIVE
             </span>
           ) : (
-            <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-apex-green/10 border border-apex-green/30 font-mono text-xs text-apex-green">
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(45,138,74,0.08)', border: '1px solid rgba(45,138,74,0.3)', fontFamily: 'Space Mono', fontSize: 11, color: '#2D8A4A', fontWeight: 700 }}>
               <span className="status-dot live" /> TRADING ACTIVE
             </span>
           )}
           {currentAnalysis && (
-            <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-apex-yellow/10 border border-apex-yellow/30 font-mono text-xs text-apex-yellow">
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.3)', fontFamily: 'Space Mono', fontSize: 11, color: '#F5A623', fontWeight: 700 }}>
               <span className="status-dot analyzing" /> ANALYZING {currentAnalysis}
             </span>
           )}
-          <span className="px-3 py-1.5 rounded-lg bg-apex-surface border border-apex-border font-mono text-xs text-apex-muted uppercase">
+          <span style={{ padding: '6px 12px', borderRadius: 8, background: '#FFFFFF', border: '1px solid #E8D5C4', fontFamily: 'Space Mono', fontSize: 11, color: '#8B6F47' }}>
             {import.meta.env.VITE_TRADING_MODE || 'PAPER'} MODE
           </span>
         </div>
@@ -82,13 +87,11 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Main Grid */}
+      {/* Portfolio Chart + Risk Monitor */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Portfolio Chart — 2 cols */}
         <div className="lg:col-span-2">
           <PortfolioChart />
         </div>
-        {/* Risk Monitor */}
         <div>
           <RiskMonitor portfolio={portfolio} />
         </div>

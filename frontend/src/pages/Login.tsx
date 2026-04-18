@@ -5,6 +5,17 @@ import { login } from '../services/api';
 import toast from 'react-hot-toast';
 import { Zap, Lock, Mail, Shield } from 'lucide-react';
 
+const C = {
+  bg:     '#FAF6F1',
+  card:   '#FFFFFF',
+  border: '#E8D5C4',
+  accent: '#FF8C42',
+  text:   '#2C1810',
+  muted:  '#8B6F47',
+  green:  '#2D8A4A',
+  yellow: '#F5A623',
+};
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,85 +46,152 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-apex-bg flex items-center justify-center p-4">
-      {/* Background grid */}
-      <div className="absolute inset-0 opacity-5" style={{
-        backgroundImage: 'linear-gradient(#E8D5C4 1px, transparent 1px), linear-gradient(90deg, #E8D5C4 1px, transparent 1px)',
-        backgroundSize: '50px 50px'
+    <div style={{
+      minHeight: '100vh',
+      background: C.bg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16,
+      fontFamily: 'Syne, sans-serif',
+    }}>
+      {/* Subtle dot grid background */}
+      <div style={{
+        position: 'absolute', inset: 0, opacity: 0.35,
+        backgroundImage: 'radial-gradient(circle, #E8D5C4 1px, transparent 1px)',
+        backgroundSize: '28px 28px',
+        pointerEvents: 'none',
       }} />
 
-      <div className="relative z-10 w-full max-w-sm">
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 380 }}>
+
         {/* Logo */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-apex-accent/10 border border-apex-accent/30 mb-4">
-            <Zap size={32} className="text-apex-accent" />
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 64, height: 64, borderRadius: 18,
+            background: `linear-gradient(135deg, ${C.accent}, #E8732A)`,
+            marginBottom: 16, boxShadow: '0 8px 24px rgba(255,140,66,0.3)',
+          }}>
+            <Zap size={30} color="#fff" />
           </div>
-          <h1 className="font-sans font-bold text-3xl text-apex-text">THARUN TRADING AGENT</h1>
-          <p className="font-mono text-xs text-apex-muted mt-1 tracking-widest">AI-POWERED AUTONOMOUS TRADING</p>
+          <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 28, color: C.text, margin: '0 0 6px' }}>
+            THARUN TRADING AGENT
+          </h1>
+          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: 0, letterSpacing: '0.12em' }}>
+            AI-POWERED AUTONOMOUS TRADING
+          </p>
         </div>
 
         {/* Card */}
-        <div className="card card-glow">
-          <div className="flex items-center gap-2 mb-6">
-            <Lock size={14} className="text-apex-accent" />
-            <span className="font-mono text-xs text-apex-muted uppercase tracking-widest">Secure Access — Owner Only</span>
+        <div style={{
+          background: C.card,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 16,
+          padding: 28,
+          boxShadow: '0 4px 24px rgba(139,111,71,0.08)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
+            <Lock size={13} color={C.accent} />
+            <span style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>
+              SECURE ACCESS — OWNER ONLY
+            </span>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Email */}
             <div>
-              <label className="block font-mono text-xs text-apex-muted mb-1.5 uppercase tracking-wider">Email</label>
-              <div className="relative">
-                <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-apex-muted" />
+              <label style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted, display: 'block', marginBottom: 6, letterSpacing: '0.1em' }}>
+                EMAIL ADDRESS
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={13} color={C.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                  className="w-full bg-apex-surface border border-apex-border rounded-lg pl-9 pr-4 py-2.5 font-mono text-sm text-apex-text placeholder-apex-muted focus:outline-none focus:border-apex-accent transition-colors"
-                  placeholder="nandigam2081@gmail.com"
+                  placeholder="your@email.com"
+                  style={{
+                    width: '100%', padding: '11px 12px 11px 36px',
+                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+                    fontFamily: 'Space Mono', fontSize: 13, color: C.text,
+                    outline: 'none', boxSizing: 'border-box',
+                  }}
+                  onFocus={e => e.target.style.borderColor = C.accent}
+                  onBlur={e => e.target.style.borderColor = C.border}
                 />
               </div>
             </div>
 
+            {/* Password */}
             <div>
-              <label className="block font-mono text-xs text-apex-muted mb-1.5 uppercase tracking-wider">Password</label>
-              <div className="relative">
-                <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-apex-muted" />
+              <label style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted, display: 'block', marginBottom: 6, letterSpacing: '0.1em' }}>
+                PASSWORD
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={13} color={C.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="password" value={password} onChange={e => setPassword(e.target.value)} required
-                  className="w-full bg-apex-surface border border-apex-border rounded-lg pl-9 pr-4 py-2.5 font-mono text-sm text-apex-text placeholder-apex-muted focus:outline-none focus:border-apex-accent transition-colors"
                   placeholder="••••••••••••"
+                  style={{
+                    width: '100%', padding: '11px 12px 11px 36px',
+                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
+                    fontFamily: 'Space Mono', fontSize: 13, color: C.text,
+                    outline: 'none', boxSizing: 'border-box',
+                  }}
+                  onFocus={e => e.target.style.borderColor = C.accent}
+                  onBlur={e => e.target.style.borderColor = C.border}
                 />
               </div>
             </div>
 
+            {/* 2FA */}
             {requireTotp && (
               <div>
-                <label className="block font-mono text-xs text-apex-muted mb-1.5 uppercase tracking-wider">2FA Code</label>
-                <div className="relative">
-                  <Shield size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-apex-yellow" />
+                <label style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.yellow, display: 'block', marginBottom: 6, letterSpacing: '0.1em' }}>
+                  2FA CODE
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Shield size={13} color={C.yellow} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
                   <input
                     type="text" value={totp} onChange={e => setTotp(e.target.value)}
-                    maxLength={6} pattern="[0-9]{6}"
-                    className="w-full bg-apex-surface border border-apex-yellow/50 rounded-lg pl-9 pr-4 py-2.5 font-mono text-sm text-apex-yellow placeholder-apex-muted focus:outline-none focus:border-apex-yellow transition-colors tracking-[0.3em]"
-                    placeholder="000000"
+                    maxLength={6} pattern="[0-9]{6}" placeholder="000000"
+                    style={{
+                      width: '100%', padding: '11px 12px 11px 36px',
+                      background: '#FFFBEE', border: `1px solid ${C.yellow}`, borderRadius: 8,
+                      fontFamily: 'Space Mono', fontSize: 16, color: C.text,
+                      outline: 'none', letterSpacing: '0.3em', boxSizing: 'border-box',
+                    }}
                   />
                 </div>
               </div>
             )}
 
+            {/* Submit */}
             <button
               type="submit" disabled={loading}
-              className="w-full bg-apex-accent hover:bg-apex-accent/90 text-apex-bg font-mono font-bold py-3 rounded-lg transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+              style={{
+                marginTop: 4,
+                padding: '13px 24px',
+                background: loading ? '#E8D5C4' : `linear-gradient(135deg, ${C.accent}, #E8732A)`,
+                border: 'none', borderRadius: 10,
+                fontFamily: 'Space Mono', fontWeight: 700, fontSize: 13,
+                color: loading ? C.muted : '#FFFFFF',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: loading ? 'none' : '0 4px 16px rgba(255,140,66,0.35)',
+                transition: 'all 0.2s ease',
+              }}
             >
               {loading ? (
-                <><span className="animate-spin">◌</span> Authenticating...</>
+                <><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span> Authenticating...</>
               ) : (
-                <><Zap size={16} /> ACCESS SYSTEM</>
+                <><Zap size={15} /> ACCESS SYSTEM</>
               )}
             </button>
           </form>
         </div>
 
-        <p className="text-center font-mono text-xs text-apex-muted mt-6 opacity-50">
-          Unauthorized access attempts are logged and reported.
+        <p style={{ textAlign: 'center', fontFamily: 'Space Mono', fontSize: 10, color: C.muted, marginTop: 20, opacity: 0.7 }}>
+          Unauthorized access is logged and reported.
         </p>
       </div>
     </div>
