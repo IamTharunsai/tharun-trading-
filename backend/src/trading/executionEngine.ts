@@ -2,6 +2,8 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { TradeSignal, PortfolioState } from '../agents/types';
 import { getIO } from '../websocket/server';
+import { validateWithTopTraderRules } from '../services/topTraderRules';
+import { checkTradeViability, calculateMicroPosition, EXCHANGE_FEES } from '../services/microAccountEngine';
 
 // Conditional broker imports based on trading mode
 let alpacaClient: any = null;
@@ -54,17 +56,57 @@ export async function executeTradeSignal(
     confidence: signal.confidence
   });
 
-  // ── CALCULATE POSITION SIZE ───────────────────────────────────────────────
-  const maxRiskPct = parseFloat(process.env.MAX_RISK_PER_TRADE_PCT || '1') / 100;
-  const riskAmount = portfolioState.totalValue * maxRiskPct;
-  const stopDistance = Math.abs(signal.entryPrice - signal.stopLossPrice);
-  const sharesOrCoins = stopDistance > 0 ? riskAmount / stopDistance : 0;
+  // ── TOP TRADER RULES VALIDATION (25 laws) ─────────────────────────────────
+  const exchange = signal.market === 'stocks' ? 'alpaca_stocks' : 'bybit_spot';
+  const stopDistancePct = Math.abs(signal.entryPrice - signal.stopLossPrice) / signal.entryPrice;
+  const expectedReturnPct = Math.abs(signal.takeProfitPrice - signal.entryPrice) / signal.entryPrice;
+  const positionSizeEst = portfolioState.totalValue * (signal.positionSizePct / 100 || 0.01);
 
-  // Additional cap: never more than maxPositionSizePct of portfolio
-  const maxPositionPct = parseFloat(process.env.MAX_POSITION_SIZE_PCT || '10') / 100;
-  const maxPositionValue = portfolioState.totalValue * maxPositionPct;
-  const maxShares = maxPositionValue / signal.entryPrice;
-  const finalQty = Math.min(sharesOrCoins, maxShares);
+  const topTraderCheck = await validateWithTopTraderRules(
+    signal,
+    portfolioState,
+    signal.confidence,
+    Math.round(signal.confidence * 0.25), // estimate vote count from confidence
+    25,
+    exchange,
+    expectedReturnPct
+  );
+
+  if (!topTraderCheck.approved) {
+    logger.warn(`🚫 TOP TRADER RULES BLOCKED trade on ${signal.asset}:`);
+    topTraderCheck.violations.forEach(v => logger.warn(`   ${v}`));
+    return false;
+  }
+
+  // ── TRADE VIABILITY CHECK (fee analysis) ──────────────────────────────────
+  const viability = checkTradeViability(
+    portfolioState.totalValue,
+    positionSizeEst,
+    expectedReturnPct,
+    stopDistancePct,
+    exchange as keyof typeof EXCHANGE_FEES
+  );
+
+  if (!viability.viable) {
+    logger.warn(`🚫 VIABILITY CHECK FAILED for ${signal.asset}: ${viability.reason}`);
+    return false;
+  }
+
+  // ── CALCULATE POSITION SIZE (micro-account optimized) ─────────────────────
+  const microPos = calculateMicroPosition(
+    portfolioState.totalValue,
+    signal.entryPrice,
+    signal.stopLossPrice,
+    exchange as keyof typeof EXCHANGE_FEES,
+    signal.confidence
+  );
+
+  if (!microPos.isAboveMinimum) {
+    logger.warn(`🚫 Position below exchange minimum for ${signal.asset}: ${microPos.recommendation}`);
+    return false;
+  }
+
+  const finalQty = microPos.shares;
 
   if (finalQty <= 0) {
     logger.warn(`Position size calculated as 0 for ${signal.asset} — skipping`);

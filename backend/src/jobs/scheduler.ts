@@ -12,6 +12,7 @@ import { generateDailyJournal } from '../services/journalGenerator';
 import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { TradeSignal } from '../agents/types';
+import { scanPolymarketOpportunities, placePolymarketBet } from '../services/polymarket';
 
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
@@ -137,6 +138,18 @@ export function initScheduler() {
     await generateWeeklyReport().catch(err => logger.error('Weekly report failed', { err }));
   });
 
+  // ── EVERY 30 MINUTES: Polymarket Opportunity Scan ────────────────────────
+  cron.schedule('*/30 * * * *', async () => {
+    if (isKillSwitchActive()) return;
+    try {
+      const portfolio = await getPortfolioState();
+      const opportunities = await scanPolymarketOpportunities(portfolio.totalValue);
+      for (const opp of opportunities.slice(0, 3)) {
+        await placePolymarketBet(opp, opp.question, true); // paper mode
+      }
+    } catch (err) { logger.error('Polymarket scan failed', { err }); }
+  });
+
   // ── POST-TRADE LEARNING: Watch for newly closed trades ───────────────────
   cron.schedule('*/2 * * * *', async () => {
     try {
@@ -158,11 +171,12 @@ export function initScheduler() {
     } catch (err) { logger.error('Post-trade polling failed', { err }); }
   });
 
-  logger.info('✅ Day 4 Scheduler initialized:');
+  logger.info('✅ Tharun Trading Scheduler initialized:');
   logger.info('   ⏱️ Investment Committee debates every 90 seconds');
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');
+  logger.info('   🎯 Polymarket opportunity scan every 30 minutes');
   logger.info('   📓 Daily journal at 11:59 PM');
   logger.info('   📊 Weekly report every Sunday 8 AM');
   logger.info('   🎓 Post-trade learning every 2 minutes');
