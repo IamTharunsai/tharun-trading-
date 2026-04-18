@@ -74,6 +74,15 @@ app.use('/api/monitor', agentMonitorRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 
+// One-time DB cleanup — clears bad portfolio snapshots
+app.delete('/admin/reset-snapshots', async (req, res) => {
+  if (req.headers['x-admin-key'] !== process.env.ENCRYPTION_KEY) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const deleted = await prisma.portfolioSnapshot.deleteMany({});
+  res.json({ deleted: deleted.count });
+});
+
 // Health check
 app.get('/health', (_, res) => {
   res.json({
