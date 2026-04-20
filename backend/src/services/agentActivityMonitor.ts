@@ -125,7 +125,7 @@ class AgentActivityMonitor {
     };
 
     this.activities.push(activity);
-    this.activities.shift(); // Keep limit
+    if (this.activities.length > this.maxActivities) this.activities.shift();
 
     const io = getIO();
     io?.emit('agent:analyzing', activity);
@@ -160,7 +160,7 @@ class AgentActivityMonitor {
     };
 
     this.activities.push(activity);
-    this.activities.shift();
+    if (this.activities.length > this.maxActivities) this.activities.shift();
 
     const io = getIO();
     io?.emit('agent:voting', { ...activity, vote });

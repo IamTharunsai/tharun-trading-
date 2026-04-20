@@ -6,6 +6,7 @@ import { MarketSnapshot, PortfolioState } from './types';
 import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualReports } from '../services/fundamentalsService';
 import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
+import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import MASTER_BOOK_KNOWLEDGE from './masterKnowledge';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -469,6 +470,7 @@ export async function runInvestmentCommitteeDebate(
       };
       logger.info(`  ${agent.icon} ${agent.name}: ${result.vote} (${result.confidence}%)`);
       io?.emit('debate:agent-voted', { ...result, round: 1, debateId });
+      agentActivityMonitor.logVote(agent.id, agent.name, asset, result.vote, result.openingArgument, result.confidence / 100, 1).catch(() => {});
       return result;
     } catch (err) {
       logger.error(`Agent ${agent.id} Round 1 failed`, { err });
@@ -547,6 +549,7 @@ export async function runInvestmentCommitteeDebate(
       if (changed) logger.info(`  🔄 ${agent.name} CHANGED: ${originalVote?.vote} → ${parsed.finalVote}`);
 
       io?.emit('debate:final-vote', { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, finalVote: parsed.finalVote, confidence: parsed.confidence, changedMind: changed, debateId });
+      agentActivityMonitor.logVote(agent.id, agent.name, asset, parsed.finalVote, parsed.finalReason || '', parsed.confidence / 100, 3).catch(() => {});
 
       return {
         agentId: agent.id, agentName: agent.name, agentIcon: agent.icon,
