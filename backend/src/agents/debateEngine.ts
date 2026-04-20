@@ -468,6 +468,7 @@ export async function runInvestmentCommitteeDebate(
 
       const response = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
+        temperature: 0.3,
         max_tokens: 600,
         system: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
         messages: [{ role: 'user', content: `COMMITTEE — ${asset}\n\n${round1Prompt}\n\nState your position with specific numbers.` }]
@@ -552,6 +553,7 @@ export async function runInvestmentCommitteeDebate(
     try {
       const response = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
+        temperature: 0.3,
         max_tokens: 300,
         system: agent.systemPrompt,
         messages: [{
@@ -582,7 +584,9 @@ export async function runInvestmentCommitteeDebate(
         challenges: [], rebuttals: []
       };
     } catch (err) {
-      return { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, initialVote: originalVote?.vote || 'HOLD', finalVote: originalVote?.vote || 'HOLD', confidence: originalVote?.confidence || 0, changedMind: false, finalReason: 'Error', openingArgument: '', keyFactors: [], riskWarnings: [], challenges: [], rebuttals: [] };
+      const fallbackVote = originalVote?.vote || 'HOLD';
+      agentActivityMonitor.logVote(agent.id, agent.name, asset, fallbackVote, 'Kept Round 1 vote (Round 3 failed)', (originalVote?.confidence || 0) / 100, 3).catch(() => {});
+      return { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, initialVote: fallbackVote, finalVote: fallbackVote, confidence: originalVote?.confidence || 0, changedMind: false, finalReason: 'Error', openingArgument: '', keyFactors: [], riskWarnings: [], challenges: [], rebuttals: [] };
     }
   }, 3000);
   transcript.round3 = round3Results.map(r => ({ agentId: r.agentId, agentName: r.agentName, finalVote: r.finalVote, confidence: r.confidence, reason: r.finalReason }));
@@ -618,6 +622,7 @@ export async function runInvestmentCommitteeDebate(
 
       const masterResponse = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
+        temperature: 0.2,
         max_tokens: 800,
         system: MASTER_COORDINATOR_PROMPT,
         messages: [{ role: 'user', content: fullDebateContext }]
