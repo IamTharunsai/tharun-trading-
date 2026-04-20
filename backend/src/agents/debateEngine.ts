@@ -657,12 +657,24 @@ function buildMarketContext(
   fundamentals = '',
   stockMemory = ''
 ): string {
+  const ind = snapshot.indicators;
   const lines = [
     `ASSET: ${snapshot.asset} | PRICE: $${snapshot.price.toFixed(2)} | 24H: ${snapshot.priceChangePct24h.toFixed(2)}%`,
     `REGIME: ${regime}`,
-    `RSI: ${snapshot.indicators.rsi14.toFixed(1)} | MACD: ${snapshot.indicators.macd.histogram > 0 ? 'Bullish' : 'Bearish'}`,
-    `EMA200: $${snapshot.indicators.ema200.toFixed(2)} | Price ${snapshot.price > snapshot.indicators.ema200 ? 'ABOVE' : 'BELOW'}`,
-    `Portfolio: $${portfolio.totalValue.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct.toFixed(2)}% | Cash: $${portfolio.cashBalance.toFixed(2)}`,
+    `── TECHNICALS ──`,
+    `RSI(14): ${ind.rsi14.toFixed(1)} | MACD Histogram: ${ind.macd.histogram > 0 ? '+' : ''}${ind.macd.histogram.toFixed(4)} (${ind.macd.histogram > 0 ? 'BULLISH' : 'BEARISH'})`,
+    `Stochastic K/D: ${ind.stochasticK.toFixed(1)}/${ind.stochasticD.toFixed(1)}`,
+    `Bollinger: Upper $${ind.bollingerBands.upper.toFixed(2)} | Mid $${ind.bollingerBands.middle.toFixed(2)} | Lower $${ind.bollingerBands.lower.toFixed(2)}`,
+    `EMA9: $${ind.ema9.toFixed(2)} | EMA21: $${ind.ema21.toFixed(2)} | EMA200: $${ind.ema200.toFixed(2)}`,
+    `SMA50: $${ind.sma50.toFixed(2)} | SMA200: $${ind.sma200.toFixed(2)}`,
+    `VWAP: $${ind.vwap.toFixed(2)} | ATR(14): $${ind.atr14.toFixed(2)}`,
+    `52W High: $${ind.week52High.toFixed(2)} | 52W Low: $${ind.week52Low.toFixed(2)} | ${ind.distanceFrom52wHigh.toFixed(1)}% from high`,
+    `Fibonacci: 23.6%=$${ind.fibonacci.r236.toFixed(2)} | 38.2%=$${ind.fibonacci.r382.toFixed(2)} | 50%=$${ind.fibonacci.r500.toFixed(2)} | 61.8%=$${ind.fibonacci.r618.toFixed(2)}`,
+    `Trend: Price ${ind.isAboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 | SMA50 ${ind.isSma50AboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 (${ind.isSma50AboveSma200 ? 'GOLDEN CROSS' : 'DEATH CROSS'})`,
+    `Volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M | ${ind.volumeRatio.toFixed(2)}x avg (${ind.volumeRatio > 1.5 ? '⚡HIGH — institutional activity' : ind.volumeRatio < 0.7 ? '🔇LOW — weak conviction' : 'Normal'})`,
+    `OBV trend: ${ind.obv > 0 ? 'Accumulation' : 'Distribution'}`,
+    `── PORTFOLIO ──`,
+    `Value: $${portfolio.totalValue.toFixed(2)} | Cash: $${portfolio.cashBalance.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct.toFixed(2)}%`,
   ];
   if (fundamentals && fundamentals !== 'No fundamental data available yet.') {
     lines.push(`FUNDAMENTALS: ${fundamentals}`);

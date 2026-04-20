@@ -176,12 +176,39 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
         askPrice: parseFloat(tickerRes.data.askPrice || tickerRes.data.lastPrice),
       };
     } else {
-      const cached = await redis.get(`price:${asset}`);
-      if (!cached) return null;
-      const p = JSON.parse(cached);
-      priceData = { price: p.price, priceChange24h: 0, priceChangePct24h: p.change24h || 0, volume24h: p.volume24h || 0, high24h: p.high24h || p.price, low24h: p.low24h || p.price, bidPrice: p.price, askPrice: p.price };
-      // Use fallback candles for stocks
-      candles = generateMockCandles(priceData.price, 50);
+      // Fetch real stock candles from Polygon (daily, last 60 days)
+      const toDate = new Date().toISOString().slice(0, 10);
+      const fromDate = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+      const candleRes = await axios.get(
+        `https://api.polygon.io/v2/aggs/ticker/${asset}/range/1/day/${fromDate}/${toDate}`,
+        { params: { adjusted: true, sort: 'asc', limit: 60, apiKey: POLYGON_KEY }, timeout: 10000 }
+      );
+      if (candleRes.data?.results?.length > 5) {
+        candles = candleRes.data.results.map((r: any) => ({
+          open: r.o, high: r.h, low: r.l, close: r.c, volume: r.v, timestamp: r.t
+        }));
+        const last = candles[candles.length - 1];
+        const prev = candles[candles.length - 2];
+        const change = last.close - prev.close;
+        priceData = {
+          price: last.close,
+          priceChange24h: change,
+          priceChangePct24h: (change / prev.close) * 100,
+          volume24h: last.volume,
+          high24h: last.high,
+          low24h: last.low,
+          bidPrice: last.close,
+          askPrice: last.close,
+        };
+        latestPrices[asset] = last.close;
+      } else {
+        // Fallback to cached price if candles unavailable
+        const cached = await redis.get(`price:${asset}`);
+        if (!cached && !latestPrices[asset]) return null;
+        const p = cached ? JSON.parse(cached) : { price: latestPrices[asset], change24h: 0 };
+        priceData = { price: p.price, priceChange24h: 0, priceChangePct24h: p.change24h || 0, volume24h: p.volume24h || 0, high24h: p.price, low24h: p.price, bidPrice: p.price, askPrice: p.price };
+        candles = generateMockCandles(priceData.price, 50);
+      }
     }
 
     const indicators = calculateIndicators(candles, priceData.volume24h);
@@ -203,7 +230,34 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
 
 function calculateIndicators(candles: Candle[], volume24h: number): TechnicalIndicators {
   const closes = candles.map(c => c.close);
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
   const volumes = candles.map(c => c.volume);
+
+  const sma50 = calculateSMA(closes, Math.min(50, closes.length));
+  const sma200 = calculateSMA(closes, Math.min(200, closes.length));
+  const volumeAvg20 = calculateSMA(volumes, Math.min(20, volumes.length));
+  const currentPrice = closes[closes.length - 1];
+  const currentVol = volumes[volumes.length - 1];
+
+  // 52-week high/low (use all available candles)
+  const week52High = Math.max(...highs);
+  const week52Low = Math.min(...lows);
+
+  // VWAP (volume weighted average price — last 20 candles)
+  const vwapCandles = candles.slice(-20);
+  const vwap = vwapCandles.reduce((sum, c) => sum + ((c.high + c.low + c.close) / 3) * c.volume, 0) /
+    Math.max(vwapCandles.reduce((s, c) => s + c.volume, 0), 1);
+
+  // Fibonacci retracements from 52-week range
+  const range = week52High - week52Low;
+  const fibonacci = {
+    r236: week52High - range * 0.236,
+    r382: week52High - range * 0.382,
+    r500: week52High - range * 0.500,
+    r618: week52High - range * 0.618,
+    r786: week52High - range * 0.786,
+  };
 
   return {
     rsi14: calculateRSI(closes, 14),
@@ -212,13 +266,22 @@ function calculateIndicators(candles: Candle[], volume24h: number): TechnicalInd
     ema9: calculateEMA(closes, 9),
     ema21: calculateEMA(closes, 21),
     ema200: calculateEMA(closes, Math.min(200, closes.length)),
-    sma50: calculateSMA(closes, Math.min(50, closes.length)),
-    sma200: calculateSMA(closes, Math.min(200, closes.length)),
+    sma50,
+    sma200,
     atr14: calculateATR(candles, 14),
     obv: calculateOBV(closes, volumes),
     stochasticK: calculateStochastic(candles, 14).k,
     stochasticD: calculateStochastic(candles, 14).d,
-    volumeAvg20: calculateSMA(volumes, Math.min(20, volumes.length))
+    volumeAvg20,
+    vwap,
+    fibonacci,
+    week52High,
+    week52Low,
+    distanceFrom52wHigh: ((week52High - currentPrice) / week52High) * 100,
+    isAboveSma50: currentPrice > sma50,
+    isAboveSma200: currentPrice > sma200,
+    isSma50AboveSma200: sma50 > sma200,
+    volumeRatio: volumeAvg20 > 0 ? currentVol / volumeAvg20 : 1,
   };
 }
 

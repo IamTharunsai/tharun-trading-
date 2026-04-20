@@ -48,6 +48,15 @@ export interface TechnicalIndicators {
   stochasticK: number;
   stochasticD: number;
   volumeAvg20: number;
+  vwap: number;
+  fibonacci: { r236: number; r382: number; r500: number; r618: number; r786: number };
+  week52High: number;
+  week52Low: number;
+  distanceFrom52wHigh: number;
+  isAboveSma50: boolean;
+  isAboveSma200: boolean;
+  isSma50AboveSma200: boolean;  // golden cross
+  volumeRatio: number;          // today vol / 20d avg vol
 }
 
 export interface AgentVote {

@@ -134,8 +134,8 @@ export async function fetchDeepAnalysis(symbol: string): Promise<DeepCompanyAnal
     // ── EARNINGS ─────────────────────────────────────────────────────────────
     const quarterlyEarnings = earnings?.quarterlyEarnings?.slice(0, 8) || [];
     const earningsSurprises = quarterlyEarnings
-      .filter((e: any) => e.reportedEPS && e.estimatedEPS)
-      .map((e: any) => ({
+      .filter((e: Record<string, string>) => e.reportedEPS && e.estimatedEPS)
+      .map((e: Record<string, string>) => ({
         quarter: e.fiscalDateEnding,
         estimate: parseFloat(e.estimatedEPS),
         actual: parseFloat(e.reportedEPS),

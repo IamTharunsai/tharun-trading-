@@ -128,9 +128,9 @@ export async function getFundamentalsSummary(symbol: string): Promise<string> {
     }
 
     if (reports.length > 0) {
-      const revs = reports.map(r => r.revenue ? `$${(r.revenue / 1e9).toFixed(1)}B` : 'N/A');
+      const revs = reports.map((r: { revenue: number | null }) => r.revenue ? `$${(r.revenue / 1e9).toFixed(1)}B` : 'N/A');
       lines.push(`Revenue (last ${reports.length} yrs): ${revs.join(' → ')}`);
-      const eps = reports.map(r => r.eps?.toFixed(2) || 'N/A');
+      const eps = reports.map((r: { eps: number | null }) => r.eps?.toFixed(2) || 'N/A');
       lines.push(`EPS (last ${reports.length} yrs): ${eps.join(' → ')}`);
       if (reports[0].revenueGrowth != null) lines.push(`Revenue Growth YoY: ${reports[0].revenueGrowth.toFixed(1)}%`);
       if (reports[0].netIncomeGrowth != null) lines.push(`Net Income Growth YoY: ${reports[0].netIncomeGrowth.toFixed(1)}%`);
