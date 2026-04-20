@@ -7,6 +7,25 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      * { box-sizing: border-box; }
+      @media (max-width: 768px) {
+        body { overflow-x: hidden; }
+        /* Sidebar collapses on mobile */
+        nav, aside { display: none !important; }
+        /* Main content takes full width */
+        main, [style*="margin-left"] { margin-left: 0 !important; width: 100% !important; }
+        /* Cards stack vertically */
+        [style*="display: grid"], [style*="display:grid"] { display: flex !important; flex-direction: column !important; }
+        [style*="display: flex"][style*="gap"] { flex-wrap: wrap !important; }
+        /* Stats cards full width on mobile */
+        [style*="flex: 1"], [style*="flex:1"] { min-width: 100% !important; }
+        /* Readable font sizes */
+        [style*="font-size: 2"], [style*="font-size:2"] { font-size: 1.4rem !important; }
+        /* Padding on mobile */
+        [style*="padding: 2"], [style*="padding:2"] { padding: 12px !important; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
