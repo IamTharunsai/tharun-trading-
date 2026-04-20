@@ -43,6 +43,11 @@ export const getDecision = (id: string) =>
 export const getPrices = () => api.get('/market/prices').then(r => r.data);
 export const getNews = () => api.get('/market/news').then(r => r.data);
 export const getPredictions = () => api.get('/market/predictions').then(r => r.data);
+export const getStocksUniverse = () => api.get('/market/stocks-universe').then(r => r.data);
+export const getStockDetail = (symbol: string, market = 'stocks') =>
+  api.get(`/market/stock/${symbol}`, { params: { market } }).then(r => r.data);
+export const getStockCandles = (symbol: string, market = 'stocks') =>
+  api.get(`/market/stock/${symbol}/candles`, { params: { market } }).then(r => r.data);
 
 // ── JOURNAL ───────────────────────────────────────────────────────────────────
 export const getJournals = () => api.get('/journal').then(r => r.data);

@@ -18,6 +18,7 @@ import JournalPage from './pages/Journal';
 import NewsPage from './pages/News';
 import NewsAndGeopoliticsPage from './pages/NewsAndGeopolitics';
 import InvestmentPage from './pages/Investment';
+import StockUniversePage from './pages/StockUniverse';
 import SettingsPage from './pages/Settings';
 import HistoryPage from './pages/History';
 import Layout from './components/common/Layout';
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="investment" element={<InvestmentPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="history" element={<HistoryPage />} />
+          <Route path="stocks" element={<StockUniversePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

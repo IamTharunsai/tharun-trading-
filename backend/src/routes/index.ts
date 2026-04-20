@@ -172,6 +172,119 @@ marketRouter.get('/predictions', async (req: Request, res: Response) => {
   res.json(predictions);
 });
 
+// ── Stock Universe — every asset agents have analyzed ─────────────────────────
+marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
+  try {
+    const [decisions, allFundamentals, allTrades, openPositions, memories] = await Promise.all([
+      prisma.agentDecision.groupBy({
+        by: ['asset', 'signal'],
+        _count: { asset: true },
+        _max: { timestamp: true, avgConfidence: true },
+        orderBy: { _max: { timestamp: 'desc' } }
+      }),
+      prisma.companyFundamentals.findMany(),
+      prisma.trade.findMany({ where: { status: 'CLOSED' }, select: { asset: true, pnl: true, pnlPct: true, type: true } }),
+      prisma.position.findMany({ where: { status: 'OPEN' } }),
+      prisma.stockMemory.findMany(),
+    ]);
+
+    const fundMap = Object.fromEntries(allFundamentals.map(f => [f.symbol, f]));
+    const posMap = Object.fromEntries(openPositions.map(p => [p.asset, p]));
+    const memMap = Object.fromEntries(memories.map(m => [m.symbol, m]));
+
+    // Aggregate trade stats per asset
+    const tradeStats: Record<string, { count: number; pnl: number; wins: number; losses: number }> = {};
+    for (const t of allTrades) {
+      if (!tradeStats[t.asset]) tradeStats[t.asset] = { count: 0, pnl: 0, wins: 0, losses: 0 };
+      tradeStats[t.asset].count++;
+      tradeStats[t.asset].pnl += t.pnl || 0;
+      if ((t.pnl || 0) > 0) tradeStats[t.asset].wins++;
+      else tradeStats[t.asset].losses++;
+    }
+
+    // Collapse per-asset (group by asset, keep latest signal)
+    const assetMap = new Map<string, any>();
+    for (const d of decisions) {
+      if (!assetMap.has(d.asset)) {
+        assetMap.set(d.asset, { asset: d.asset, signal: d.signal, count: d._count.asset, lastAt: d._max.timestamp, confidence: d._max.avgConfidence });
+      } else {
+        const ex = assetMap.get(d.asset)!;
+        ex.count += d._count.asset;
+        if ((d._max.timestamp || 0) > (ex.lastAt || 0)) { ex.lastAt = d._max.timestamp; ex.signal = d.signal; }
+      }
+    }
+
+    const result = Array.from(assetMap.values()).map(d => {
+      const fund = fundMap[d.asset];
+      const ts = tradeStats[d.asset];
+      const pos = posMap[d.asset];
+      const mem = memMap[d.asset];
+      return {
+        symbol: d.asset,
+        name: fund?.name || d.asset,
+        sector: fund?.sector || null,
+        industry: fund?.industry || null,
+        marketCap: fund?.marketCap || null,
+        peRatio: fund?.peRatio || null,
+        analystRating: fund?.analystRating || null,
+        analystTargetPrice: fund?.analystTargetPrice || null,
+        fundamentalScore: null,
+        lastVote: d.signal,
+        lastConfidence: d.confidence,
+        debateCount: d.count,
+        lastDebateAt: d.lastAt,
+        tradeCount: ts?.count || 0,
+        totalPnl: ts ? parseFloat(ts.pnl.toFixed(2)) : 0,
+        winRate: ts && ts.count > 0 ? parseFloat(((ts.wins / ts.count) * 100).toFixed(1)) : null,
+        hasOpenPosition: !!pos,
+        openPositionPnl: pos ? parseFloat(pos.unrealizedPnl.toFixed(2)) : null,
+        openPositionPct: pos ? parseFloat(pos.unrealizedPnlPct.toFixed(2)) : null,
+        currentPrice: pos?.currentPrice || null,
+        entryPrice: pos?.entryPrice || null,
+        memoryWinRate: mem?.winRate || null,
+        memoryTrades: mem?.totalTrades || 0,
+        bestSetup: mem?.bestSetup || null,
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch stock universe' });
+  }
+});
+
+// ── Single stock detail — trades + decisions + candles ────────────────────────
+marketRouter.get('/stock/:symbol', async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const market = (req.query.market as string) || 'stocks';
+    const [fund, trades, decisions, memory, position] = await Promise.all([
+      prisma.companyFundamentals.findUnique({ where: { symbol } }),
+      prisma.trade.findMany({ where: { asset: symbol }, orderBy: { openedAt: 'desc' }, take: 30 }),
+      prisma.agentDecision.findMany({ where: { asset: symbol }, orderBy: { timestamp: 'desc' }, take: 5 }),
+      prisma.stockMemory.findUnique({ where: { symbol } }),
+      prisma.position.findFirst({ where: { asset: symbol, status: 'OPEN' } }),
+    ]);
+    res.json({ symbol, market, fundamentals: fund, trades, decisions, memory, position });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch stock detail' });
+  }
+});
+
+// ── Candles for a stock (from Polygon or Binance) ─────────────────────────────
+marketRouter.get('/stock/:symbol/candles', async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const market = (req.query.market as string || 'stocks') as 'crypto' | 'stocks' | 'forex';
+    const { buildMarketSnapshot } = await import('../services/marketData');
+    const snapshot = await buildMarketSnapshot(symbol, market);
+    if (!snapshot) return res.json({ candles: [], indicators: null });
+    res.json({ candles: snapshot.candles, indicators: snapshot.indicators, price: snapshot.price });
+  } catch {
+    res.json({ candles: [], indicators: null });
+  }
+});
+
 // ── /api/journal ──────────────────────────────────────────────────────────────
 export const journalRouter = Router();
 journalRouter.use(requireAuth);
