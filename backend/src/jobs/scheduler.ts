@@ -122,10 +122,12 @@ export function initScheduler() {
 
   // ── EVERY HOUR: Market Regime Detection (crypto + next stock batch) ─────
   cron.schedule('0 * * * *', async () => {
-    const regimeAssets = [...CRYPTO_ASSETS.slice(0, 3), ...getNextStockBatch(2)];
-    for (const asset of regimeAssets) {
+    const cryptoAssets = CRYPTO_ASSETS.slice(0, 3).map(a => ({ asset: a, market: 'crypto' as const }));
+    const stockAssets = getNextStockBatch(2).map(a => ({ asset: a, market: 'stocks' as const }));
+    const regimeAssets = [...cryptoAssets, ...stockAssets];
+    for (const { asset, market } of regimeAssets) {
       try {
-        const snapshot = await buildMarketSnapshot(asset, 'crypto');
+        const snapshot = await buildMarketSnapshot(asset, market);
         if (!snapshot) continue;
         const bWidth = (snapshot.indicators.bollingerBands.upper - snapshot.indicators.bollingerBands.lower) / snapshot.indicators.bollingerBands.middle;
         await detectMarketRegime(asset, {
@@ -202,7 +204,7 @@ export function initScheduler() {
   });
 
   logger.info('✅ Tharun Trading Scheduler initialized:');
-  logger.info('   ⏱️ Investment Committee debates every 90 seconds');
+  logger.info('   ⏱️ Investment Committee debates every 2 hours');
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');
