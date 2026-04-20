@@ -130,13 +130,26 @@ function connectBinanceWebSocket() {
 
 async function fetchInitialStockPrices() {
   if (!process.env.POLYGON_API_KEY) return;
+  const today = new Date();
+  // Use previous trading day (skip weekends)
+  const day = today.getDay();
+  const offset = day === 0 ? 2 : day === 1 ? 3 : 1;
+  const prev = new Date(today);
+  prev.setDate(prev.getDate() - offset);
+  const dateStr = prev.toISOString().slice(0, 10);
   try {
     for (const symbol of STOCK_ASSETS) {
-      const res = await axios.get(`https://api.polygon.io/v2/last/trade/${symbol}`, {
-        params: { apiKey: process.env.POLYGON_API_KEY }, timeout: 5000
-      });
-      if (res.data?.results?.p) latestPrices[symbol] = res.data.results.p;
+      try {
+        const res = await axios.get(
+          `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/1/day/${dateStr}/${dateStr}`,
+          { params: { apiKey: process.env.POLYGON_API_KEY, adjusted: true }, timeout: 5000 }
+        );
+        const bar = res.data?.results?.[0];
+        if (bar?.c) latestPrices[symbol] = bar.c;
+        await new Promise(r => setTimeout(r, 200)); // free tier: 5 req/min
+      } catch { /* skip individual failures */ }
     }
+    logger.info(`📈 Initial stock prices loaded for ${Object.keys(latestPrices).length} symbols`);
   } catch (error) { logger.warn('Stock price fetch failed', { error }); }
 }
 
