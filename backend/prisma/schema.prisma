@@ -368,7 +368,7 @@ model AgentLearningState {
   @@index([overallScore])
 }
 
-// COMPANY FUNDAMENTALS (Phase 2 — fetched from Polygon.io weekly)
+// COMPANY FUNDAMENTALS (Phase 2 - fetched from Polygon.io weekly)
 model CompanyFundamentals {
   id                String   @id @default(cuid())
   symbol            String   @unique
@@ -405,7 +405,7 @@ model CompanyFundamentals {
   @@index([marketCap])
 }
 
-// ANNUAL REPORTS — key metrics from 10-K filings (Phase 3)
+// ANNUAL REPORTS - key metrics from 10-K filings (Phase 3)
 model AnnualReport {
   id              String   @id @default(cuid())
   symbol          String
@@ -430,7 +430,7 @@ model AnnualReport {
   @@index([year])
 }
 
-// STOCK MEMORY — self-learning per stock per agent (Phase 4)
+// STOCK MEMORY - self-learning per stock per agent (Phase 4)
 model StockMemory {
   id              String   @id @default(cuid())
   symbol          String

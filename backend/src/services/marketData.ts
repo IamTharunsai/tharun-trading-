@@ -181,7 +181,7 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
       const fromDate = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
       const candleRes = await axios.get(
         `https://api.polygon.io/v2/aggs/ticker/${asset}/range/1/day/${fromDate}/${toDate}`,
-        { params: { adjusted: true, sort: 'asc', limit: 60, apiKey: POLYGON_KEY }, timeout: 10000 }
+        { params: { adjusted: true, sort: 'asc', limit: 60, apiKey: process.env.POLYGON_API_KEY }, timeout: 10000 }
       );
       if (candleRes.data?.results?.length > 5) {
         candles = candleRes.data.results.map((r: any) => ({

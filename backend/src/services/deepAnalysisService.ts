@@ -141,7 +141,7 @@ export async function fetchDeepAnalysis(symbol: string): Promise<DeepCompanyAnal
         actual: parseFloat(e.reportedEPS),
         surprise: parseFloat(e.surprisePercentage) || 0
       }));
-    const beats = earningsSurprises.filter(e => e.actual > e.estimate).length;
+    const beats = earningsSurprises.filter((e: { actual: number; estimate: number }) => e.actual > e.estimate).length;
     const earningsBeatRate = earningsSurprises.length > 0 ? (beats / earningsSurprises.length) * 100 : 0;
 
     // ── INSIDER TRADING ──────────────────────────────────────────────────────
