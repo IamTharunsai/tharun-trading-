@@ -6,6 +6,7 @@ import { MarketSnapshot, PortfolioState } from './types';
 import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualReports } from '../services/fundamentalsService';
 import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
+import MASTER_BOOK_KNOWLEDGE from './masterKnowledge';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -413,7 +414,7 @@ export async function runInvestmentCommitteeDebate(
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 800,
-        system: agent.systemPrompt + `\n\nYou are a TOP WORLD-CLASS TRADER. Analyze every data point deeply.\n\nDecision types:\n- STRONG_BUY: Extremely high conviction, all signals aligned, rare opportunity\n- BUY: Good setup, most signals positive\n- HOLD: Unclear, wait for better entry\n- SELL: Close position or avoid\n- STRONG_SELL: Urgent exit, high risk detected\n\nRespond ONLY in valid JSON:\n{"vote":"STRONG_BUY"|"BUY"|"SELL"|"STRONG_SELL"|"HOLD","confidence":0-100,"openingArgument":"<detailed case with data>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"catalysts":["<upcoming catalyst>"],"priceTarget":"<target if BUY>","stopLevel":"<stop if BUY>","weaknessOfMyOwnView":"<weakness>","fundamentalView":"<your view on fundamentals>"}`,
+        system: agent.systemPrompt + `\n\n${MASTER_BOOK_KNOWLEDGE}\n\nYou are a TOP WORLD-CLASS TRADER with knowledge of all 20 greatest trading books. Apply their frameworks to every analysis.\n\nDecision types:\n- STRONG_BUY: All signals aligned — technicals, fundamentals, momentum, insider buying. Minervini Trend Template confirmed. Rare opportunity.\n- BUY: Most signals positive, R/R > 2:1, setup is clear\n- HOLD: Mixed signals, wait for clarity or better entry\n- SELL: Close position or avoid entry\n- STRONG_SELL: Multiple red flags — get out immediately\n\nRespond ONLY in valid JSON:\n{"vote":"STRONG_BUY"|"BUY"|"SELL"|"STRONG_SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite specific numbers from the data>","keyFactors":["<factor with number>","<factor with number>","<factor with number>"],"riskWarnings":["<specific risk>","<specific risk>"],"catalysts":["<upcoming catalyst>"],"priceTarget":"<target price>","stopLevel":"<stop loss price>","riskReward":"<R/R ratio>","bookReference":"<which book/law supports this trade>","weaknessOfMyOwnView":"<honest weakness>","fundamentalView":"<F-score, PEG, magic formula view>"}`,
         messages: [{ role: 'user', content: `INVESTMENT COMMITTEE — ${asset}\n\n${round1Prompt}\n\nAnalyze EVERY data point above. What is your position and why? Be specific with numbers.` }]
       });
 

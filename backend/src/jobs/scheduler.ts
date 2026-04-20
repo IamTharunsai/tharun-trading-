@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount } from '../services/marketData';
 import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
+import { getScreenedSymbols } from '../services/stockScreener';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
 import { detectMarketRegime } from '../services/regimeDetector';
 import { executeTradeSignal } from '../trading/executionEngine';
@@ -75,9 +76,13 @@ export function initScheduler() {
   cron.schedule('0 */2 * * *', async () => {
     if (isKillSwitchActive()) return;
 
-    // Scan next 20 stocks from full Alpaca list (rotates through all 8000+ in ~27 days)
-    const stockBatch = getNextStockBatch(20);
-    logger.info(`📊 Scanning stocks: ${stockBatch.join(', ')} (${getTotalStockCount()} total in rotation)`);
+    // Use screened stocks first (top momentum), fall back to rotation
+    let screened: string[] = [];
+    try { screened = await getScreenedSymbols(); } catch { /* fallback below */ }
+    const stockBatch = screened.length > 0
+      ? screened.slice(0, 20)
+      : getNextStockBatch(20);
+    logger.info(`📊 Scanning ${stockBatch.length} stocks (${screened.length > 0 ? 'screened' : 'rotation'}, ${getTotalStockCount()} total)`);
     for (const symbol of stockBatch) {
       runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
       await new Promise(r => setTimeout(r, 8000)); // 8s gap between debates
