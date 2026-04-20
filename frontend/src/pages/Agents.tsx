@@ -62,6 +62,19 @@ export default function AgentsPage() {
             <PlayCircle size={14} />
             {running ? 'RUNNING...' : 'RUN NOW'}
           </button>
+          <button onClick={async () => {
+            try {
+              const r = await api.post('/agents/force-trade', { asset: symbol, market, direction: 'BUY' });
+              toast.success(r.data.message || `✅ Trade executed!`, { duration: 6000 });
+              setTimeout(refetch, 2000);
+            } catch (e: any) {
+              toast.error(e.response?.data?.error || 'Force trade failed');
+            }
+          }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8,
+            background: 'rgba(45,138,74,0.15)', border: '1px solid #2D8A4A',
+            color: '#2D8A4A', fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            ⚡ FORCE BUY
+          </button>
         </div>
       </div>
 

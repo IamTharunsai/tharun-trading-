@@ -468,7 +468,7 @@ export async function runInvestmentCommitteeDebate(
 
       const response = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
-        temperature: 0.3,
+        temperature: 0.7,
         max_tokens: 600,
         system: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
         messages: [{ role: 'user', content: `COMMITTEE — ${asset}\n\n${round1Prompt}\n\nState your position with specific numbers.` }]
@@ -622,7 +622,7 @@ export async function runInvestmentCommitteeDebate(
 
       const masterResponse = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
-        temperature: 0.2,
+        temperature: 0.5,
         max_tokens: 800,
         system: MASTER_COORDINATOR_PROMPT,
         messages: [{ role: 'user', content: fullDebateContext }]

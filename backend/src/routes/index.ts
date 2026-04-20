@@ -132,10 +132,43 @@ agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
     const { asset = 'BTC', market = 'crypto' } = req.body;
     const { runDebateForAsset } = await import('../jobs/scheduler');
     res.json({ message: `Debate triggered for ${asset}`, asset, status: 'running' });
-    // Fire and forget — result arrives via WebSocket
     runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex').catch(() => {});
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger debate' });
+  }
+});
+
+// Force a paper trade immediately — bypasses debate, tests execution pipeline
+agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
+  try {
+    const { asset = 'AAPL', market = 'stocks', direction = 'BUY' } = req.body;
+    const { buildMarketSnapshot } = await import('../services/marketData');
+    const { executeTradeSignal } = await import('../trading/executionEngine');
+    const { validateTradeSignal } = await import('../trading/riskManager');
+    const { getPortfolioState } = await import('../services/portfolio');
+
+    const snapshot = await buildMarketSnapshot(asset, market);
+    if (!snapshot) return res.status(400).json({ error: `No price data for ${asset}` });
+
+    const portfolio = await getPortfolioState();
+    const stopLoss = direction === 'BUY' ? snapshot.price * 0.98 : snapshot.price * 1.02;
+    const takeProfit = direction === 'BUY' ? snapshot.price * 1.06 : snapshot.price * 0.94;
+
+    const signal = {
+      asset, market: market as 'stocks' | 'crypto' | 'forex', direction: direction as 'BUY' | 'SELL',
+      confidence: 80, entryPrice: snapshot.price, stopLossPrice: stopLoss,
+      takeProfitPrice: takeProfit, positionSizePct: 5,
+      reasoning: `Manual test trade — forced execution to verify pipeline`,
+      agentDecisionId: ''
+    };
+
+    const risk = await validateTradeSignal(signal, portfolio);
+    if (!risk.approved) return res.status(400).json({ error: `Risk check failed: ${risk.reason}` });
+
+    const trade = await executeTradeSignal(signal, portfolio);
+    res.json({ success: true, trade, message: `✅ Paper trade executed: ${direction} ${asset} @ $${snapshot.price}` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Execution failed' });
   }
 });
 
