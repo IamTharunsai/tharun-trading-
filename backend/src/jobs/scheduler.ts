@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount } from '../services/marketData';
+import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
 import { detectMarketRegime } from '../services/regimeDetector';
 import { executeTradeSignal } from '../trading/executionEngine';
@@ -149,6 +150,17 @@ export function initScheduler() {
   cron.schedule('0 8 * * 0', async () => {
     logger.info('📊 Generating weekly performance report...');
     await generateWeeklyReport().catch(err => logger.error('Weekly report failed', { err }));
+  });
+
+  // ── EVERY NIGHT 2 AM: Bulk refresh fundamentals for next day's debates ───
+  cron.schedule('0 2 * * *', async () => {
+    logger.info('🔄 Nightly fundamentals refresh — pre-loading deep analysis...');
+    const batch = getNextStockBatch(50); // refresh 50 stocks every night
+    for (const symbol of batch) {
+      await refreshFundamentalsForSymbol(symbol).catch(() => {});
+      await new Promise(r => setTimeout(r, 2000)); // 2s gap to respect API rate limits
+    }
+    logger.info(`✅ Nightly refresh done: ${batch.length} stocks updated`);
   });
 
   // ── EVERY 30 MINUTES: Polymarket Opportunity Scan ────────────────────────

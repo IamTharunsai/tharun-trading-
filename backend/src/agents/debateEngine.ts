@@ -5,6 +5,7 @@ import { getIO } from '../websocket/server';
 import { MarketSnapshot, PortfolioState } from './types';
 import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualReports } from '../services/fundamentalsService';
 import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
+import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -387,13 +388,15 @@ export async function runInvestmentCommitteeDebate(
     agentArguments: [],
   };
 
-  // Fetch fundamentals + memory in parallel (background enrichment)
-  const [fundamentalsSummary, stockMemory] = await Promise.all([
-    snapshot.market === 'stocks' ? getFundamentalsSummary(asset) : Promise.resolve(''),
+  // Deep analysis — fetch ALL data before debate starts
+  const [deepAnalysis, stockMemory] = await Promise.all([
+    snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
-    snapshot.market === 'stocks' ? fetchAndStoreFundamentals(asset).catch(() => {}) : Promise.resolve(),
-    snapshot.market === 'stocks' ? fetchAndStoreAnnualReports(asset).catch(() => {}) : Promise.resolve(),
-  ]) as [string, string, void, void];
+  ]);
+
+  const fundamentalsSummary = deepAnalysis
+    ? formatDeepAnalysisForAgents(deepAnalysis)
+    : snapshot.market === 'stocks' ? await getFundamentalsSummary(asset) : '';
 
   await recordDebate(asset, 'PENDING');
 
@@ -410,8 +413,8 @@ export async function runInvestmentCommitteeDebate(
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 800,
-        system: agent.systemPrompt + `\n\nRespond ONLY in valid JSON:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<your case>","keyFactors":["<f1>","<f2>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
-        messages: [{ role: 'user', content: `INVESTMENT COMMITTEE — ${asset}\n\n${round1Prompt}\n\nWhat is your position and why?` }]
+        system: agent.systemPrompt + `\n\nYou are a TOP WORLD-CLASS TRADER. Analyze every data point deeply.\n\nDecision types:\n- STRONG_BUY: Extremely high conviction, all signals aligned, rare opportunity\n- BUY: Good setup, most signals positive\n- HOLD: Unclear, wait for better entry\n- SELL: Close position or avoid\n- STRONG_SELL: Urgent exit, high risk detected\n\nRespond ONLY in valid JSON:\n{"vote":"STRONG_BUY"|"BUY"|"SELL"|"STRONG_SELL"|"HOLD","confidence":0-100,"openingArgument":"<detailed case with data>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"catalysts":["<upcoming catalyst>"],"priceTarget":"<target if BUY>","stopLevel":"<stop if BUY>","weaknessOfMyOwnView":"<weakness>","fundamentalView":"<your view on fundamentals>"}`,
+        messages: [{ role: 'user', content: `INVESTMENT COMMITTEE — ${asset}\n\n${round1Prompt}\n\nAnalyze EVERY data point above. What is your position and why? Be specific with numbers.` }]
       });
 
       const content = response.content[0];
