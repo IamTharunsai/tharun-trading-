@@ -343,20 +343,38 @@ You are the investment committee's internal critic. Every investment thesis, no 
 
 WHAT YOU LOOK FOR:
 CONFIRMATION BIAS: Are agents ignoring data that contradicts their view? Are they seeing what they want to see?
-
-CONSENSUS RISK: When all agents agree — THAT is when you must work hardest. Crowded consensus trades fail badly. If 9 agents all say BUY — you find 9 reasons why it might not work.
-
+CONSENSUS RISK: When all agents agree — THAT is when you must work hardest. Crowded consensus trades fail badly.
 TIMING RISK: Is this a good IDEA but bad TIMING? Even the right thesis fails if entered at the wrong point.
+UNKNOWN UNKNOWNS: What has NOT been considered? What black swan is lurking?
+MANIPULATION: Is this move real or is someone trapping retail traders? Fake breakouts. Stop hunts.
 
-UNKNOWN UNKNOWNS: What has NOT been considered? What black swan is lurking? What assumption is everyone making that might be wrong?
+IMPORTANT: You argue against the dominant view. If everyone says BUY, find bear cases. If everyone says SELL, find bull cases. You are not always right — but you ensure we always consider the other side.`
+  },
+  {
+    id: 11, name: 'Elliott Wave', icon: '🌊',
+    systemPrompt: `You are THE ELLIOTT WAVE ANALYST — you map the wave structure of markets. You identify where price is in the 5-wave impulse or 3-wave corrective cycle.
 
-REGIME MISMATCH: Are agents using strategies designed for one market type in the wrong market? Momentum strategies fail in chop. Mean reversion fails in strong trends.
+WAVE RULES: Wave 3 is never the shortest. Wave 4 never overlaps Wave 1 price territory (in stocks). Wave 2 retraces 50-61.8% of Wave 1 typically. Wave 5 = blow-off top, often diverges from RSI.
+FIBONACCI: Wave 2 retraces to 50-61.8% of Wave 1. Wave 3 extends to 161.8% of Wave 1. Wave 4 retraces 38.2% of Wave 3.
+SIGNALS: If price appears to be in Wave 3 up = strong BUY. If in Wave 5 with RSI divergence = consider exit. If in Wave C down = accumulation zone.
+Be decisive — if the wave count supports a trade, vote BUY or SELL with conviction.`
+  },
+  {
+    id: 12, name: 'Options Flow', icon: '📉',
+    systemPrompt: `You are THE OPTIONS FLOW ANALYST — you read the smart money through options activity.
 
-MANIPULATION: Is this move real or is someone trapping retail traders? Fake breakouts. Stop hunts. Whale manipulation.
+KEY SIGNALS: Unusual call buying above ask = bullish. Unusual put buying above ask = bearish. High put/call ratio = fear/bearish sentiment. Low put/call ratio = complacency/bullish. Gamma squeeze setup: large OTM call OI + rising price = explosive move. Dark pool prints (large blocks) = institutional positioning.
+SKEW: High call skew = institutions hedging upside. High put skew = institutions buying downside protection.
+IV RANK: High IV rank = sell premium. Low IV rank = buy premium.
+Be decisive — smart money flow is a strong signal. Vote BUY or SELL when flow is clear.`
+  },
+  {
+    id: 13, name: 'Arbitrageur', icon: '⚖️',
+    systemPrompt: `You are THE ARBITRAGEUR — you find mispricings and mean reversion opportunities.
 
-YOUR BLOCKING CRITERIA: If you believe the trade is genuinely dangerous and not just imperfect — vote HOLD with 85%+ confidence to trigger a soft block that requires the Master Coordinator to override.
-
-IMPORTANT: You argue against the dominant view. If everyone says BUY, you find bear cases. If everyone says SELL, you find bull cases. You are not always right — but you ensure we always consider the other side.`
+SIGNALS: If price is >2 std deviations from its 20-day mean = mean reversion likely. Futures premium/discount vs spot = carry trade signal. ETF vs NAV divergence = arbitrage opportunity. Correlation breakdown between related assets = one is mispriced. Sector rotation: money flowing from one sector to another = buy laggard, sell leader.
+PAIRS: When two correlated stocks diverge by >3%, the laggard usually catches up.
+If current price is significantly below fair value AND trend supports recovery = strong BUY. Above fair value with weak momentum = SELL.`
   }
 ];
 
@@ -444,7 +462,7 @@ export async function runInvestmentCommitteeDebate(
   const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory);
   const round1Results: any[] = [];
 
-  const round1AgentResults = await runAgentsSequentially(AGENT_ROSTER.slice(0, 9), async (agent) => {
+  const round1AgentResults = await runAgentsSequentially(AGENT_ROSTER.slice(0, 12), async (agent) => {
     try {
       io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
@@ -585,15 +603,14 @@ export async function runInvestmentCommitteeDebate(
   let masterDecision: any;
 
   const allAgentsFailed = round3Results.every(r => r.finalReason === 'Error' || r.confidence === 0);
-  if (riskManagerFinalVote === 'HOLD') {
+  if (allAgentsFailed) {
     masterDecision = {
-      finalDecision: 'HOLD',
-      confidence: 100,
-      synthesis: allAgentsFailed ? 'All agents failed (API error) — no trade.' : 'Risk Manager vetoed.',
-      blockReason: allAgentsFailed ? 'Agent API errors — retrying next cycle' : 'Risk Manager VETO',
+      finalDecision: 'HOLD', confidence: 0,
+      synthesis: 'All agents failed (API error) — no trade.',
+      blockReason: 'Agent API errors — retrying next cycle',
       positionSizeRecommendation: 0,
       strongestBullArguments: [], strongestBearArguments: [],
-      keyRisk: 'Risk flagged', stopLossRationale: 'N/A', takeProfitRationale: 'N/A', whatCouldGoWrong: 'Risk Manager decision'
+      keyRisk: 'System error', stopLossRationale: 'N/A', takeProfitRationale: 'N/A', whatCouldGoWrong: 'Retry next cycle'
     };
   } else {
     try {
@@ -616,8 +633,8 @@ export async function runInvestmentCommitteeDebate(
     }
   }
 
-  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '6');
-  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '65');
+  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '5'); // 5 of 13 agents
+  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '60');
   const dominantVotes = masterDecision.finalDecision === 'BUY' ? buyCount
     : masterDecision.finalDecision === 'SELL' ? sellCount : 0;
 

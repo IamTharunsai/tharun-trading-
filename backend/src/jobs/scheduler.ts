@@ -80,8 +80,8 @@ export function initScheduler() {
     let screened: string[] = [];
     try { screened = await getScreenedSymbols(); } catch { /* fallback below */ }
     const stockBatch = screened.length > 0
-      ? screened.slice(0, 20)
-      : getNextStockBatch(20);
+      ? screened.slice(0, 30)
+      : getNextStockBatch(30);
     logger.info(`📊 Scanning ${stockBatch.length} stocks (${screened.length > 0 ? 'screened' : 'rotation'}, ${getTotalStockCount()} total)`);
     for (const symbol of stockBatch) {
       await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
