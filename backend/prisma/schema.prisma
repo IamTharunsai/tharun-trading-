@@ -368,6 +368,94 @@ model AgentLearningState {
   @@index([overallScore])
 }
 
+// COMPANY FUNDAMENTALS (Phase 2 — fetched from Polygon.io weekly)
+model CompanyFundamentals {
+  id                String   @id @default(cuid())
+  symbol            String   @unique
+  name              String?
+  sector            String?
+  industry          String?
+  marketCap         Float?
+  peRatio           Float?
+  pbRatio           Float?
+  psRatio           Float?
+  revenueGrowthYoy  Float?
+  epsGrowthYoy      Float?
+  grossMargin       Float?
+  operatingMargin   Float?
+  netMargin         Float?
+  debtToEquity      Float?
+  currentRatio      Float?
+  dividendYield     Float?
+  beta              Float?
+  week52High        Float?
+  week52Low         Float?
+  avgVolume         Float?
+  sharesOutstanding Float?
+  insiderOwnership  Float?
+  institutionalOwnership Float?
+  analystRating     String?   // 'STRONG_BUY','BUY','HOLD','SELL','STRONG_SELL'
+  analystTargetPrice Float?
+  nextEarningsDate  DateTime?
+  lastUpdated       DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+
+  @@index([symbol])
+  @@index([sector])
+  @@index([marketCap])
+}
+
+// ANNUAL REPORTS — key metrics from 10-K filings (Phase 3)
+model AnnualReport {
+  id              String   @id @default(cuid())
+  symbol          String
+  year            Int
+  revenue         Float?
+  netIncome       Float?
+  eps             Float?
+  freeCashFlow    Float?
+  totalDebt       Float?
+  totalAssets     Float?
+  totalEquity     Float?
+  revenueGrowth   Float?
+  netIncomeGrowth Float?
+  epsGrowth       Float?
+  dividendPaid    Float?
+  sharesBuyback   Float?
+  source          String   @default("fmp")
+  createdAt       DateTime @default(now())
+
+  @@unique([symbol, year])
+  @@index([symbol])
+  @@index([year])
+}
+
+// STOCK MEMORY — self-learning per stock per agent (Phase 4)
+model StockMemory {
+  id              String   @id @default(cuid())
+  symbol          String
+  totalDebates    Int      @default(0)
+  totalTrades     Int      @default(0)
+  wins            Int      @default(0)
+  losses          Int      @default(0)
+  winRate         Float    @default(0)
+  avgPnlPct       Float    @default(0)
+  bestSetup       String?
+  worstSetup      String?
+  avgHoldHours    Float    @default(0)
+  lastDebateVote  String?
+  lastTradeOutcome String?
+  keyLessons      String[] @default([])
+  avoidConditions String[] @default([])
+  favorConditions String[] @default([])
+  lastUpdated     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([symbol])
+  @@index([symbol])
+  @@index([winRate])
+}
+
 // GEO RISK ASSESSMENT (Summary of global risk)
 model GeoRiskAssessment {
   id                String   @id @default(cuid())

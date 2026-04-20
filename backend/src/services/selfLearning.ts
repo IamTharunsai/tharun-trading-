@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
+import { updateStockMemory } from './stockMemoryService';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -84,6 +85,21 @@ export async function runPostTradeAnalysis(tradeId: string): Promise<void> {
 
     await updateAgentMetrics(validLessons);
     await checkAndSuspendUnderperformers();
+
+    // Update stock-level memory
+    const holdHours = trade.closedAt && trade.openedAt
+      ? (new Date(trade.closedAt).getTime() - new Date(trade.openedAt).getTime()) / 3600000
+      : 0;
+    const topLesson = validLessons[0];
+    await updateStockMemory(
+      trade.asset,
+      outcome,
+      pnlPct,
+      holdHours,
+      topLesson?.setupType || 'unknown',
+      topLesson?.lesson || `${outcome} trade`,
+      trade.type
+    );
 
     logger.info(`✅ Post-trade learning complete: ${validLessons.length} lessons`);
 

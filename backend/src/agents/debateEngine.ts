@@ -3,6 +3,8 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { getIO } from '../websocket/server';
 import { MarketSnapshot, PortfolioState } from './types';
+import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualReports } from '../services/fundamentalsService';
+import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -385,10 +387,20 @@ export async function runInvestmentCommitteeDebate(
     agentArguments: [],
   };
 
+  // Fetch fundamentals + memory in parallel (background enrichment)
+  const [fundamentalsSummary, stockMemory] = await Promise.all([
+    snapshot.market === 'stocks' ? getFundamentalsSummary(asset) : Promise.resolve(''),
+    getStockMemorySummary(asset),
+    snapshot.market === 'stocks' ? fetchAndStoreFundamentals(asset).catch(() => {}) : Promise.resolve(),
+    snapshot.market === 'stocks' ? fetchAndStoreAnnualReports(asset).catch(() => {}) : Promise.resolve(),
+  ]) as [string, string, void, void];
+
+  await recordDebate(asset, 'PENDING');
+
   logger.info('📢 ROUND 1: OPENING ARGUMENTS');
   io?.emit('debate:round', { round: 1, debateId, asset });
 
-  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime);
+  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory);
   const round1Results: any[] = [];
 
   const round1Promises = AGENT_ROSTER.slice(0, 9).map(async (agent) => {
@@ -634,12 +646,27 @@ export async function runInvestmentCommitteeDebate(
 
 // ── HELPERS ──────────────────────────────────────────────────────────
 
-function buildMarketContext(snapshot: MarketSnapshot, portfolio: PortfolioState, regime: string): string {
-  return `ASSET: ${snapshot.asset} | PRICE: $${snapshot.price.toFixed(2)} | 24H: ${snapshot.priceChangePct24h.toFixed(2)}%
-REGIME: ${regime}
-RSI: ${snapshot.indicators.rsi14.toFixed(1)} | MACD: ${snapshot.indicators.macd.histogram > 0 ? 'Bullish' : 'Bearish'}
-EMA200: $${snapshot.indicators.ema200.toFixed(2)} | Price ${snapshot.price > snapshot.indicators.ema200 ? 'ABOVE' : 'BELOW'}
-Portfolio: $${portfolio.totalValue.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct.toFixed(2)}% | Cash: $${portfolio.cashBalance.toFixed(2)}`;
+function buildMarketContext(
+  snapshot: MarketSnapshot,
+  portfolio: PortfolioState,
+  regime: string,
+  fundamentals = '',
+  stockMemory = ''
+): string {
+  const lines = [
+    `ASSET: ${snapshot.asset} | PRICE: $${snapshot.price.toFixed(2)} | 24H: ${snapshot.priceChangePct24h.toFixed(2)}%`,
+    `REGIME: ${regime}`,
+    `RSI: ${snapshot.indicators.rsi14.toFixed(1)} | MACD: ${snapshot.indicators.macd.histogram > 0 ? 'Bullish' : 'Bearish'}`,
+    `EMA200: $${snapshot.indicators.ema200.toFixed(2)} | Price ${snapshot.price > snapshot.indicators.ema200 ? 'ABOVE' : 'BELOW'}`,
+    `Portfolio: $${portfolio.totalValue.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct.toFixed(2)}% | Cash: $${portfolio.cashBalance.toFixed(2)}`,
+  ];
+  if (fundamentals && fundamentals !== 'No fundamental data available yet.') {
+    lines.push(`FUNDAMENTALS: ${fundamentals}`);
+  }
+  if (stockMemory && !stockMemory.includes('first analysis')) {
+    lines.push(`PAST PERFORMANCE: ${stockMemory}`);
+  }
+  return lines.join('\n');
 }
 
 function getDominantView(results: any[]): { direction: string; leadAgent: any } {
