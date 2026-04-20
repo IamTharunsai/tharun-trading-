@@ -59,11 +59,12 @@ export async function runDailyScreen(): Promise<ScreenedStock[]> {
     }
 
     const candidates = Array.from(symbolMap.values())
-      .filter(s => s.screenScore >= 40)           // minimum quality threshold
-      .filter(s => s.price >= 1)                  // no penny stocks under $1
-      .filter(s => s.volume >= 50000)             // minimum liquidity
+      .filter(s => s.screenScore >= 40)
+      .filter(s => s.price >= 5)                  // no penny stocks
+      .filter(s => s.volume >= 200000)             // meaningful liquidity
+      .filter(s => !/^[A-Z]{4,5}$/.test(s.symbol) || s.volume > 1000000) // filter low-vol ETFs
       .sort((a, b) => b.screenScore - a.screenScore)
-      .slice(0, 150);                              // top 150 candidates
+      .slice(0, 150);
 
     logger.info(`✅ Screen complete: ${candidates.length} candidates from ${symbolMap.size} stocks`);
     return candidates;

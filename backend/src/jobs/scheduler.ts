@@ -72,17 +72,25 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
 
 export function initScheduler() {
 
+  // High-quality stocks always included in every scan cycle
+  const PRIORITY_WATCHLIST = [
+    'NVDA','AAPL','MSFT','TSLA','AMZN','META','GOOGL','AMD','PLTR','MSTR',
+    'COIN','SOFI','ARM','SMCI','CRWD','PANW','SNOW','UBER','LYFT','RIVN',
+    'SPY','QQQ','AAPL','NOW','SHOP','SQ','ROKU','DKNG','RBLX','HOOD'
+  ];
+
   // ── EVERY 2 HOURS: Rotate through ALL stocks + crypto ────────────────────
   cron.schedule('0 */2 * * *', async () => {
     if (isKillSwitchActive()) return;
 
-    // Use screened stocks first (top momentum), fall back to rotation
+    // Screened = today's momentum stocks. Always add priority watchlist too.
     let screened: string[] = [];
     try { screened = await getScreenedSymbols(); } catch { /* fallback below */ }
-    const stockBatch = screened.length > 0
-      ? screened.slice(0, 30)
-      : getNextStockBatch(30);
-    logger.info(`📊 Scanning ${stockBatch.length} stocks (${screened.length > 0 ? 'screened' : 'rotation'}, ${getTotalStockCount()} total)`);
+
+    // Merge priority + screened, deduplicate, take top 30
+    const merged = [...PRIORITY_WATCHLIST, ...screened.filter(s => !PRIORITY_WATCHLIST.includes(s))];
+    const stockBatch = merged.slice(0, 30);
+    logger.info(`📊 Scanning ${stockBatch.length} stocks (priority+screened, ${getTotalStockCount()} total)`);
     for (const symbol of stockBatch) {
       await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
       await new Promise(r => setTimeout(r, 5000)); // 5s cooldown between debates
