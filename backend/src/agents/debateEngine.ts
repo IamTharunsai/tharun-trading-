@@ -581,12 +581,13 @@ export async function runInvestmentCommitteeDebate(
 
   let masterDecision: any;
 
+  const allAgentsFailed = round3Results.every(r => r.finalReason === 'Error' || r.confidence === 0);
   if (riskManagerFinalVote === 'HOLD') {
     masterDecision = {
       finalDecision: 'HOLD',
       confidence: 100,
-      synthesis: `Risk Manager veto applied.`,
-      blockReason: 'Risk Manager VETO',
+      synthesis: allAgentsFailed ? 'All agents failed (API error) — no trade.' : 'Risk Manager vetoed.',
+      blockReason: allAgentsFailed ? 'Agent API errors — retrying next cycle' : 'Risk Manager VETO',
       positionSizeRecommendation: 0,
       strongestBullArguments: [], strongestBearArguments: [],
       keyRisk: 'Risk flagged', stopLossRationale: 'N/A', takeProfitRationale: 'N/A', whatCouldGoWrong: 'Risk Manager decision'
@@ -612,8 +613,8 @@ export async function runInvestmentCommitteeDebate(
     }
   }
 
-  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '8');
-  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '80');
+  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '6');
+  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '65');
   const dominantVotes = masterDecision.finalDecision === 'BUY' ? buyCount
     : masterDecision.finalDecision === 'SELL' ? sellCount : 0;
 

@@ -104,9 +104,9 @@ export default function AgentsPage() {
         <div className="space-y-3">
           {decisions.slice(0, 15).map((d: any) => {
             const votes: any[] = d.agentVotes || [];
-            const buy = votes.filter((v: any) => v.vote === 'BUY').length;
-            const sell = votes.filter((v: any) => v.vote === 'SELL').length;
-            const hold = votes.filter((v: any) => v.vote === 'HOLD').length;
+            const buy = votes.filter((v: any) => (v.finalVote || v.vote) === 'BUY').length;
+            const sell = votes.filter((v: any) => (v.finalVote || v.vote) === 'SELL').length;
+            const hold = votes.filter((v: any) => (v.finalVote || v.vote) === 'HOLD').length;
             return (
               <div key={d.id} className="p-3 rounded-lg bg-apex-surface border border-apex-border">
                 <div className="flex items-center justify-between">
