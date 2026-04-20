@@ -179,7 +179,7 @@ export function initScheduler() {
       for (const opp of opportunities.slice(0, 3)) {
         await placePolymarketBet(opp, opp.question, true); // paper mode
       }
-    } catch (err) { logger.error('Polymarket scan failed', { err }); }
+    } catch (err: any) { logger.warn(`Polymarket scan skipped: ${err?.message || err?.code || 'network error'}`); }
   });
 
   // ── POST-TRADE LEARNING: Watch for newly closed trades ───────────────────
