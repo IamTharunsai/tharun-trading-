@@ -5,9 +5,61 @@ import { redis } from '../utils/redis';
 import { getIO } from '../websocket/server';
 import { MarketSnapshot, Candle, TechnicalIndicators } from '../agents/types';
 
-// Assets to monitor
-export const CRYPTO_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'MATIC', 'AVAX', 'LINK', 'DOT', 'UNI'];
-export const STOCK_ASSETS = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
+// Base crypto assets (Binance WebSocket streams)
+export const CRYPTO_ASSETS = [
+  'BTC','ETH','SOL','BNB','ADA','AVAX','LINK','DOT','UNI','MATIC',
+  'XRP','DOGE','SHIB','LTC','BCH','ATOM','FIL','NEAR','APT','ARB',
+  'OP','INJ','SUI','SEI','TIA','PYTH','JTO','BONK','WIF','PEPE'
+];
+
+// Fallback stock list — replaced at runtime by fetchAllAlpacaAssets()
+export let STOCK_ASSETS: string[] = [
+  'AAPL','MSFT','NVDA','TSLA','GOOGL','AMZN','META','SPY','QQQ',
+  'AMD','INTC','NFLX','DIS','BABA','JPM','BAC','GS','V','MA',
+  'PYPL','SQ','COIN','HOOD','PLTR','SOFI','RIVN','LCID','NIO','XPEV'
+];
+
+// Full list fetched from Alpaca — all active tradeable US equities
+let allAlpacaAssets: string[] = [];
+let assetRotationIndex = 0;
+
+export async function fetchAllAlpacaAssets(): Promise<string[]> {
+  if (!process.env.ALPACA_API_KEY) return STOCK_ASSETS;
+  try {
+    const res = await axios.get(`${process.env.ALPACA_BASE_URL}/v2/assets`, {
+      headers: {
+        'APCA-API-KEY-ID': process.env.ALPACA_API_KEY,
+        'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
+      },
+      params: { status: 'active', asset_class: 'us_equity', tradable: true },
+      timeout: 15000
+    });
+    const symbols: string[] = res.data
+      .filter((a: any) => a.tradable && a.fractionable !== false && !a.symbol.includes('/'))
+      .map((a: any) => a.symbol);
+    allAlpacaAssets = symbols;
+    logger.info(`📋 Loaded ${symbols.length} tradeable US stocks from Alpaca`);
+    return symbols;
+  } catch (err) {
+    logger.warn('Could not fetch Alpaca asset list — using default stocks', { err });
+    return STOCK_ASSETS;
+  }
+}
+
+// Returns next batch of stocks to analyze (rotates through ALL listed stocks)
+export function getNextStockBatch(batchSize = 5): string[] {
+  const list = allAlpacaAssets.length > 0 ? allAlpacaAssets : STOCK_ASSETS;
+  const batch: string[] = [];
+  for (let i = 0; i < batchSize; i++) {
+    batch.push(list[assetRotationIndex % list.length]);
+    assetRotationIndex++;
+  }
+  return batch;
+}
+
+export function getTotalStockCount(): number {
+  return allAlpacaAssets.length || STOCK_ASSETS.length;
+}
 
 const latestPrices: Record<string, number> = {};
 let binanceWs: WebSocket | null = null;
@@ -15,6 +67,7 @@ let binanceWs: WebSocket | null = null;
 export async function initMarketData() {
   await connectBinanceWebSocket();
   await fetchInitialStockPrices();
+  await fetchAllAlpacaAssets();
   logger.info('✅ Market data service initialized');
 }
 

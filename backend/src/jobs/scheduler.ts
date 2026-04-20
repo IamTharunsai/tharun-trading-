@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { logger } from '../utils/logger';
-import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices } from '../services/marketData';
+import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount } from '../services/marketData';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
 import { detectMarketRegime } from '../services/regimeDetector';
 import { executeTradeSignal } from '../trading/executionEngine';
@@ -70,12 +70,24 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
 
 export function initScheduler() {
 
-  // ── EVERY 2 HOURS: Run Investment Committee Debate (paper mode — save credits) ─
+  // ── EVERY 2 HOURS: Rotate through ALL stocks + crypto ────────────────────
   cron.schedule('0 */2 * * *', async () => {
     if (isKillSwitchActive()) return;
-    const assetsToAnalyze = CRYPTO_ASSETS.slice(0, 5);
-    const asset = assetsToAnalyze[Math.floor(Math.random() * assetsToAnalyze.length)];
-    runDebateForAsset(asset, 'crypto').catch(err => logger.error('Debate cron failed', { err }));
+
+    // Scan next 3 stocks from full Alpaca list (rotates through all 8000+)
+    const stockBatch = getNextStockBatch(3);
+    logger.info(`📊 Scanning stocks: ${stockBatch.join(', ')} (${getTotalStockCount()} total in rotation)`);
+    for (const symbol of stockBatch) {
+      runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
+      await new Promise(r => setTimeout(r, 5000)); // 5s gap between debates
+    }
+
+    // Also scan 2 random crypto assets
+    const cryptoBatch = CRYPTO_ASSETS.sort(() => Math.random() - 0.5).slice(0, 2);
+    for (const coin of cryptoBatch) {
+      runDebateForAsset(coin, 'crypto').catch(err => logger.error('Crypto debate failed', { err, coin }));
+      await new Promise(r => setTimeout(r, 5000));
+    }
   });
 
   // ── EVERY 10 SECONDS: Stop Loss Monitor ──────────────────────────────────
@@ -102,9 +114,10 @@ export function initScheduler() {
     } catch (err) { logger.error('Portfolio snapshot failed', { err }); }
   });
 
-  // ── EVERY HOUR: Market Regime Detection ──────────────────────────────────
+  // ── EVERY HOUR: Market Regime Detection (crypto + next stock batch) ─────
   cron.schedule('0 * * * *', async () => {
-    for (const asset of CRYPTO_ASSETS.slice(0, 5)) {
+    const regimeAssets = [...CRYPTO_ASSETS.slice(0, 3), ...getNextStockBatch(2)];
+    for (const asset of regimeAssets) {
       try {
         const snapshot = await buildMarketSnapshot(asset, 'crypto');
         if (!snapshot) continue;
