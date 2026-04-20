@@ -74,19 +74,19 @@ export function initScheduler() {
   cron.schedule('0 */2 * * *', async () => {
     if (isKillSwitchActive()) return;
 
-    // Scan next 3 stocks from full Alpaca list (rotates through all 8000+)
-    const stockBatch = getNextStockBatch(3);
+    // Scan next 20 stocks from full Alpaca list (rotates through all 8000+ in ~27 days)
+    const stockBatch = getNextStockBatch(20);
     logger.info(`📊 Scanning stocks: ${stockBatch.join(', ')} (${getTotalStockCount()} total in rotation)`);
     for (const symbol of stockBatch) {
       runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
-      await new Promise(r => setTimeout(r, 5000)); // 5s gap between debates
+      await new Promise(r => setTimeout(r, 8000)); // 8s gap between debates
     }
 
-    // Also scan 2 random crypto assets
-    const cryptoBatch = CRYPTO_ASSETS.sort(() => Math.random() - 0.5).slice(0, 2);
+    // Also scan 5 random crypto assets
+    const cryptoBatch = [...CRYPTO_ASSETS].sort(() => Math.random() - 0.5).slice(0, 5);
     for (const coin of cryptoBatch) {
       runDebateForAsset(coin, 'crypto').catch(err => logger.error('Crypto debate failed', { err, coin }));
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 8000));
     }
   });
 
