@@ -84,15 +84,15 @@ export function initScheduler() {
       : getNextStockBatch(20);
     logger.info(`📊 Scanning ${stockBatch.length} stocks (${screened.length > 0 ? 'screened' : 'rotation'}, ${getTotalStockCount()} total)`);
     for (const symbol of stockBatch) {
-      runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
-      await new Promise(r => setTimeout(r, 8000)); // 8s gap between debates
+      await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
+      await new Promise(r => setTimeout(r, 5000)); // 5s cooldown between debates
     }
 
     // Also scan 5 random crypto assets
     const cryptoBatch = [...CRYPTO_ASSETS].sort(() => Math.random() - 0.5).slice(0, 5);
     for (const coin of cryptoBatch) {
-      runDebateForAsset(coin, 'crypto').catch(err => logger.error('Crypto debate failed', { err, coin }));
-      await new Promise(r => setTimeout(r, 8000));
+      await runDebateForAsset(coin, 'crypto').catch(err => logger.error('Crypto debate failed', { err, coin }));
+      await new Promise(r => setTimeout(r, 5000));
     }
   });
 

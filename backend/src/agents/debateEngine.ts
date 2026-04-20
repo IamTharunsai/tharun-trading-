@@ -10,6 +10,42 @@ import MASTER_BOOK_KNOWLEDGE from './masterKnowledge';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Compact knowledge injected per agent (keeps tokens low)
+const COMPACT_KNOWLEDGE = `KEY RULES: Risk 1-2% per trade. R/R must be >2:1. CANSLIM: EPS growth >25%, near 52wk high, vol surge. Minervini: price>50MA>150MA>200MA, 52wk high within 25%, RS high. Kelly sizing. RSI>70=overbought RSI<30=oversold. Golden Cross=bullish. Volume confirmation required. Cut losses fast, let winners run.`;
+
+// Call Anthropic with automatic retry on 429 rate limit
+async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await anthropic.messages.create(params);
+    } catch (err: any) {
+      if (err?.status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(err?.headers?.['retry-after'] || '15') * 1000;
+        logger.warn(`Rate limited — waiting ${retryAfter / 1000}s before retry (attempt ${attempt + 1})`);
+        await new Promise(r => setTimeout(r, retryAfter + 1000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+// Run agents one at a time with a gap to avoid rate limits
+async function runAgentsSequentially<T>(
+  agents: any[],
+  fn: (agent: any) => Promise<T>,
+  delayMs = 4000
+): Promise<T[]> {
+  const results: T[] = [];
+  for (const agent of agents) {
+    results.push(await fn(agent));
+    if (agents.indexOf(agent) < agents.length - 1) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return results;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // THE INVESTMENT COMMITTEE DEBATE ENGINE
 //
@@ -407,15 +443,15 @@ export async function runInvestmentCommitteeDebate(
   const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory);
   const round1Results: any[] = [];
 
-  const round1Promises = AGENT_ROSTER.slice(0, 9).map(async (agent) => {
+  const round1AgentResults = await runAgentsSequentially(AGENT_ROSTER.slice(0, 9), async (agent) => {
     try {
       io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
-      const response = await anthropic.messages.create({
+      const response = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        system: agent.systemPrompt + `\n\n${MASTER_BOOK_KNOWLEDGE}\n\nYou are a TOP WORLD-CLASS TRADER with knowledge of all 20 greatest trading books. Apply their frameworks to every analysis.\n\nDecision types:\n- STRONG_BUY: All signals aligned — technicals, fundamentals, momentum, insider buying. Minervini Trend Template confirmed. Rare opportunity.\n- BUY: Most signals positive, R/R > 2:1, setup is clear\n- HOLD: Mixed signals, wait for clarity or better entry\n- SELL: Close position or avoid entry\n- STRONG_SELL: Multiple red flags — get out immediately\n\nRespond ONLY in valid JSON:\n{"vote":"STRONG_BUY"|"BUY"|"SELL"|"STRONG_SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite specific numbers from the data>","keyFactors":["<factor with number>","<factor with number>","<factor with number>"],"riskWarnings":["<specific risk>","<specific risk>"],"catalysts":["<upcoming catalyst>"],"priceTarget":"<target price>","stopLevel":"<stop loss price>","riskReward":"<R/R ratio>","bookReference":"<which book/law supports this trade>","weaknessOfMyOwnView":"<honest weakness>","fundamentalView":"<F-score, PEG, magic formula view>"}`,
-        messages: [{ role: 'user', content: `INVESTMENT COMMITTEE — ${asset}\n\n${round1Prompt}\n\nAnalyze EVERY data point above. What is your position and why? Be specific with numbers.` }]
+        max_tokens: 600,
+        system: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
+        messages: [{ role: 'user', content: `COMMITTEE — ${asset}\n\n${round1Prompt}\n\nState your position with specific numbers.` }]
       });
 
       const content = response.content[0];
@@ -423,9 +459,7 @@ export async function runInvestmentCommitteeDebate(
       const parsed = JSON.parse(content.text.replace(/```json\n?|\n?```/g, '').trim());
 
       const result = {
-        agentId: agent.id,
-        agentName: agent.name,
-        agentIcon: agent.icon,
+        agentId: agent.id, agentName: agent.name, agentIcon: agent.icon,
         vote: parsed.vote as 'BUY' | 'SELL' | 'HOLD',
         confidence: Math.min(100, Math.max(0, parsed.confidence)),
         openingArgument: parsed.openingArgument,
@@ -433,31 +467,28 @@ export async function runInvestmentCommitteeDebate(
         riskWarnings: parsed.riskWarnings || [],
         weaknessOfMyOwnView: parsed.weaknessOfMyOwnView || ''
       };
-
       logger.info(`  ${agent.icon} ${agent.name}: ${result.vote} (${result.confidence}%)`);
       io?.emit('debate:agent-voted', { ...result, round: 1, debateId });
-
       return result;
     } catch (err) {
       logger.error(`Agent ${agent.id} Round 1 failed`, { err });
-      const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable — defaulting to HOLD', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
+      const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
       io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
       return fallback;
     }
-  });
-
-  const round1AgentResults = await Promise.all(round1Promises);
+  }, 4000); // 4 second gap between agents
   transcript.round1 = round1AgentResults.map(r => ({ agentId: r.agentId, agentName: r.agentName, vote: r.vote, argument: r.openingArgument }));
   round1Results.push(...round1AgentResults);
 
   const devilAgent = AGENT_ROSTER[9];
+  await new Promise(r => setTimeout(r, 4000)); // gap after last agent
   io?.emit('debate:agent-speaking', { agentId: 10, agentName: devilAgent.name, round: 1, debateId });
   try {
     const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
-    const devilResponse = await anthropic.messages.create({
+    const devilResponse = await callWithRetry({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      system: devilAgent.systemPrompt + `\n\nRespond ONLY in valid JSON:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
+      max_tokens: 600,
+      system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond ONLY in valid JSON:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
       messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
     });
     const dc = devilResponse.content[0];
@@ -496,12 +527,12 @@ export async function runInvestmentCommitteeDebate(
 
   const debateSummary = buildDebateSummary(round1Results, round2Results);
 
-  const round3Promises = AGENT_ROSTER.map(async (agent) => {
+  const round3Results = await runAgentsSequentially(AGENT_ROSTER, async (agent) => {
     const originalVote = round1Results.find(r => r.agentId === agent.id);
     try {
-      const response = await anthropic.messages.create({
+      const response = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 400,
+        max_tokens: 300,
         system: agent.systemPrompt,
         messages: [{
           role: 'user',
@@ -532,9 +563,7 @@ export async function runInvestmentCommitteeDebate(
     } catch (err) {
       return { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, initialVote: originalVote?.vote || 'HOLD', finalVote: originalVote?.vote || 'HOLD', confidence: originalVote?.confidence || 0, changedMind: false, finalReason: 'Error', openingArgument: '', keyFactors: [], riskWarnings: [], challenges: [], rebuttals: [] };
     }
-  });
-
-  const round3Results = await Promise.all(round3Promises);
+  }, 3000);
   transcript.round3 = round3Results.map(r => ({ agentId: r.agentId, agentName: r.agentName, finalVote: r.finalVote, confidence: r.confidence, reason: r.finalReason }));
   transcript.agentArguments = round3Results as AgentArgument[];
 
@@ -566,9 +595,9 @@ export async function runInvestmentCommitteeDebate(
     try {
       const fullDebateContext = `DEBATE FOR ${asset} @ $${snapshot.price}\nRegime: ${marketRegime}\nDaily P&L: ${portfolio.pnlDayPct.toFixed(2)}%\n\nRound 1:\n${round1Results.map(r => `${r.agentName}: ${r.vote}`).join('\n')}\n\nVote Tally: BUY ${buyCount}, SELL ${sellCount}, HOLD ${holdCount}`;
 
-      const masterResponse = await anthropic.messages.create({
+      const masterResponse = await callWithRetry({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
+        max_tokens: 800,
         system: MASTER_COORDINATOR_PROMPT,
         messages: [{ role: 'user', content: fullDebateContext }]
       });
