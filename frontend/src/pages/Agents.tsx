@@ -2,26 +2,67 @@ import { useQuery } from '@tanstack/react-query';
 import { getAgentDecisions } from '../services/api';
 import { useStore } from '../store';
 import { format } from 'date-fns';
-import { Bot } from 'lucide-react';
+import { Bot, PlayCircle } from 'lucide-react';
+import { useState } from 'react';
+import api from '../services/api';
+import toast from 'react-hot-toast';
 
 const AGENT_NAMES = ['The Technician','The Newshound','The Sentiment Analyst','The Fundamental Analyst','The Risk Manager','The Trend Prophet','The Volume Detective','The Whale Watcher','The Macro Economist',"The Devil's Advocate"];
 const AGENT_ICONS = ['📊','📰','🧠','📈','🛡️','🔮','🔍','🐋','🌍','😈'];
 const AGENT_ROLES = ['Technical Analysis','News & Events','Market Sentiment','Fundamentals','Risk Manager (VETO)','Future Prediction','Volume Analysis','Whale Activity','Macro Economics','Devil\'s Advocate'];
 
+const POPULAR_STOCKS = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'SPY', 'QQQ', 'BTC', 'ETH'];
+
 export default function AgentsPage() {
-  const { data } = useQuery({ queryKey: ['decisions'], queryFn: () => getAgentDecisions(1), refetchInterval: 15000 });
+  const { data, refetch } = useQuery({ queryKey: ['decisions'], queryFn: () => getAgentDecisions(1), refetchInterval: 15000 });
   const { agentCouncil, currentAnalysis } = useStore();
   const decisions = data || [];
+  const [running, setRunning] = useState(false);
+  const [symbol, setSymbol] = useState('NVDA');
+  const [market, setMarket] = useState<'stocks' | 'crypto'>('stocks');
+
+  const runNow = async () => {
+    setRunning(true);
+    try {
+      await api.post('/agents/trigger-debate', { asset: symbol, market });
+      toast.success(`🏛️ Committee convening for ${symbol} — watch the agents vote live!`);
+      setTimeout(() => { refetch(); setRunning(false); }, 3000);
+    } catch {
+      toast.error('Failed to trigger debate');
+      setRunning(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-sans font-bold text-2xl text-apex-text">Agent Council</h1>
-        {currentAnalysis && (
-          <span className="font-mono text-xs text-apex-yellow flex items-center gap-2 px-3 py-1.5 rounded-lg bg-apex-yellow/10 border border-apex-yellow/30">
-            <span className="animate-spin">◌</span> Voting on {currentAnalysis}
-          </span>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {currentAnalysis && (
+            <span className="font-mono text-xs text-apex-yellow flex items-center gap-2 px-3 py-1.5 rounded-lg bg-apex-yellow/10 border border-apex-yellow/30">
+              <span className="animate-spin">◌</span> Voting on {currentAnalysis}
+            </span>
+          )}
+          {/* Manual trigger */}
+          <select value={market} onChange={e => { setMarket(e.target.value as any); setSymbol(e.target.value === 'crypto' ? 'BTC' : 'NVDA'); }}
+            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #E8D5C4', background: '#FFF8F2', color: '#2C1810' }}>
+            <option value="stocks">Stocks</option>
+            <option value="crypto">Crypto</option>
+          </select>
+          <select value={symbol} onChange={e => setSymbol(e.target.value)}
+            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #E8D5C4', background: '#FFF8F2', color: '#2C1810' }}>
+            {(market === 'crypto' ? ['BTC', 'ETH', 'SOL', 'BNB'] : ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'SPY', 'QQQ', 'AMD', 'PLTR']).map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <button onClick={runNow} disabled={running}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8,
+              background: running ? 'rgba(255,140,66,0.1)' : '#FF8C42', border: 'none',
+              color: running ? '#FF8C42' : '#fff', fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, cursor: running ? 'not-allowed' : 'pointer' }}>
+            <PlayCircle size={14} />
+            {running ? 'RUNNING...' : 'RUN NOW'}
+          </button>
+        </div>
       </div>
 
       {/* Agent grid */}
