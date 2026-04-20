@@ -633,8 +633,8 @@ export async function runInvestmentCommitteeDebate(
     }
   }
 
-  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '5'); // 5 of 13 agents
-  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '60');
+  const minVotes = parseInt(process.env.MIN_VOTES_TO_EXECUTE || '5');
+  const minConfidence = parseInt(process.env.MIN_AGENT_CONFIDENCE || '65');
   const dominantVotes = masterDecision.finalDecision === 'BUY' ? buyCount
     : masterDecision.finalDecision === 'SELL' ? sellCount : 0;
 
