@@ -142,23 +142,41 @@ agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
 agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
   try {
     const { asset = 'AAPL', market = 'stocks', direction = 'BUY' } = req.body;
-    const { buildMarketSnapshot } = await import('../services/marketData');
+    const { buildMarketSnapshot, getCurrentPrice } = await import('../services/marketData');
     const { executeTradeSignal } = await import('../trading/executionEngine');
     const { validateTradeSignal } = await import('../trading/riskManager');
     const { getPortfolioState } = await import('../services/portfolio');
+    const axios = (await import('axios')).default;
 
-    const snapshot = await buildMarketSnapshot(asset, market);
-    if (!snapshot) return res.status(400).json({ error: `No price data for ${asset}` });
+    // Try snapshot first, fall back to direct Polygon price fetch
+    let price: number | null = null;
+    const snapshot = await buildMarketSnapshot(asset, market).catch(() => null);
+    if (snapshot) {
+      price = snapshot.price;
+    } else {
+      // Direct Polygon fetch as fallback
+      price = getCurrentPrice(asset);
+      if (!price && process.env.POLYGON_API_KEY) {
+        const today = new Date().toISOString().slice(0, 10);
+        const from = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+        const r = await axios.get(`https://api.polygon.io/v2/aggs/ticker/${asset}/range/1/day/${from}/${today}`, {
+          params: { adjusted: true, sort: 'desc', limit: 1, apiKey: process.env.POLYGON_API_KEY }, timeout: 8000
+        }).catch(() => null);
+        price = r?.data?.results?.[0]?.c || null;
+      }
+    }
+
+    if (!price) return res.status(400).json({ error: `Could not get price for ${asset}. Check Polygon API key or try a crypto symbol.` });
 
     const portfolio = await getPortfolioState();
-    const stopLoss = direction === 'BUY' ? snapshot.price * 0.98 : snapshot.price * 1.02;
-    const takeProfit = direction === 'BUY' ? snapshot.price * 1.06 : snapshot.price * 0.94;
+    const stopLoss = direction === 'BUY' ? price * 0.98 : price * 1.02;
+    const takeProfit = direction === 'BUY' ? price * 1.06 : price * 0.94;
 
     const signal = {
       asset, market: market as 'stocks' | 'crypto' | 'forex', direction: direction as 'BUY' | 'SELL',
-      confidence: 80, entryPrice: snapshot.price, stopLossPrice: stopLoss,
-      takeProfitPrice: takeProfit, positionSizePct: 5,
-      reasoning: `Manual test trade — forced execution to verify pipeline`,
+      confidence: 80, entryPrice: price, stopLossPrice: stopLoss,
+      takeProfitPrice: takeProfit, positionSizePct: 1,
+      reasoning: `Manual test trade — forced execution`,
       agentDecisionId: ''
     };
 
@@ -166,7 +184,7 @@ agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
     if (!risk.approved) return res.status(400).json({ error: `Risk check failed: ${risk.reason}` });
 
     const trade = await executeTradeSignal(signal, portfolio);
-    res.json({ success: true, trade, message: `✅ Paper trade executed: ${direction} ${asset} @ $${snapshot.price}` });
+    res.json({ success: true, trade, message: `✅ Paper trade executed: ${direction} ${asset} @ $${price.toFixed(2)}` });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Execution failed' });
   }

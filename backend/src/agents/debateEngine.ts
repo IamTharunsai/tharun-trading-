@@ -756,6 +756,6 @@ function calculateKellySize(winProb: number, riskReward: number): number {
   if (riskReward <= 0) return 0;
   const kelly = winProb - (1 - winProb) / riskReward;
   const halfKelly = kelly * 0.5;
-  const maxPositionPct = parseFloat(process.env.MAX_POSITION_SIZE_PCT || '10');
-  return Math.min(Math.max(halfKelly * 100, 0.5), maxPositionPct);
+  // Cap at 1% — TOP TRADER LAW 1 blocks anything over 1% for small accounts
+  return Math.min(Math.max(halfKelly * 100, 0.5), 1.0);
 }
