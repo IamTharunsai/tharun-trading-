@@ -76,9 +76,16 @@ function connectBinanceWebSocket() {
     const streams = CRYPTO_ASSETS.map(a => `${a.toLowerCase()}usdt@ticker`).join('/');
     const wsUrl = `wss://stream.binance.us:9443/stream?streams=${streams}`;
 
+    // Always resolve after 10s — never block boot if Binance is unreachable
+    const bootTimer = setTimeout(() => {
+      logger.warn('⚠️ Binance WS did not connect within 10s — continuing without live crypto prices');
+      resolve();
+    }, 10000);
+
     binanceWs = new WebSocket(wsUrl);
 
     binanceWs.on('open', () => {
+      clearTimeout(bootTimer);
       logger.info('📡 Binance WebSocket connected');
       resolve();
     });
@@ -103,15 +110,16 @@ function connectBinanceWebSocket() {
           timestamp: Date.now()
         };
 
-        // Cache in Redis
         await redis.setex(`price:${symbol}`, 60, JSON.stringify(priceUpdate));
-
-        // Push to dashboard
         getIO()?.emit('price:update', priceUpdate);
       } catch (_) {}
     });
 
-    binanceWs.on('error', (error) => logger.error('Binance WS error', { error: error.message }));
+    binanceWs.on('error', (error) => {
+      clearTimeout(bootTimer);
+      logger.warn('Binance WS error — continuing without live crypto prices', { error: error.message });
+      resolve(); // never crash boot on WS error
+    });
 
     binanceWs.on('close', () => {
       logger.warn('Binance WS closed — reconnecting in 5s');

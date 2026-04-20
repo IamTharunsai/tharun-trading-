@@ -149,4 +149,9 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+process.on('unhandledRejection', (reason: any) => {
+  logger.error('Unhandled promise rejection', { reason: reason?.message || String(reason) });
+  // Don't exit — log and continue so the whole server doesn't crash on one bad API call
+});
+
 boot();
