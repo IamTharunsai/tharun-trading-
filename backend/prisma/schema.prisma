@@ -92,6 +92,7 @@ model Position {
   id             String   @id @default(cuid())
   asset          String   @unique
   market         String
+  side           String   @default("BUY")
   quantity       Float
   entryPrice     Float
   currentPrice   Float

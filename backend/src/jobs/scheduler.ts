@@ -23,6 +23,14 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
   if (isKillSwitchActive()) return;
   const lockKey = `${asset}:${market}`;
   if (debateLocks.has(lockKey)) return;
+
+  // Skip if open position already exists for this asset
+  const openPos = await prisma.position.findFirst({ where: { asset, status: 'OPEN' } });
+  if (openPos) {
+    logger.info(`⏭️ Skipping debate for ${asset} — position already open (side: ${openPos.side})`);
+    return;
+  }
+
   debateLocks.add(lockKey);
   try {
     logger.info(`\n🏛️ Investment Committee convening for ${asset}...`);

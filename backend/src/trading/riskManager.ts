@@ -61,23 +61,34 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
       const currentPrice = currentPrices[position.asset];
       if (!currentPrice) continue;
 
-      const pnlPct = ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+      const isShort = position.side === 'SELL';
+      const pnlPct = isShort
+        ? ((position.entryPrice - currentPrice) / position.entryPrice) * 100
+        : ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+      const unrealizedPnl = isShort
+        ? (position.entryPrice - currentPrice) * position.quantity
+        : (currentPrice - position.entryPrice) * position.quantity;
 
-      // Update current price
       await prisma.position.update({
         where: { id: position.id },
-        data: { currentPrice, unrealizedPnl: (currentPrice - position.entryPrice) * position.quantity, unrealizedPnlPct: pnlPct }
+        data: { currentPrice, unrealizedPnl, unrealizedPnlPct: pnlPct }
       });
 
-      // Stop loss check
-      if (currentPrice <= position.stopLossPrice) {
-        logger.warn(`🛑 STOP LOSS TRIGGERED for ${position.asset}: $${currentPrice} <= $${position.stopLossPrice}`);
-        await triggerStopLoss(position, currentPrice, 'stop_loss');
-      }
+      // Stop loss: for LONG price falls below stop, for SHORT price rises above stop
+      const stopHit = isShort
+        ? currentPrice >= position.stopLossPrice
+        : currentPrice <= position.stopLossPrice;
 
-      // Take profit check
-      if (currentPrice >= position.takeProfitPrice) {
-        logger.info(`🎯 TAKE PROFIT HIT for ${position.asset}: $${currentPrice} >= $${position.takeProfitPrice}`);
+      // Take profit: for LONG price rises above target, for SHORT price falls below target
+      const tpHit = isShort
+        ? currentPrice <= position.takeProfitPrice
+        : currentPrice >= position.takeProfitPrice;
+
+      if (stopHit) {
+        logger.warn(`🛑 STOP LOSS TRIGGERED for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
+        await triggerStopLoss(position, currentPrice, 'stop_loss');
+      } else if (tpHit) {
+        logger.info(`🎯 TAKE PROFIT HIT for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
         await triggerStopLoss(position, currentPrice, 'take_profit');
       }
     }
@@ -87,8 +98,13 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
 }
 
 async function triggerStopLoss(position: any, exitPrice: number, reason: string) {
-  const pnl = (exitPrice - position.entryPrice) * position.quantity;
-  const pnlPct = ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
+  const isShort = position.side === 'SELL';
+  const pnl = isShort
+    ? (position.entryPrice - exitPrice) * position.quantity
+    : (exitPrice - position.entryPrice) * position.quantity;
+  const pnlPct = isShort
+    ? ((position.entryPrice - exitPrice) / position.entryPrice) * 100
+    : ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
 
   // Close the trade
   const openTrade = await prisma.trade.findFirst({

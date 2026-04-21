@@ -134,16 +134,44 @@ export async function executeTradeSignal(
     return false;
   }
 
-  // ── PAPER TRADING MODE ────────────────────────────────────────────────────
+  // ── PAPER TRADING: save to DB + send to Alpaca paper API ─────────────────
   if (isPaper) {
-    logger.info(`📄 PAPER TRADE executed: ${signal.direction} ${finalQty.toFixed(6)} ${signal.asset} @ $${signal.entryPrice}`);
-    await prisma.trade.update({ where: { id: tradeRecord.id }, data: { brokerConfirmed: true, brokerOrderId: `PAPER-${Date.now()}` } });
-    await prisma.position.upsert({
-      where: { asset: signal.asset },
-      create: { asset: signal.asset, market: signal.market, quantity: finalQty, entryPrice: signal.entryPrice, currentPrice: signal.entryPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice },
-      update: { quantity: finalQty, entryPrice: signal.entryPrice, currentPrice: signal.entryPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice }
-    });
-    await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } });
+    logger.info(`📄 PAPER TRADE: ${signal.direction} ${finalQty.toFixed(4)} ${signal.asset} @ $${signal.entryPrice}`);
+    let brokerOrderId = `PAPER-${Date.now()}`;
+
+    // Send to Alpaca paper API so it shows in dashboard
+    try {
+      const client = await getBrokerClient(signal.market);
+      if (client && signal.market === 'stocks') {
+        const order = await client.createOrder({
+          symbol: signal.asset,
+          qty: Math.max(1, Math.floor(finalQty * 100) / 100),
+          side: signal.direction.toLowerCase(),
+          type: 'market',
+          time_in_force: 'day'
+        });
+        brokerOrderId = order.id || brokerOrderId;
+        logger.info(`✅ Alpaca paper order placed: ${order.id}`);
+      }
+    } catch (brokerErr: any) {
+      logger.warn(`Alpaca paper order failed (trade still recorded): ${brokerErr.message}`);
+    }
+
+    await prisma.trade.update({ where: { id: tradeRecord.id }, data: { brokerConfirmed: true, brokerOrderId } });
+
+    // Check if position already open — don't overwrite with duplicate
+    const existing = await prisma.position.findUnique({ where: { asset: signal.asset } });
+    if (!existing || existing.status === 'CLOSED') {
+      await prisma.position.upsert({
+        where: { asset: signal.asset },
+        create: { asset: signal.asset, market: signal.market, side: signal.direction, quantity: finalQty, entryPrice: signal.entryPrice, currentPrice: signal.entryPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice },
+        update: { side: signal.direction, quantity: finalQty, entryPrice: signal.entryPrice, currentPrice: signal.entryPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice, status: 'OPEN' }
+      });
+    }
+
+    if (signal.agentDecisionId) {
+      await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } }).catch(() => {});
+    }
 
     const io = getIO();
     io?.emit('trade:executed', { trade: tradeRecord, mode: 'paper', signal });
