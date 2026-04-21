@@ -188,8 +188,8 @@ export async function validateWithTopTraderRules(
     const hour = new Date().getUTCHours();
     const minute = new Date().getUTCMinutes();
     const minutesSinceMidnight = hour * 60 + minute;
-    const marketOpen = 14 * 60 + 30;  // 9:30 AM ET = 14:30 UTC
-    const marketClose = 21 * 60;       // 4:00 PM ET = 21:00 UTC
+    const marketOpen = 13 * 60 + 30;   // 9:30 AM ET = 13:30 UTC (EDT/UTC-4, Mar–Nov)
+    const marketClose = 20 * 60 + 30;  // 4:00 PM ET = 20:00 UTC (EDT); 21:00 in EST
 
     if (minutesSinceMidnight < marketOpen || minutesSinceMidnight > marketClose) {
       violations.push('LAW 22 VIOLATED: US stock market is closed. No stock trades outside 9:30 AM - 4:00 PM ET.');

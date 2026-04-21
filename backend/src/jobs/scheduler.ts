@@ -87,8 +87,9 @@ export function initScheduler() {
     'SPY','QQQ','AAPL','NOW','SHOP','SQ','ROKU','DKNG','RBLX','HOOD'
   ];
 
-  // ── MARKET OPEN 9:35 AM ET — weekdays only (Mon–Fri) ────────────────────
-  // 13:35 UTC = EDT (Apr–Oct), 14:35 UTC = EST (Nov–Mar)
+  // ── MARKET OPEN 9:35 AM ET — weekdays (Mon–Fri) ─────────────────────────
+  // EDT (Mar–Nov): 9:35 AM ET = 13:35 UTC
+  // EST (Nov–Mar): 9:35 AM ET = 14:35 UTC
   const marketOpenScan = async () => {
     if (isKillSwitchActive()) return;
     logger.info('🔔 MARKET OPEN — auto-scanning priority watchlist for trades...');
@@ -97,8 +98,18 @@ export function initScheduler() {
       await new Promise(r => setTimeout(r, 5000));
     }
   };
-  cron.schedule('35 13 * * 1-5', marketOpenScan); // EDT
-  cron.schedule('35 14 * * 1-5', marketOpenScan); // EST
+  cron.schedule('35 13 * * 1-5', marketOpenScan); // EDT (current — Apr through Oct)
+  cron.schedule('35 14 * * 1-5', marketOpenScan); // EST (Nov through Mar)
+
+  // ── MID-DAY SCAN 12:00 PM ET ─────────────────────────────────────────────
+  cron.schedule('0 16 * * 1-5', async () => {   // 16:00 UTC = 12:00 PM EDT
+    if (isKillSwitchActive()) return;
+    logger.info('☀️ MID-DAY SCAN — checking for new opportunities...');
+    for (const symbol of PRIORITY_WATCHLIST.slice(0, 10)) {
+      await runDebateForAsset(symbol, 'stocks').catch(() => {});
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  });
 
   // ── EVERY 2 HOURS: Rotate through ALL stocks + crypto ────────────────────
   cron.schedule('0 */2 * * *', async () => {
