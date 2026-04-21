@@ -311,7 +311,7 @@ The user is asking a question or giving an instruction about trading decisions.
 
     // Call Claude API with agent personality
     const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: systemPrompt + '\n\n' + marketContext,
       messages: messages as any
@@ -331,7 +331,7 @@ The user is asking a question or giving an instruction about trading decisions.
         context: {
           marketSnapshotTime: new Date().toISOString(),
           recentDecisionCount: recent20Decisions.length,
-          model: 'claude-3-5-sonnet-20241022'
+          model: 'claude-sonnet-4-6'
         }
       }
     });

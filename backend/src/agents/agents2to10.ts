@@ -18,7 +18,7 @@ function safeVote(agentId: number, agentName: string, error: unknown, start: num
 
 async function callClaude(system: string, user: string): Promise<any> {
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 600,
     system,
     messages: [{ role: 'user', content: user }]

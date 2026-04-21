@@ -60,7 +60,7 @@ chatRouter.post('/:agentId', async (req: AuthRequest, res: Response) => {
     ];
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 800,
       system: systemPrompt + contextAddition,
       messages

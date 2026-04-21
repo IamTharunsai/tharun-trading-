@@ -323,7 +323,7 @@ async function runStage(
     try {
       const stageInstruction = buildStageInstruction(stageDef.stage, agent, snapshot);
       const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 700,
         system: agent.systemPrompt,
         messages: [{

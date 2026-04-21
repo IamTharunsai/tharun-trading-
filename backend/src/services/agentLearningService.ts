@@ -129,7 +129,7 @@ Please provide a brief 2-3 sentence analysis of:
 Format: Clear, actionable insight for the agent's future decision-making.`;
 
     const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-6',
       max_tokens: 256,
       messages: [
         {
@@ -324,7 +324,7 @@ Generate a 3-4 sentence professional summary covering:
 Keep it concise and actionable.`;
 
     const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-6',
       max_tokens: 300,
       messages: [
         {

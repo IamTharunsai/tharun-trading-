@@ -57,7 +57,7 @@ Recent price data for wave counting:
 Identify the Elliott Wave pattern and Fibonacci confluence levels. Vote now.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: ELLIOTT_WAVE_PROMPT,
       messages: [{ role: 'user', content: userPrompt }]
@@ -147,7 +147,7 @@ Looking for signs of smart money positioning through unusual options activity.
 What does the options flow suggest?`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: OPTIONS_FLOW_PROMPT,
       messages: [{ role: 'user', content: userPrompt }]
@@ -238,7 +238,7 @@ Look for mispricings where Polymarket odds don't match your probability assessme
 Find arbitrage edge now.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: POLYMARKET_PROMPT,
       messages: [{ role: 'user', content: userPrompt }]
@@ -332,7 +332,7 @@ Common arbitrage pairs:
 Identify any profitable spread opportunities considering all fees.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: ARBITRAGEUR_PROMPT,
       messages: [{ role: 'user', content: userPrompt }]
@@ -441,7 +441,7 @@ Market Context:
 As Master Coordinator, synthesize these signals. What is your weighted decision?`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system: MASTER_COORDINATOR_PROMPT,
       messages: [{ role: 'user', content: userPrompt }]
