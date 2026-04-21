@@ -87,6 +87,19 @@ export function initScheduler() {
     'SPY','QQQ','AAPL','NOW','SHOP','SQ','ROKU','DKNG','RBLX','HOOD'
   ];
 
+  // ── MARKET OPEN 9:35 AM ET — weekdays only (Mon–Fri) ────────────────────
+  // 13:35 UTC = EDT (Apr–Oct), 14:35 UTC = EST (Nov–Mar)
+  const marketOpenScan = async () => {
+    if (isKillSwitchActive()) return;
+    logger.info('🔔 MARKET OPEN — auto-scanning priority watchlist for trades...');
+    for (const symbol of PRIORITY_WATCHLIST.slice(0, 20)) {
+      await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Market-open debate failed', { err, symbol }));
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  };
+  cron.schedule('35 13 * * 1-5', marketOpenScan); // EDT
+  cron.schedule('35 14 * * 1-5', marketOpenScan); // EST
+
   // ── EVERY 2 HOURS: Rotate through ALL stocks + crypto ────────────────────
   cron.schedule('0 */2 * * *', async () => {
     if (isKillSwitchActive()) return;
