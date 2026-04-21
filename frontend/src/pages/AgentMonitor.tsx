@@ -84,13 +84,12 @@ export default function AgentMonitorPage() {
         timestamp: data.timestamp || Date.now(),
         agentId: data.agentId,
         agentName: data.agentName,
-        activityType: 'VOTING',
+        activityType: 'VOTING' as const,
         source: data.source,
         content: data.content,
         confidence: data.confidence,
         impact: data.impact,
       }, ...prev].slice(0, 200));
-      // Auto-scroll
       if (feedRef.current) feedRef.current.scrollTop = 0;
     });
     socket.on('debate:agent-voted', (data: any) => {
@@ -98,11 +97,11 @@ export default function AgentMonitorPage() {
         timestamp: Date.now(),
         agentId: data.agentId,
         agentName: data.agentName || AGENTS[data.agentId]?.name || `Agent ${data.agentId}`,
-        activityType: 'VOTING',
+        activityType: 'VOTING' as const,
         source: data.asset ? `${data.asset} — Round 1` : 'Debate',
         content: `${data.vote || data.finalVote} (${data.confidence}%) — ${(data.openingArgument || '').slice(0, 200)}`,
         confidence: data.confidence != null ? data.confidence / 100 : undefined,
-        impact: (data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM',
+        impact: ((data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM') as 'HIGH' | 'MEDIUM' | 'LOW',
       }, ...prev].slice(0, 200));
     });
     socket.on('debate:final-vote', (data: any) => {
@@ -110,11 +109,11 @@ export default function AgentMonitorPage() {
         timestamp: Date.now(),
         agentId: data.agentId,
         agentName: data.agentName || AGENTS[data.agentId]?.name || `Agent ${data.agentId}`,
-        activityType: 'VOTING',
+        activityType: 'VOTING' as const,
         source: 'Final Vote — Round 3',
         content: `FINAL: ${data.finalVote} (${data.confidence}%) — ${(data.finalReason || '').slice(0, 200)}`,
         confidence: data.confidence != null ? data.confidence / 100 : undefined,
-        impact: (data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM',
+        impact: ((data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM') as 'HIGH' | 'MEDIUM' | 'LOW',
       }, ...prev].slice(0, 200));
     });
     socket.on('trade:executed', (data: any) => {
@@ -122,10 +121,10 @@ export default function AgentMonitorPage() {
         timestamp: Date.now(),
         agentId: 0,
         agentName: 'Execution Engine',
-        activityType: 'TRADING',
+        activityType: 'TRADING' as const,
         source: 'Trade Executed',
         content: `${data.trade?.type} ${data.trade?.asset} @ $${data.trade?.entryPrice?.toFixed(2)} [${data.mode?.toUpperCase()}]`,
-        impact: 'HIGH',
+        impact: 'HIGH' as const,
       }, ...prev].slice(0, 200));
     });
     return () => { socket.disconnect(); };

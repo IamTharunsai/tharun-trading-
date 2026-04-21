@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageCircle, Send, X, Loader } from 'lucide-react';
-import axios from 'axios';
+import api from '../../services/api';
 
 interface Message {
   role: 'user' | 'agent';
@@ -26,10 +26,7 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
   useEffect(() => {
     const loadHistory = async () => {
       try {
-        const response = await axios.get(
-          `/api/chat/${agentId}/history?limit=10`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const response = await api.get(`/chat/${agentId}/history?limit=10`);
 
         if (response.data.history) {
           const formattedMessages: Message[] = response.data.history.flatMap((conv: any) => [
@@ -80,11 +77,7 @@ export default function AgentChat({ agentId, agentName, onClose, token }: AgentC
     ]);
 
     try {
-      const response = await axios.post(
-        `/api/chat/${agentId}`,
-        { message: userMessage },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.post(`/chat/${agentId}`, { message: userMessage });
 
       const reply = response.data.reply || response.data.agentResponse || '';
       if (reply) {

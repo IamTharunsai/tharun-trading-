@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import { Send, Loader } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -50,11 +50,9 @@ export default function AgentChatPage() {
     setLoading(true);
 
     try {
-      const response = await axios.post(
-        `/api/chat/${selectedAgent.id}`,
-        { message: input, conversationHistory: messages.slice(-10), asset },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.post(`/chat/${selectedAgent.id}`, {
+        message: input, conversationHistory: messages.slice(-10), asset
+      });
 
       setMessages(prev => [...prev, {
         role: 'assistant',

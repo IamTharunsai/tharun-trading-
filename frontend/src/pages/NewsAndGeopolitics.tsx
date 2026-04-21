@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import { useStore } from '../store';
 
 interface NewsItem {
@@ -44,24 +44,13 @@ export default function NewsAndGeopoliticsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch news
-        const newsResponse = await axios.get('/api/monitor/news', {
-          params: { minutes: 120 },
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const [newsResponse, eventsResponse, sentimentResponse] = await Promise.all([
+          api.get('/monitor/news', { params: { minutes: 120 } }),
+          api.get('/monitor/geopolitics', { params: { hours: 24 } }),
+          api.get('/monitor/sentiment'),
+        ]);
         setNews(newsResponse.data.news   || []);
-
-        // Fetch geopolitical events
-        const eventsResponse = await axios.get('/api/monitor/geopolitics', {
-          params: { hours: 24 },
-          headers: { Authorization: `Bearer ${token}` }
-        });
         setEvents(eventsResponse.data.events || []);
-
-        // Fetch sentiment
-        const sentimentResponse = await axios.get('/api/monitor/sentiment', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
         setSentiment(sentimentResponse.data);
       } catch (err) {
         console.error('Failed to fetch data', err);
