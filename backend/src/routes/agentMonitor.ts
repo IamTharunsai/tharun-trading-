@@ -3,6 +3,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService } from '../services/geopoliticalDataService';
 import { logger } from '../utils/logger';
+import { prisma } from '../utils/prisma';
 
 export const agentMonitorRouter = Router();
 agentMonitorRouter.use(requireAuth);
@@ -152,12 +153,60 @@ agentMonitorRouter.get('/context', async (req: AuthRequest, res: Response) => {
 });
 
 /**
- * WebSocket events (emitted from agentActivityMonitor)
- * 'agent:gathering' - Agent gathering data
- * 'agent:learning' - Agent learning from sources
- * 'agent:analyzing' - Agent analyzing market
- * 'agent:voting' - Agent voting
- * 'agent:trading' - Agent executing trade
+ * GET /api/monitor/recent-decisions
+ * Recent agent decisions from DB (works even after server restart)
  */
+agentMonitorRouter.get('/recent-decisions', async (req: AuthRequest, res: Response) => {
+  try {
+    const decisions = await prisma.agentDecision.findMany({
+      orderBy: { timestamp: 'desc' },
+      take: 20,
+    });
+    // Flatten into activity-style records
+    const activities: any[] = [];
+    for (const d of decisions) {
+      const votes: any[] = (d.agentVotes as any[]) || [];
+      for (const v of votes) {
+        activities.push({
+          timestamp: new Date(d.timestamp).getTime(),
+          agentId: v.agentId || 0,
+          agentName: v.agentName || 'Unknown',
+          activityType: 'VOTING',
+          source: `${d.asset} — Round 3`,
+          content: `Vote: ${v.finalVote || v.vote} — ${(v.finalReason || v.openingArgument || '').slice(0, 200)}`,
+          confidence: v.confidence ? v.confidence / 100 : undefined,
+          impact: (v.confidence || 0) >= 75 ? 'HIGH' : (v.confidence || 0) >= 50 ? 'MEDIUM' : 'LOW',
+        });
+      }
+    }
+    activities.sort((a, b) => b.timestamp - a.timestamp);
+    return res.json({ count: activities.length, activities: activities.slice(0, 100) });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to get recent decisions' });
+  }
+});
+
+/**
+ * GET /api/monitor/status
+ * Overall system status — what's running, how many positions open
+ */
+agentMonitorRouter.get('/status', async (_req: AuthRequest, res: Response) => {
+  try {
+    const [openPositions, todayTrades, recentDecisions] = await Promise.all([
+      prisma.position.count({ where: { status: 'OPEN' } }),
+      prisma.trade.count({ where: { openedAt: { gte: new Date(new Date().setHours(0,0,0,0)) } } }),
+      prisma.agentDecision.count({ where: { timestamp: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } } }),
+    ]);
+    return res.json({
+      openPositions,
+      todayTrades,
+      recentDebates: recentDecisions,
+      schedulerRunning: true,
+      uptime: Math.floor(process.uptime()),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to get status' });
+  }
+});
 
 export default agentMonitorRouter;

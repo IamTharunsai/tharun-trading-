@@ -22,7 +22,12 @@ const AGENTS = [
   { id: 15, name: 'Coordinator', icon: '🧩', master: true },
 ];
 
-const ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AAPL', 'TSLA', 'NVDA'];
+const CRYPTO_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX', 'LINK'];
+const STOCK_ASSETS  = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'PLTR', 'SPY', 'QQQ'];
+
+function getMarket(asset: string): 'crypto' | 'stocks' {
+  return CRYPTO_ASSETS.includes(asset) ? 'crypto' : 'stocks';
+}
 
 interface AgentState {
   status: 'idle' | 'analyzing' | 'voted';
@@ -162,8 +167,9 @@ export default function DebateRoomPage() {
     if (triggering || isDebating) return;
     setTriggering(true);
     try {
-      await axios.post('/api/agents/trigger-debate',
-        { asset: selectedAsset, market: 'crypto' },
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      await axios.post(`${baseUrl}/api/agents/trigger-debate`,
+        { asset: selectedAsset, market: getMarket(selectedAsset) },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       toast(`🤖 Debate started for ${selectedAsset} — watch agents vote live!`, { duration: 5000 });
@@ -204,8 +210,16 @@ export default function DebateRoomPage() {
             disabled={isDebating}
             style={{ padding: '8px 12px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 8, fontFamily: 'Space Mono', fontSize: 11, cursor: 'pointer' }}
           >
-            {ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
+            <optgroup label="Stocks">
+              {STOCK_ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
+            </optgroup>
+            <optgroup label="Crypto">
+              {CRYPTO_ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
+            </optgroup>
           </select>
+          <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)', padding: '0 4px' }}>
+            {getMarket(selectedAsset).toUpperCase()}
+          </span>
           <button
             onClick={triggerDebate}
             disabled={triggering || isDebating}

@@ -192,7 +192,7 @@ class AgentActivityMonitor {
     };
 
     this.activities.push(activity);
-    this.activities.shift();
+    if (this.activities.length > this.maxActivities) this.activities.shift();
 
     const io = getIO();
     io?.emit('agent:trading', { ...activity, action, amount, price });

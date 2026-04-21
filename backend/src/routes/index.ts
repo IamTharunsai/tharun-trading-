@@ -190,6 +190,21 @@ agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
   }
 });
 
+// Run full debate + execute trade if approved — used for immediate test
+agentsRouter.post('/run-and-trade', async (req: Request, res: Response) => {
+  try {
+    const { asset = 'NVDA', market = 'stocks' } = req.body;
+    const { runDebateForAsset } = await import('../jobs/scheduler');
+    // Respond immediately, run debate in background
+    res.json({ message: `🏛️ Full debate starting for ${asset} (${market}) — check DebateRoom for live updates`, asset, market, status: 'running' });
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex').catch((err: any) => {
+      console.error('run-and-trade debate failed:', err?.message);
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to start debate' });
+  }
+});
+
 agentsRouter.get('/decisions', async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query;
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);

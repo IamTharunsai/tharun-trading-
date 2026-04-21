@@ -12,14 +12,16 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   for (const pos of openPositions) {
     const currentPrice = prices[pos.asset] || pos.currentPrice;
     invested += currentPrice * pos.quantity;
-    // Update prices
+    const isShort = pos.side === 'SELL';
+    const unrealizedPnl = isShort
+      ? (pos.entryPrice - currentPrice) * pos.quantity
+      : (currentPrice - pos.entryPrice) * pos.quantity;
+    const unrealizedPnlPct = isShort
+      ? ((pos.entryPrice - currentPrice) / pos.entryPrice) * 100
+      : ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
     await prisma.position.update({
       where: { id: pos.id },
-      data: {
-        currentPrice,
-        unrealizedPnl: (currentPrice - pos.entryPrice) * pos.quantity,
-        unrealizedPnlPct: ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100
-      }
+      data: { currentPrice, unrealizedPnl, unrealizedPnlPct }
     }).catch(() => {});
   }
 

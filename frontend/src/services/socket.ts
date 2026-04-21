@@ -24,17 +24,64 @@ export function connectSocket() {
     console.log('🔌 Socket disconnected');
   });
 
-  // Real-time price updates
+  // ── REAL-TIME PRICE UPDATES ──────────────────────────────────────────────────
   socket.on('price:update', (data: any) => {
     store.updatePrice(data);
   });
 
-  // Agent council events
+  // ── DEBATE ENGINE EVENTS (debateEngine.ts emits these) ───────────────────────
+  socket.on('debate:start', (data: any) => {
+    store.resetCouncil();
+    store.setCurrentAnalysis(data.asset);
+    // Mark all 13 agents as analyzing
+    for (let i = 1; i <= 13; i++) {
+      store.updateAgentStatus(i, 'analyzing', undefined, data.asset);
+    }
+  });
+
+  socket.on('debate:agent-speaking', (data: any) => {
+    store.updateAgentStatus(data.agentId, 'analyzing', undefined, data.asset || store.currentAnalysis || '');
+  });
+
+  socket.on('debate:agent-voted', (data: any) => {
+    store.updateAgentStatus(data.agentId, 'voted', {
+      agentId: data.agentId,
+      agentName: data.agentName,
+      vote: data.vote || data.finalVote,
+      confidence: data.confidence,
+      reasoning: data.openingArgument || data.argument || '',
+    }, store.currentAnalysis || '');
+  });
+
+  socket.on('debate:final-vote', (data: any) => {
+    store.updateAgentStatus(data.agentId, 'voted', {
+      agentId: data.agentId,
+      agentName: data.agentName,
+      vote: data.finalVote,
+      confidence: data.confidence,
+      reasoning: data.finalReason || '',
+    }, store.currentAnalysis || '');
+  });
+
+  socket.on('debate:complete', (data: any) => {
+    store.setCurrentAnalysis(null);
+    const t = data.transcript;
+    if (t) {
+      const buyCount  = t.round3?.filter((v: any) => v.finalVote === 'BUY').length  || 0;
+      const sellCount = t.round3?.filter((v: any) => v.finalVote === 'SELL').length || 0;
+      if (t.executionApproved) {
+        toast.success(`🤖 COMMITTEE: ${t.finalDecision} ${t.asset} — executing trade!`, { duration: 6000 });
+      } else {
+        toast(`🏛️ ${t.asset}: ${t.finalDecision} (${buyCount}B/${sellCount}S) — ${t.blockReason || 'held'}`, { duration: 5000 });
+      }
+    }
+  });
+
+  // ── LEGACY ORCHESTRATOR EVENTS (kept for compatibility) ──────────────────────
   socket.on('council:start', (data: any) => {
     store.resetCouncil();
     store.setCurrentAnalysis(data.asset);
-    // Set all agents to analyzing
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 13; i++) {
       store.updateAgentStatus(i, 'analyzing', undefined, data.asset);
     }
   });
@@ -46,12 +93,12 @@ export function connectSocket() {
   socket.on('council:complete', (data: any) => {
     store.setCurrentAnalysis(null);
     const { result } = data;
-    if (result.shouldExecute) {
-      toast.success(`🤖 Council VOTED ${result.finalDecision} for ${result.asset} (${result.goVotes}/10 agents)`, { duration: 5000 });
+    if (result?.shouldExecute) {
+      toast.success(`🤖 Council VOTED ${result.finalDecision} for ${result.asset}`, { duration: 5000 });
     }
   });
 
-  // Trade events
+  // ── TRADE EVENTS ─────────────────────────────────────────────────────────────
   socket.on('trade:executed', (data: any) => {
     store.addTrade(data.trade);
     const isPaper = data.mode === 'paper';
@@ -62,7 +109,6 @@ export function connectSocket() {
     );
   });
 
-  // Position closed
   socket.on('position:closed', (data: any) => {
     const pnlStr = data.pnl >= 0 ? `+$${data.pnl.toFixed(2)}` : `-$${Math.abs(data.pnl).toFixed(2)}`;
     const icon = data.reason === 'stop_loss' ? '🛑' : data.reason === 'take_profit' ? '🎯' : '✅';
@@ -72,16 +118,16 @@ export function connectSocket() {
     });
   });
 
-  // Guardrail events
+  // ── GUARDRAIL / KILL SWITCH ───────────────────────────────────────────────────
   socket.on('guardrail:triggered', (data: any) => {
     toast.error(`⚠️ GUARDRAIL: ${data.rule} triggered`, { duration: 8000 });
   });
 
-  // Kill switch
   socket.on('kill:switch:activated', () => {
     store.setKillSwitch(true);
     toast.error('🔴 KILL SWITCH ACTIVATED — All trading halted', { duration: 0 });
   });
+
   socket.on('kill:switch:deactivated', () => {
     store.setKillSwitch(false);
     toast.success('🟢 Kill switch deactivated — Trading resumed', { duration: 5000 });
