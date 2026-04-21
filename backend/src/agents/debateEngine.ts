@@ -467,7 +467,7 @@ export async function runInvestmentCommitteeDebate(
       io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
       const response = await callWithRetry({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-haiku-4-5-20251001',
         temperature: 0.7,
         max_tokens: 600,
         system: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
@@ -507,7 +507,7 @@ export async function runInvestmentCommitteeDebate(
   try {
     const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
     const devilResponse = await callWithRetry({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
       system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond ONLY in valid JSON:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
       messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
@@ -552,7 +552,7 @@ export async function runInvestmentCommitteeDebate(
     const originalVote = round1Results.find(r => r.agentId === agent.id);
     try {
       const response = await callWithRetry({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-haiku-4-5-20251001',
         temperature: 0.3,
         max_tokens: 300,
         system: agent.systemPrompt,

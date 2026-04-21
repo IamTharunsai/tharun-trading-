@@ -90,48 +90,37 @@ export function initScheduler() {
   // ── MARKET OPEN 9:35 AM ET — weekdays (Mon–Fri) ─────────────────────────
   // EDT (Mar–Nov): 9:35 AM ET = 13:35 UTC
   // EST (Nov–Mar): 9:35 AM ET = 14:35 UTC
+  // Top 5 only — keeps API cost low while covering the best opportunities
+  const TOP_STOCKS = ['NVDA', 'AAPL', 'TSLA', 'AMZN', 'META'];
+  const TOP_CRYPTO = ['BTC', 'ETH', 'SOL'];
+
   const marketOpenScan = async () => {
     if (isKillSwitchActive()) return;
-    logger.info('🔔 MARKET OPEN — auto-scanning priority watchlist for trades...');
-    for (const symbol of PRIORITY_WATCHLIST.slice(0, 20)) {
+    logger.info('🔔 MARKET OPEN — scanning top 5 stocks...');
+    for (const symbol of TOP_STOCKS) {
       await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Market-open debate failed', { err, symbol }));
       await new Promise(r => setTimeout(r, 5000));
     }
   };
-  cron.schedule('35 13 * * 1-5', marketOpenScan); // EDT (current — Apr through Oct)
-  cron.schedule('35 14 * * 1-5', marketOpenScan); // EST (Nov through Mar)
+  cron.schedule('35 13 * * 1-5', marketOpenScan); // EDT (Apr–Oct)
+  cron.schedule('35 14 * * 1-5', marketOpenScan); // EST (Nov–Mar)
 
-  // ── MID-DAY SCAN 12:00 PM ET ─────────────────────────────────────────────
-  cron.schedule('0 16 * * 1-5', async () => {   // 16:00 UTC = 12:00 PM EDT
+  // ── MID-DAY 1:00 PM ET — 5 more stocks ───────────────────────────────────
+  cron.schedule('0 17 * * 1-5', async () => {   // 17:00 UTC = 1:00 PM EDT
     if (isKillSwitchActive()) return;
-    logger.info('☀️ MID-DAY SCAN — checking for new opportunities...');
-    for (const symbol of PRIORITY_WATCHLIST.slice(0, 10)) {
+    logger.info('☀️ MID-DAY SCAN — 5 stocks...');
+    for (const symbol of ['MSFT', 'GOOGL', 'AMD', 'COIN', 'PLTR']) {
       await runDebateForAsset(symbol, 'stocks').catch(() => {});
       await new Promise(r => setTimeout(r, 5000));
     }
   });
 
-  // ── EVERY 2 HOURS: Rotate through ALL stocks + crypto ────────────────────
-  cron.schedule('0 */2 * * *', async () => {
+  // ── CRYPTO: once per day at 8 AM ET ──────────────────────────────────────
+  cron.schedule('0 12 * * *', async () => {    // 12:00 UTC = 8:00 AM EDT
     if (isKillSwitchActive()) return;
-
-    // Screened = today's momentum stocks. Always add priority watchlist too.
-    let screened: string[] = [];
-    try { screened = await getScreenedSymbols(); } catch { /* fallback below */ }
-
-    // Merge priority + screened, deduplicate, take top 30
-    const merged = [...PRIORITY_WATCHLIST, ...screened.filter(s => !PRIORITY_WATCHLIST.includes(s))];
-    const stockBatch = merged.slice(0, 30);
-    logger.info(`📊 Scanning ${stockBatch.length} stocks (priority+screened, ${getTotalStockCount()} total)`);
-    for (const symbol of stockBatch) {
-      await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Stock debate failed', { err, symbol }));
-      await new Promise(r => setTimeout(r, 5000)); // 5s cooldown between debates
-    }
-
-    // Also scan 5 random crypto assets
-    const cryptoBatch = [...CRYPTO_ASSETS].sort(() => Math.random() - 0.5).slice(0, 5);
-    for (const coin of cryptoBatch) {
-      await runDebateForAsset(coin, 'crypto').catch(err => logger.error('Crypto debate failed', { err, coin }));
+    logger.info('🪙 DAILY CRYPTO SCAN...');
+    for (const coin of TOP_CRYPTO) {
+      await runDebateForAsset(coin, 'crypto').catch(() => {});
       await new Promise(r => setTimeout(r, 5000));
     }
   });

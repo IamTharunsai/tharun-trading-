@@ -38,7 +38,7 @@ ${snapshot.candles.slice(-5).map((c, i) =>
 Give your technical analysis vote now.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }]
