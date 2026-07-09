@@ -1,7 +1,7 @@
 {
   "name": "apex-trader-backend",
   "version": "1.0.0",
-  "description": "APEX TRADER - Autonomous Multi-Agent Trading Platform Backend",
+  "description": "THARUN TRADING BOT - Autonomous Multi-Agent Trading Platform Backend",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",

@@ -3,38 +3,41 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════════
-   APEX TRADER — WARM CREAM + ORANGE THEME
+   THARUN TRADING BOT — PEARL + EMERALD + GOLD, GLASSMORPHIC THEME
    This file forces the light theme on EVERY browser and OS setting.
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
   color-scheme: light;
-  --apex-bg:        #FAF6F1;
+  --apex-bg:        #EEF1F6;
+  --apex-bg2:       #E4E9F2;
   --apex-surface:   #FFFFFF;
-  --apex-card:      #FFF8F2;
-  --apex-border:    #E8D5C4;
-  --apex-accent:    #FF8C42;
-  --apex-orange:    #FF8C42;
-  --apex-green:     #2D8A4A;
-  --apex-red:       #DC2626;
-  --apex-yellow:    #F5A623;
-  --apex-text:      #2C1810;
-  --apex-muted:     #8B6F47;
-  --apex-cream:     #FFF5E6;
-  --apex-darkgreen: #1B5E3F;
+  --apex-card:      rgba(255, 255, 255, 0.6);
+  --apex-border:    rgba(20, 30, 50, 0.10);
+  --apex-gold:      #C9A24B;
+  --apex-accent:    #0E6B4F;
+  --apex-orange:    #C9A24B;
+  --apex-green:     #12805F;
+  --apex-red:       #B0263B;
+  --apex-yellow:    #C9A24B;
+  --apex-text:      #14171F;
+  --apex-muted:     #5B6472;
+  --apex-cream:     #F6F4EE;
+  --apex-darkgreen: #0A4636;
+  --apex-navy:      #16305C;
 }
 
 /* ─── Force light everywhere, even OS dark mode ─────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: light;
-    --apex-bg:      #FAF6F1;
+    --apex-bg:      #EEF1F6;
     --apex-surface: #FFFFFF;
-    --apex-card:    #FFF8F2;
-    --apex-border:  #E8D5C4;
-    --apex-accent:  #FF8C42;
-    --apex-text:    #2C1810;
-    --apex-muted:   #8B6F47;
+    --apex-card:    rgba(255, 255, 255, 0.6);
+    --apex-border:  rgba(20, 30, 50, 0.10);
+    --apex-accent:  #0E6B4F;
+    --apex-text:    #14171F;
+    --apex-muted:   #5B6472;
   }
 }
 
@@ -44,47 +47,82 @@
 }
 
 html {
-  background-color: #FAF6F1 !important;
-  color: #2C1810 !important;
+  background: #EEF1F6 !important;
+  color: #14171F !important;
 }
 
 body {
-  background-color: #FAF6F1 !important;
-  color: #2C1810 !important;
-  font-family: 'Syne', sans-serif;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(14, 107, 79, 0.06), transparent 45%),
+    radial-gradient(circle at 85% 100%, rgba(201, 162, 75, 0.08), transparent 45%),
+    #EEF1F6 !important;
+  color: #14171F !important;
+  font-family: 'Manrope', sans-serif;
   min-height: 100vh;
   margin: 0;
   padding: 0;
 }
 
 #root {
-  background-color: #FAF6F1 !important;
-  color: #2C1810 !important;
+  color: #14171F !important;
   min-height: 100vh;
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #FAF6F1; }
-::-webkit-scrollbar-thumb { background: #E8D5C4; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #FF8C42; }
+::-webkit-scrollbar-track { background: #EEF1F6; }
+::-webkit-scrollbar-thumb { background: #C9A24B; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #0E6B4F; }
 
 /* ─── Typography ─────────────────────────────────────────────────── */
-.font-mono { font-family: 'Space Mono', monospace !important; }
-.font-sans { font-family: 'Syne', sans-serif !important; }
+.font-mono    { font-family: 'Space Mono', monospace !important; }
+.font-sans    { font-family: 'Manrope', sans-serif !important; }
+.font-display { font-family: 'Fraunces', serif !important; }
 
-/* ─── Card component ─────────────────────────────────────────────── */
+/* ─── Glass card component ───────────────────────────────────────── */
 .card {
-  background-color: #FFF8F2 !important;
-  border: 1px solid #E8D5C4 !important;
-  border-radius: 12px;
+  background: var(--apex-card) !important;
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--apex-border) !important;
+  border-radius: 16px;
   padding: 1.25rem;
-  color: #2C1810 !important;
+  color: #14171F !important;
+  box-shadow: 0 8px 32px rgba(20, 30, 50, 0.06), inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
 .card-glow {
-  border-color: #FF8C42 !important;
-  box-shadow: 0 0 20px rgba(255, 140, 66, 0.15);
+  border-color: rgba(201, 162, 75, 0.5) !important;
+  box-shadow: 0 0 24px rgba(201, 162, 75, 0.18), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+
+/* ─── Glass buttons ──────────────────────────────────────────────── */
+.btn-glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(20, 30, 50, 0.12);
+  border-radius: 10px;
+  color: #14171F;
+  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btn-glass:hover {
+  border-color: rgba(201, 162, 75, 0.6);
+  box-shadow: 0 4px 16px rgba(201, 162, 75, 0.2);
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0E6B4F, #0A4636);
+  border: 1px solid rgba(201, 162, 75, 0.4);
+  border-radius: 10px;
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(14, 107, 79, 0.25);
+  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btn-primary:hover {
+  box-shadow: 0 6px 22px rgba(14, 107, 79, 0.35);
+  transform: translateY(-1px);
 }
 
 /* ─── Status dots ────────────────────────────────────────────────── */
@@ -96,10 +134,10 @@ body {
   margin-right: 4px;
   flex-shrink: 0;
 }
-.status-dot.live      { background: #2D8A4A; box-shadow: 0 0 6px #2D8A4A; animation: pulse-dot 2s infinite; }
-.status-dot.analyzing { background: #F5A623; box-shadow: 0 0 6px #F5A623; animation: pulse-dot 1s infinite; }
-.status-dot.offline   { background: #8B6F47; }
-.status-dot.error     { background: #DC2626; box-shadow: 0 0 6px #DC2626; }
+.status-dot.live      { background: #12805F; box-shadow: 0 0 6px #12805F; animation: pulse-dot 2s infinite; }
+.status-dot.analyzing { background: #C9A24B; box-shadow: 0 0 6px #C9A24B; animation: pulse-dot 1s infinite; }
+.status-dot.offline   { background: #5B6472; }
+.status-dot.error     { background: #B0263B; box-shadow: 0 0 6px #B0263B; }
 
 /* ─── Scanline ───────────────────────────────────────────────────── */
 .scanline::after {
@@ -107,16 +145,16 @@ body {
   position: fixed;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(to right, transparent, rgba(255,140,66,0.06), transparent);
+  background: linear-gradient(to right, transparent, rgba(201,162,75,0.10), transparent);
   animation: scanline 10s linear infinite;
   pointer-events: none;
   z-index: 9999;
 }
 
 /* ─── P&L helpers ────────────────────────────────────────────────── */
-.pnl-positive { color: #2D8A4A; }
-.pnl-negative { color: #DC2626; }
-.pnl-neutral  { color: #8B6F47; }
+.pnl-positive { color: #12805F; }
+.pnl-negative { color: #B0263B; }
+.pnl-neutral  { color: #5B6472; }
 
 /* ─── Keyframes ──────────────────────────────────────────────────── */
 @keyframes scanline {
@@ -135,25 +173,25 @@ body {
 }
 
 @keyframes glow {
-  0%   { box-shadow: 0 0 5px rgba(255,140,66,0.3); }
-  100% { box-shadow: 0 0 20px rgba(255,140,66,0.6), 0 0 40px rgba(255,140,66,0.2); }
+  0%   { box-shadow: 0 0 5px rgba(201,162,75,0.3); }
+  100% { box-shadow: 0 0 20px rgba(201,162,75,0.6), 0 0 40px rgba(201,162,75,0.2); }
 }
 
 /* ─── Ensure selects and inputs have correct background ──────────── */
 select, input, textarea {
-  background-color: #FFFFFF;
-  color: #2C1810;
-  border-color: #E8D5C4;
+  background-color: rgba(255, 255, 255, 0.7);
+  color: #14171F;
+  border-color: rgba(20, 30, 50, 0.12);
 }
 
 select option {
   background-color: #FFFFFF;
-  color: #2C1810;
+  color: #14171F;
 }
 
 /* ─── Table text visibility ──────────────────────────────────────── */
 table {
-  color: #2C1810;
+  color: #14171F;
 }
 
 th, td {

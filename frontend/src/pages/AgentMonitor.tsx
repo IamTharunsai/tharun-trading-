@@ -32,10 +32,10 @@ const AGENTS: Record<number, { name: string; icon: string }> = {
 
 const TYPE_COLOR: Record<string, string> = {
   GATHERING: '#FFA500',
-  LEARNING:  '#2D8A4A',
-  ANALYZING: '#FF8C42',
+  LEARNING:  '#12805F',
+  ANALYZING: '#C9A24B',
   VOTING:    '#4A90D9',
-  TRADING:   '#DC2626',
+  TRADING:   '#B0263B',
 };
 
 const TYPE_ICON: Record<string, string> = {
@@ -147,9 +147,9 @@ export default function AgentMonitorPage() {
   });
 
   const impactStyle = (impact?: string) => {
-    if (impact === 'HIGH')   return { background: '#FFF0F0', borderLeft: '3px solid #DC2626' };
-    if (impact === 'MEDIUM') return { background: '#FFFBF0', borderLeft: '3px solid #FF8C42' };
-    return { borderLeft: '3px solid #E8D5C4' };
+    if (impact === 'HIGH')   return { background: '#FFF0F0', borderLeft: '3px solid #B0263B' };
+    if (impact === 'MEDIUM') return { background: '#FFFBF0', borderLeft: '3px solid #C9A24B' };
+    return { borderLeft: '3px solid #DCDFE6' };
   };
 
   return (
@@ -157,7 +157,7 @@ export default function AgentMonitorPage() {
 
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontFamily: 'Syne', fontSize: 24, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 6 }}>
+        <h1 style={{ fontFamily: 'Manrope', fontSize: 24, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 6 }}>
           🔍 Agent Activity Monitor
         </h1>
         <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)' }}>
@@ -176,7 +176,7 @@ export default function AgentMonitorPage() {
           ].map(s => (
             <div key={s.label} style={{ background: 'var(--apex-surface)', border: '1px solid var(--apex-border)', borderRadius: 10, padding: 14 }}>
               <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>{s.label.toUpperCase()}</div>
-              <div style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 700, color: 'var(--apex-accent)' }}>{s.value}</div>
+              <div style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 700, color: 'var(--apex-accent)' }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -203,7 +203,7 @@ export default function AgentMonitorPage() {
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-text)', cursor: 'pointer' }}>
           <input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} />
           Live WebSocket
-          {live && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#2D8A4A', display: 'inline-block', animation: 'pulse 1s infinite' }} />}
+          {live && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#12805F', display: 'inline-block', animation: 'pulse 1s infinite' }} />}
         </label>
 
         <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)', marginLeft: 'auto' }}>
@@ -236,7 +236,7 @@ export default function AgentMonitorPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span style={{ fontSize: 15 }}>{agent?.icon || '🤖'}</span>
                     <div>
-                      <span style={{ fontFamily: 'Syne', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)' }}>
+                      <span style={{ fontFamily: 'Manrope', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)' }}>
                         {agent?.name || activity.agentName}
                       </span>
                       {activity.source && (

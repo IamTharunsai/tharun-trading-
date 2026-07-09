@@ -326,7 +326,7 @@ export class AlpacaBroker {
  */
 export function createAlpacaBroker(paperMode: boolean = true): AlpacaBroker | null {
   const apiKey = process.env.ALPACA_API_KEY;
-  const apiSecret = process.env.ALPACA_API_SECRET;
+  const apiSecret = process.env.ALPACA_SECRET_KEY;
 
   if (!apiKey || !apiSecret) {
     logger.warn('⚠️ Alpaca API credentials not configured. Paper mode only.');

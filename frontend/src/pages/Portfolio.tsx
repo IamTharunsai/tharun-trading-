@@ -3,13 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { getPortfolio, getPositions, getSnapshots } from '../services/api';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { format } from 'date-fns';
+import LastUpdated from '../components/common/LastUpdated';
 
 export default function PortfolioPage() {
   const { data: portfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
   const { data: positions = [] } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
   const { data: snapshots = [] } = useQuery({ queryKey: ['snapshots-90'], queryFn: () => getSnapshots(90) });
 
-  const PIE_COLORS = ['#8B6F47', '#FF8C42', '#2D8A4A', '#F5A623', '#DC2626', '#6366F1', '#14B8A6'];
+  const PIE_COLORS = ['#5B6472', '#C9A24B', '#12805F', '#C9A24B', '#B0263B', '#6366F1', '#14B8A6'];
   const pieData = [
     { name: 'Cash', value: portfolio?.cashBalance || 0, color: PIE_COLORS[0] },
     ...positions.map((p: any, i: number) => ({ name: p.asset, value: p.currentPrice * p.quantity, color: PIE_COLORS[(i + 1) % PIE_COLORS.length] }))
@@ -22,7 +23,10 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-sans font-bold text-2xl text-apex-text">Portfolio</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="font-sans font-bold text-2xl text-apex-text">Portfolio</h1>
+        <LastUpdated />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Allocation pie */}
@@ -33,7 +37,7 @@ export default function PortfolioPage() {
               <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
                 {pieData.map((entry, i) => <Cell key={i} fill={entry.color} opacity={i === 0 ? 0.5 : 1} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, '']} contentStyle={{ background: '#FFFBF7', border: '1px solid #E8D5C4', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
+              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, '']} contentStyle={{ background: '#FFFFFF', border: '1px solid #DCDFE6', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
             </PieChart>
           </ResponsiveContainer>
           <div className="space-y-1 mt-2">
@@ -53,15 +57,15 @@ export default function PortfolioPage() {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="grad2" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#FF8C42" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#FF8C42" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#C9A24B" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#C9A24B" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8D5C4" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
-              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, 'Value']} contentStyle={{ background: '#FFFBF7', border: '1px solid #E8D5C4', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
-              <Area type="monotone" dataKey="value" stroke="#FF8C42" strokeWidth={2} fill="url(#grad2)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#DCDFE6" vertical={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#5B6472', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#5B6472', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
+              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, 'Value']} contentStyle={{ background: '#FFFFFF', border: '1px solid #DCDFE6', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
+              <Area type="monotone" dataKey="value" stroke="#C9A24B" strokeWidth={2} fill="url(#grad2)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>

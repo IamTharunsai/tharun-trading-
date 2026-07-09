@@ -10,7 +10,7 @@ export default function LiveTicker() {
 
   return (
     <div style={{
-      borderBottom: '1px solid #E8D5C4',
+      borderBottom: '1px solid #DCDFE6',
       background: '#FFFFFF',
       overflow: 'hidden',
       height: 36,
@@ -24,8 +24,8 @@ export default function LiveTicker() {
         fontFamily: 'Space Mono',
         fontSize: 10,
         fontWeight: 700,
-        color: '#FF8C42',
-        borderRight: '1px solid #E8D5C4',
+        color: '#C9A24B',
+        borderRight: '1px solid #DCDFE6',
         height: '100%',
         display: 'flex',
         alignItems: 'center',
@@ -36,9 +36,9 @@ export default function LiveTicker() {
         <div className="animate-ticker" style={{ display: 'flex', gap: 32, whiteSpace: 'nowrap' }}>
           {doubled.map((p, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'Space Mono', fontSize: 11 }}>
-              <span style={{ color: '#8B6F47' }}>{p.asset}</span>
-              <span style={{ color: '#2C1810', fontWeight: 700 }}>${p.price?.toFixed(2)}</span>
-              <span style={{ color: (p.change24h || 0) >= 0 ? '#2D8A4A' : '#DC2626', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <span style={{ color: '#5B6472' }}>{p.asset}</span>
+              <span style={{ color: '#14171F', fontWeight: 700 }}>${p.price?.toFixed(2)}</span>
+              <span style={{ color: (p.change24h || 0) >= 0 ? '#12805F' : '#B0263B', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                 {(p.change24h || 0) >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                 {p.change24h?.toFixed(2)}%
               </span>

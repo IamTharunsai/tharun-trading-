@@ -3,6 +3,7 @@ import { getTradeStats, getSnapshots } from '../services/api';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import StatCard from '../components/common/StatCard';
 import { format } from 'date-fns';
+import LastUpdated from '../components/common/LastUpdated';
 
 export default function AnalyticsPage() {
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats });
@@ -37,9 +38,12 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-sans font-bold text-2xl text-apex-text">Analytics</h1>
-        <p className="font-mono text-xs text-apex-muted mt-1">Deep performance analysis across all trades</p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="font-sans font-bold text-2xl text-apex-text">Analytics</h1>
+          <p className="font-mono text-xs text-apex-muted mt-1">Deep performance analysis across all trades</p>
+        </div>
+        <LastUpdated />
       </div>
 
       {/* Stats Grid */}
@@ -60,13 +64,13 @@ export default function AnalyticsPage() {
         {barData.length > 0 ? (
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={barData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8D5C4" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#DCDFE6" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5B6472', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#5B6472', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
               <Tooltip content={<CustomBarTooltip />} />
               <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
                 {barData.map((entry, i) => (
-                  <Cell key={i} fill={entry.pnl >= 0 ? '#2D8A4A' : '#DC2626'} fillOpacity={0.85} />
+                  <Cell key={i} fill={entry.pnl >= 0 ? '#12805F' : '#B0263B'} fillOpacity={0.85} />
                 ))}
               </Bar>
             </BarChart>
@@ -86,15 +90,15 @@ export default function AnalyticsPage() {
             <AreaChart data={valueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
               <defs>
                 <linearGradient id="valGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#FF8C42" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#FF8C42" stopOpacity={0} />
+                  <stop offset="5%"  stopColor="#C9A24B" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#C9A24B" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8D5C4" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fill: '#8B6F47', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
-              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, 'Value']} contentStyle={{ background: '#FFFBF7', border: '1px solid #E8D5C4', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
-              <Area type="monotone" dataKey="value" stroke="#FF8C42" strokeWidth={2} fill="url(#valGrad)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#DCDFE6" vertical={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#5B6472', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10, fill: '#5B6472', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
+              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`, 'Value']} contentStyle={{ background: '#FFFFFF', border: '1px solid #DCDFE6', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
+              <Area type="monotone" dataKey="value" stroke="#C9A24B" strokeWidth={2} fill="url(#valGrad)" />
             </AreaChart>
           </ResponsiveContainer>
         ) : (

@@ -18,7 +18,7 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
 
   const RiskBar = ({ label, used, limit, unit = '%' }: { label: string; used: number; limit: number; unit?: string }) => {
     const pct = (used / limit) * 100;
-    const color = pct >= 90 ? '#DC2626' : pct >= 70 ? '#F5A623' : '#2D8A4A';
+    const color = pct >= 90 ? '#B0263B' : pct >= 70 ? '#C9A24B' : '#12805F';
     const status = pct >= 90 ? 'CRITICAL' : pct >= 70 ? 'WARNING' : 'OK';
     return (
       <div className="space-y-1">

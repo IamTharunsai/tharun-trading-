@@ -128,7 +128,7 @@ async function boot() {
     }
 
     server.listen(PORT, () => {
-      logger.info(`🚀 APEX TRADER backend running on port ${PORT}`);
+      logger.info(`🚀 THARUN TRADING BOT backend running on port ${PORT}`);
       logger.info(`📊 Trading mode: ${process.env.TRADING_MODE?.toUpperCase() || 'PAPER'}`);
     });
   } catch (error) {

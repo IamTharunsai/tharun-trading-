@@ -21,7 +21,7 @@ export async function generateDailyJournal() {
     const bestTrade = closedTrades.sort((a, b) => (b.pnl || 0) - (a.pnl || 0))[0];
     const worstTrade = closedTrades.sort((a, b) => (a.pnl || 0) - (b.pnl || 0))[0];
 
-    const prompt = `You are a professional trading journal writer for an autonomous AI trading system called APEX TRADER.
+    const prompt = `You are a professional trading journal writer for an autonomous AI trading system called THARUN TRADING BOT.
 
 Write a comprehensive daily trading journal for ${dateStr}.
 

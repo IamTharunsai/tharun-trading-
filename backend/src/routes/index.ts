@@ -50,7 +50,7 @@ authRouter.post('/setup', async (req: Request, res: Response) => {
     if (existing) return res.status(400).json({ error: 'Owner account already exists' });
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const secret = speakeasy.generateSecret({ name: 'APEX TRADER', issuer: 'ApexTrader' });
+    const secret = speakeasy.generateSecret({ name: 'THARUN TRADING BOT', issuer: 'TharunTradingBot' });
 
     const user = await prisma.user.create({ data: { email, passwordHash, totpSecret: secret.base32 } });
     res.json({ message: 'Account created', totpSecret: secret.base32, totpQR: secret.otpauth_url, userId: user.id });

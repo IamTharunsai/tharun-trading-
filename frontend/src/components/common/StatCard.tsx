@@ -11,21 +11,21 @@ interface StatCardProps {
 }
 
 export default function StatCard({ label, value, sub, icon, trend, accent, mono }: StatCardProps) {
-  const valueColor = trend === 'up' ? '#2D8A4A' : trend === 'down' ? '#DC2626' : '#2C1810';
+  const valueColor = trend === 'up' ? '#12805F' : trend === 'down' ? '#B0263B' : '#14171F';
 
   return (
     <div style={{
       background: '#FFFFFF',
-      border: accent ? '1.5px solid #FF8C42' : '1px solid #E8D5C4',
+      border: accent ? '1.5px solid #C9A24B' : '1px solid #DCDFE6',
       borderRadius: 12,
       padding: '16px 18px',
-      boxShadow: accent ? '0 0 18px rgba(255,140,66,0.12)' : '0 1px 4px rgba(139,111,71,0.06)',
+      boxShadow: accent ? '0 0 18px rgba(201,162,75,0.12)' : '0 1px 4px rgba(91,100,114,0.06)',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#8B6F47', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+        <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#5B6472', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
           {label}
         </span>
-        {icon && <span style={{ color: '#FF8C42' }}>{icon}</span>}
+        {icon && <span style={{ color: '#C9A24B' }}>{icon}</span>}
       </div>
       <div style={{
         fontFamily: mono ? 'Space Mono, monospace' : 'Syne, sans-serif',
@@ -37,7 +37,7 @@ export default function StatCard({ label, value, sub, icon, trend, accent, mono 
         {value}
       </div>
       {sub && (
-        <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: '#8B6F47', marginTop: 4 }}>
+        <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: '#5B6472', marginTop: 4 }}>
           {sub}
         </div>
       )}

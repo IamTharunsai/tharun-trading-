@@ -52,7 +52,7 @@ export default function ActivePositions({ positions }: { positions: Position[] }
                       className="h-full rounded-full transition-all"
                       style={{
                         width: `${Math.min(100, Math.max(0, ((livePrice - pos.stopLossPrice) / (pos.takeProfitPrice - pos.stopLossPrice)) * 100))}%`,
-                        background: isPos ? '#2D8A4A' : '#DC2626'
+                        background: isPos ? '#12805F' : '#B0263B'
                       }}
                     />
                   </div>

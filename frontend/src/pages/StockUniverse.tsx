@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { Search, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, X, BarChart2, Activity } from 'lucide-react';
 import { APEX_COLORS } from '../constants/colors';
+import LastUpdated from '../components/common/LastUpdated';
 
 const C = APEX_COLORS;
 
@@ -147,7 +148,7 @@ function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'rgba(44,24,16,0.45)', display: 'flex', justifyContent: 'flex-end',
+      background: 'rgba(20,23,31,0.45)', display: 'flex', justifyContent: 'flex-end',
     }} onClick={onClose}>
       <div style={{
         width: 'min(700px, 100vw)', height: '100%', background: C.bg,
@@ -159,7 +160,7 @@ function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 22, color: C.text }}>{stock.name !== stock.symbol ? stock.name : stock.symbol}</span>
+              <span style={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: 22, color: C.text }}>{stock.name !== stock.symbol ? stock.name : stock.symbol}</span>
               <span style={{ fontFamily: 'Space Mono', fontSize: 13, color: C.accent, fontWeight: 700 }}>{stock.symbol}</span>
               {stock.sector && <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted, padding: '2px 8px', borderRadius: 4, background: C.card, border: `1px solid ${C.border}` }}>{stock.sector}</span>}
             </div>
@@ -182,7 +183,7 @@ function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void
           ].map(s => (
             <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px' }}>
               <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 15, color: (s as any).color || C.text }}>{s.value}</div>
+              <div style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 15, color: (s as any).color || C.text }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -206,7 +207,7 @@ function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 16px 8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <BarChart2 size={14} color={C.accent} />
-            <span style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 13, color: C.text }}>Price Chart</span>
+            <span style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 13, color: C.text }}>Price Chart</span>
             <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted }}>● Green = Entry &nbsp; ● Red/Green dot = Exit (win/loss)</span>
           </div>
           {isLoading ? <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Space Mono', fontSize: 11, color: C.muted }}>Loading…</div>
@@ -216,7 +217,7 @@ function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void
         {/* Agent decisions */}
         {decisions.length > 0 && (
           <div>
-            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 10 }}>Agent Debate History</div>
+            <div style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 10 }}>Agent Debate History</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {decisions.map((d: any) => (
                 <div key={d.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
@@ -255,7 +256,7 @@ function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void
         {/* Trade history */}
         {trades.length > 0 && (
           <div>
-            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 10 }}>Trade History</div>
+            <div style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 10 }}>Trade History</div>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -327,7 +328,7 @@ function StockCard({ stock, onClick }: { stock: any; onClick: () => void }) {
 
       {/* Company name + ticker */}
       <div style={{ marginBottom: 8 }}>
-        <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 13, color: C.text, lineHeight: 1.3, paddingRight: 16 }}>
+        <div style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 13, color: C.text, lineHeight: 1.3, paddingRight: 16 }}>
           {stock.name !== stock.symbol ? stock.name : <span style={{ color: C.accent }}>{stock.symbol}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
@@ -435,11 +436,14 @@ export default function StockUniversePage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, color: C.text }}>
 
       {/* Header */}
-      <div>
-        <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 24, color: C.text, margin: 0 }}>Stock Universe</h1>
-        <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: '4px 0 0' }}>
-          Every stock & crypto analyzed by our agents — full company names, charts, and reasoning
-        </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: 24, color: C.text, margin: 0 }}>Stock Universe</h1>
+          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: '4px 0 0' }}>
+            Every stock & crypto analyzed by our agents — full company names, charts, and reasoning
+          </p>
+        </div>
+        <LastUpdated />
       </div>
 
       {/* Stats bar */}
@@ -452,7 +456,7 @@ export default function StockUniversePage() {
         ].map((s, i) => (
           <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
             <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 18, color: C.text }}>{s.value}</div>
+            <div style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 18, color: C.text }}>{s.value}</div>
           </div>
         ))}
       </div>

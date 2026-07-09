@@ -2,16 +2,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJournals } from '../services/api';
 import { BookOpen, TrendingUp, TrendingDown } from 'lucide-react';
+import LastUpdated from '../components/common/LastUpdated';
 
 export default function JournalPage() {
   const { data: journals = [] } = useQuery({ queryKey: ['journals'], queryFn: getJournals, refetchInterval: 60000 });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <BookOpen size={20} className="text-apex-accent" />
-        <h1 className="font-sans font-bold text-2xl text-apex-text">Trading Journal</h1>
-        <span className="font-mono text-xs text-apex-muted ml-2">AI-generated daily entries</span>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <BookOpen size={20} className="text-apex-accent" />
+          <h1 className="font-sans font-bold text-2xl text-apex-text">Trading Journal</h1>
+          <span className="font-mono text-xs text-apex-muted ml-2">AI-generated daily entries</span>
+        </div>
+        <LastUpdated />
       </div>
 
       <div className="space-y-4">

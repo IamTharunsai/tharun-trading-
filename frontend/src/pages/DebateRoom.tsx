@@ -159,7 +159,7 @@ export default function DebateRoomPage() {
   };
 
   const voteColor = (vote?: string) =>
-    vote === 'BUY' ? '#2D8A4A' : vote === 'SELL' ? '#DC2626' : vote === 'HOLD' ? '#F5A623' : 'var(--apex-border)';
+    vote === 'BUY' ? '#12805F' : vote === 'SELL' ? '#B0263B' : vote === 'HOLD' ? '#C9A24B' : 'var(--apex-border)';
 
   const buyVotes  = Object.values(agentStates).filter(s => s.vote === 'BUY').length;
   const sellVotes = Object.values(agentStates).filter(s => s.vote === 'SELL').length;
@@ -172,7 +172,7 @@ export default function DebateRoomPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 4 }}>
+          <h1 style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 4 }}>
             Investment Committee
           </h1>
           <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
@@ -203,8 +203,8 @@ export default function DebateRoomPage() {
             disabled={triggering || isDebating}
             style={{
               padding: '8px 20px', borderRadius: 8, fontFamily: 'Space Mono', fontWeight: 700, fontSize: 11, cursor: triggering || isDebating ? 'not-allowed' : 'pointer',
-              background: isDebating ? 'rgba(255,215,0,.1)' : 'var(--apex-accent)', color: isDebating ? '#FFD700' : '#fff',
-              border: isDebating ? '1px solid rgba(255,215,0,.5)' : 'none', opacity: (triggering || isDebating) ? 0.7 : 1, transition: 'all .2s'
+              background: isDebating ? 'rgba(201,162,75,.1)' : 'var(--apex-accent)', color: isDebating ? '#C9A24B' : '#fff',
+              border: isDebating ? '1px solid rgba(201,162,75,.5)' : 'none', opacity: (triggering || isDebating) ? 0.7 : 1, transition: 'all .2s'
             }}
           >
             {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Starting...' : '▶ TRIGGER DEBATE'}
@@ -215,13 +215,13 @@ export default function DebateRoomPage() {
       {/* Round explanation */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {[
-          { round: 'Round 1', label: 'Opening Arguments', color: '#FF8C42' },
-          { round: 'Round 2', label: 'Cross-Examination',  color: '#F5A623' },
-          { round: 'Round 3', label: 'Final Verdict',      color: '#2D8A4A' },
+          { round: 'Round 1', label: 'Opening Arguments', color: '#C9A24B' },
+          { round: 'Round 2', label: 'Cross-Examination',  color: '#C9A24B' },
+          { round: 'Round 3', label: 'Final Verdict',      color: '#12805F' },
         ].map(item => (
           <div key={item.round} style={{ background: 'var(--apex-card)', border: `1px solid ${item.color}40`, borderRadius: 10, padding: 14 }}>
             <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: item.color, textTransform: 'uppercase', marginBottom: 4 }}>{item.round}</div>
-            <div style={{ fontFamily: 'Syne', fontSize: 13, fontWeight: 700, color: 'var(--apex-text)' }}>{item.label}</div>
+            <div style={{ fontFamily: 'Manrope', fontSize: 13, fontWeight: 700, color: 'var(--apex-text)' }}>{item.label}</div>
           </div>
         ))}
       </div>
@@ -233,14 +233,14 @@ export default function DebateRoomPage() {
             LIVE VOTE TALLY — {totalVoted}/15 agents voted
           </div>
           <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', gap: 2 }}>
-            {buyVotes  > 0 && <div style={{ flex: buyVotes,  background: '#2D8A4A', borderRadius: 4 }} title={`BUY: ${buyVotes}`} />}
-            {holdVotes > 0 && <div style={{ flex: holdVotes, background: '#F5A623', borderRadius: 4 }} title={`HOLD: ${holdVotes}`} />}
-            {sellVotes > 0 && <div style={{ flex: sellVotes, background: '#DC2626', borderRadius: 4 }} title={`SELL: ${sellVotes}`} />}
+            {buyVotes  > 0 && <div style={{ flex: buyVotes,  background: '#12805F', borderRadius: 4 }} title={`BUY: ${buyVotes}`} />}
+            {holdVotes > 0 && <div style={{ flex: holdVotes, background: '#C9A24B', borderRadius: 4 }} title={`HOLD: ${holdVotes}`} />}
+            {sellVotes > 0 && <div style={{ flex: sellVotes, background: '#B0263B', borderRadius: 4 }} title={`SELL: ${sellVotes}`} />}
           </div>
           <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#2D8A4A' }}>BUY: {buyVotes}</span>
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#F5A623' }}>HOLD: {holdVotes}</span>
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#DC2626' }}>SELL: {sellVotes}</span>
+            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#12805F' }}>BUY: {buyVotes}</span>
+            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#C9A24B' }}>HOLD: {holdVotes}</span>
+            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#B0263B' }}>SELL: {sellVotes}</span>
           </div>
         </div>
       )}
@@ -263,8 +263,8 @@ export default function DebateRoomPage() {
                 animation: pulse ? 'pulse .8s infinite' : 'none',
               }}>
                 <div style={{ fontSize: 18, marginBottom: 3 }}>{agent.icon}</div>
-                <div style={{ fontFamily: 'Syne', fontSize: 10, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 2 }}>{agent.name}</div>
-                {agent.veto   && <div style={{ fontFamily: 'Space Mono', fontSize: 7, color: '#DC2626', marginBottom: 3 }}>⚡ VETO</div>}
+                <div style={{ fontFamily: 'Manrope', fontSize: 10, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 2 }}>{agent.name}</div>
+                {agent.veto   && <div style={{ fontFamily: 'Space Mono', fontSize: 7, color: '#B0263B', marginBottom: 3 }}>⚡ VETO</div>}
                 <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: bc, fontWeight: 700 }}>
                   {state?.vote || (state?.status === 'analyzing' ? '...' : 'IDLE')}
                 </div>
@@ -295,7 +295,7 @@ export default function DebateRoomPage() {
               transcript.map((item, i) => (
                 <div key={i} style={{ padding: '8px 10px', background: 'var(--apex-surface)', borderRadius: 6, borderLeft: `3px solid ${voteColor(item.vote)}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontFamily: 'Syne', fontSize: 11, fontWeight: 700, color: 'var(--apex-accent)' }}>{item.agentName}</span>
+                    <span style={{ fontFamily: 'Manrope', fontSize: 11, fontWeight: 700, color: 'var(--apex-accent)' }}>{item.agentName}</span>
                     {item.vote && <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: voteColor(item.vote), fontWeight: 700 }}>{item.vote}</span>}
                   </div>
                   <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-text)', lineHeight: 1.5 }}>
@@ -314,17 +314,17 @@ export default function DebateRoomPage() {
           </div>
           {finalDecision ? (
             <div>
-              <div style={{ fontSize: 48, fontWeight: 900, color: voteColor(finalDecision.decision), marginBottom: 12, fontFamily: 'Syne' }}>
+              <div style={{ fontSize: 48, fontWeight: 900, color: voteColor(finalDecision.decision), marginBottom: 12, fontFamily: 'Manrope' }}>
                 {finalDecision.decision}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
                 <div style={{ background: 'var(--apex-surface)', borderRadius: 8, padding: 10 }}>
                   <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>GO VOTES</div>
-                  <div style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 700, color: '#2D8A4A' }}>{finalDecision.goVotes}</div>
+                  <div style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 700, color: '#12805F' }}>{finalDecision.goVotes}</div>
                 </div>
                 <div style={{ background: 'var(--apex-surface)', borderRadius: 8, padding: 10 }}>
                   <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>NO-GO VOTES</div>
-                  <div style={{ fontFamily: 'Syne', fontSize: 22, fontWeight: 700, color: '#DC2626' }}>{finalDecision.noGoVotes}</div>
+                  <div style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 700, color: '#B0263B' }}>{finalDecision.noGoVotes}</div>
                 </div>
               </div>
               <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
@@ -334,7 +334,7 @@ export default function DebateRoomPage() {
           ) : isDebating ? (
             <div style={{ textAlign: 'center', padding: 40 }}>
               <div style={{ fontSize: 32, marginBottom: 12, animation: 'pulse 1s infinite' }}>⚡</div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#FFD700' }}>Agents deliberating...</div>
+              <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#C9A24B' }}>Agents deliberating...</div>
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 40, fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>

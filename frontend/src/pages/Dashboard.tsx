@@ -9,6 +9,7 @@ import ActivePositions from '../components/portfolio/ActivePositions';
 import RiskMonitor from '../components/portfolio/RiskMonitor';
 import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2 } from 'lucide-react';
 import { format } from 'date-fns';
+import LastUpdated from '../components/common/LastUpdated';
 
 export default function DashboardPage() {
   const { data: portfolio, isLoading: loadingPortfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
@@ -20,34 +21,35 @@ export default function DashboardPage() {
   const pnlTotalPos = (portfolio?.pnlTotal   || 0) >= 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, color: '#2C1810' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, color: '#14171F' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 24, color: '#2C1810', margin: 0 }}>
+          <h1 style={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: 24, color: '#14171F', margin: 0 }}>
             Command Center
           </h1>
-          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: '#8B6F47', margin: '4px 0 0' }}>
-            {format(new Date(), 'EEEE, MMMM d yyyy • HH:mm')}
+          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: '#5B6472', margin: '4px 0 0' }}>
+            {format(new Date(), 'EEEE, MMMM d yyyy')}
           </p>
         </div>
+        <LastUpdated />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {killSwitchActive ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.08)', border: '1px solid #DC2626', fontFamily: 'Space Mono', fontSize: 11, color: '#DC2626', fontWeight: 700 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(176,38,59,0.08)', border: '1px solid #B0263B', fontFamily: 'Space Mono', fontSize: 11, color: '#B0263B', fontWeight: 700 }}>
               <span className="status-dot error" /> KILL SWITCH ACTIVE
             </span>
           ) : (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(45,138,74,0.08)', border: '1px solid rgba(45,138,74,0.3)', fontFamily: 'Space Mono', fontSize: 11, color: '#2D8A4A', fontWeight: 700 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(18,128,95,0.08)', border: '1px solid rgba(18,128,95,0.3)', fontFamily: 'Space Mono', fontSize: 11, color: '#12805F', fontWeight: 700 }}>
               <span className="status-dot live" /> TRADING ACTIVE
             </span>
           )}
           {currentAnalysis && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.3)', fontFamily: 'Space Mono', fontSize: 11, color: '#F5A623', fontWeight: 700 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'rgba(201,162,75,0.08)', border: '1px solid rgba(201,162,75,0.3)', fontFamily: 'Space Mono', fontSize: 11, color: '#C9A24B', fontWeight: 700 }}>
               <span className="status-dot analyzing" /> ANALYZING {currentAnalysis}
             </span>
           )}
-          <span style={{ padding: '6px 12px', borderRadius: 8, background: '#FFFFFF', border: '1px solid #E8D5C4', fontFamily: 'Space Mono', fontSize: 11, color: '#8B6F47' }}>
+          <span style={{ padding: '6px 12px', borderRadius: 8, background: '#FFFFFF', border: '1px solid #DCDFE6', fontFamily: 'Space Mono', fontSize: 11, color: '#5B6472' }}>
             {import.meta.env.VITE_TRADING_MODE || 'PAPER'} MODE
           </span>
         </div>

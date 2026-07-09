@@ -1,6 +1,8 @@
 import { prisma } from '../utils/prisma';
 import { PortfolioState } from '../agents/types';
 import { getCurrentPrices } from './marketData';
+import { createAlpacaBroker } from './alpacaBroker';
+import { logger } from '../utils/logger';
 
 const STARTING_CAPITAL = parseFloat(process.env.STARTING_CAPITAL || '100000');
 
@@ -38,8 +40,30 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const allTrades = await prisma.trade.findMany({ where: { status: 'CLOSED' } });
   const pnlTotal = allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
 
-  const cashBalance = STARTING_CAPITAL + pnlTotal - invested;
-  const totalValue = cashBalance + invested;
+  let cashBalance = STARTING_CAPITAL + pnlTotal - invested;
+  let totalValue = cashBalance + invested;
+
+  // Ground-truth reconciliation against the real Alpaca paper account (stocks side).
+  // Local DB tracking can drift from Alpaca when orders fill/close asynchronously
+  // (stop-loss/take-profit) without a matching local update, so prefer Alpaca's
+  // reported cash/portfolio_value over the locally-computed estimate when available.
+  const cryptoInvested = openPositions
+    .filter(p => p.market === 'crypto')
+    .reduce((sum, p) => sum + (prices[p.asset] || p.currentPrice) * p.quantity, 0);
+
+  try {
+    const alpaca = createAlpacaBroker(true);
+    if (alpaca) {
+      const account = await alpaca.getPortfolioSummary();
+      if (account) {
+        cashBalance = account.cash;
+        totalValue = account.portfolio_value + cryptoInvested;
+      }
+    }
+  } catch (err) {
+    logger.warn('Alpaca account fetch failed, falling back to locally-tracked portfolio value', { error: (err as Error).message });
+  }
+
   const pnlDayPct = (pnlDay / totalValue) * 100;
 
   // Get portfolio peak

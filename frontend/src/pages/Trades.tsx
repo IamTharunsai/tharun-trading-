@@ -5,6 +5,7 @@ import { getTrades, getTradeStats } from '../services/api';
 import { format } from 'date-fns';
 import { TrendingUp, TrendingDown, ArrowLeftRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
+import LastUpdated from '../components/common/LastUpdated';
 
 const PAGE_SIZE = 25;
 
@@ -18,7 +19,10 @@ export function TradesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-sans font-bold text-2xl text-apex-text">Trade History</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="font-sans font-bold text-2xl text-apex-text">Trade History</h1>
+        <LastUpdated />
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Trades" value={stats?.totalTrades || 0} mono />

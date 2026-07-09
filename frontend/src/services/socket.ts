@@ -112,9 +112,10 @@ export function connectSocket() {
   socket.on('position:closed', (data: any) => {
     const pnlStr = data.pnl >= 0 ? `+$${data.pnl.toFixed(2)}` : `-$${Math.abs(data.pnl).toFixed(2)}`;
     const icon = data.reason === 'stop_loss' ? '🛑' : data.reason === 'take_profit' ? '🎯' : '✅';
+    const pnlColor = data.pnl >= 0 ? '#12805F' : '#B0263B';
     toast(`${icon} ${data.asset} closed: ${pnlStr} (${data.reason.replace('_', ' ')})`, {
       duration: 6000,
-      style: { borderLeft: `3px solid ${data.pnl >= 0 ? '#2D8A4A' : '#DC2626'}` }
+      style: { border: `1px solid ${pnlColor}`, background: `${pnlColor}0F` }
     });
   });
 

@@ -4,8 +4,8 @@ import { activateKillSwitch, deactivateKillSwitch } from '../../services/api';
 import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
-  TrendingUp, BookOpen, Newspaper, Settings, History, LogOut,
-  Power, Zap, Eye, Globe, MessageSquare, Users, Globe2
+  TrendingUp, BookOpen, Newspaper, Settings, LogOut,
+  Power, Zap, Eye, MessageSquare, Users, Globe2
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 
@@ -22,18 +22,17 @@ const navItems = [
   { path: '/analytics', label: 'Analytics', icon: TrendingUp },
   { path: '/journal', label: 'Journal', icon: BookOpen },
   { path: '/news', label: 'News', icon: Newspaper },
-  { path: '/news/geopolitics', label: 'News & Geo', icon: Globe },
   { path: '/investment', label: 'Investment Plan', icon: Briefcase },
-  { path: '/history', label: 'History', icon: History },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const COLORS = {
   bg:      'var(--apex-bg)',
-  sidebar: '#FFF3E8',
+  sidebar: 'rgba(255, 255, 255, 0.55)',
   card:    'var(--apex-card)',
   border:  'var(--apex-border)',
   accent:  'var(--apex-accent)',
+  gold:    'var(--apex-gold)',
   text:    'var(--apex-text)',
   muted:   'var(--apex-muted)',
   green:   'var(--apex-green)',
@@ -71,6 +70,8 @@ export default function Layout() {
         display: 'flex',
         flexDirection: 'column',
         background: COLORS.sidebar,
+        backdropFilter: 'blur(18px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(18px) saturate(160%)',
         borderRight: `1px solid ${COLORS.border}`,
         overflowY: 'auto',
       }}>
@@ -80,18 +81,19 @@ export default function Layout() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <div style={{
               width: 32, height: 32, borderRadius: 8,
-              background: COLORS.accent,
+              background: `linear-gradient(135deg, ${COLORS.accent}, #0A4636)`,
+              border: `1px solid ${COLORS.gold}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
             }}>
               <Zap size={18} color="#fff" />
             </div>
             <div>
-              <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 13, color: COLORS.text, lineHeight: 1.2 }}>
+              <div style={{ fontFamily: 'Fraunces', fontWeight: 700, fontSize: 14, color: COLORS.text, lineHeight: 1.2 }}>
                 THARUN
               </div>
-              <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 12, color: COLORS.accent, lineHeight: 1.2 }}>
-                TRADING AGENT
+              <div style={{ fontFamily: 'Space Mono', fontWeight: 700, fontSize: 9, color: COLORS.gold, lineHeight: 1.2, letterSpacing: '0.08em' }}>
+                TRADING BOT
               </div>
             </div>
           </div>
@@ -116,12 +118,12 @@ export default function Layout() {
                 marginBottom: 2,
                 textDecoration: 'none',
                 fontSize: 13,
-                fontFamily: 'Syne',
+                fontFamily: 'Manrope',
                 fontWeight: isActive ? 700 : 500,
                 color: isActive ? COLORS.accent : COLORS.muted,
-                background: isActive ? `rgba(255,140,66,0.1)` : 'transparent',
-                border: isActive ? `1px solid rgba(255,140,66,0.25)` : '1px solid transparent',
-                transition: 'all 0.15s ease',
+                background: isActive ? `rgba(201,162,75,0.14)` : 'transparent',
+                border: isActive ? `1px solid rgba(201,162,75,0.35)` : '1px solid transparent',
+                transition: 'all 0.15s cubic-bezier(0.22, 1, 0.36, 1)',
               })}
             >
               <Icon size={15} />
@@ -135,7 +137,7 @@ export default function Layout() {
           <button onClick={handleKillSwitch} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             padding: '10px 16px', borderRadius: 8,
-            background: killSwitchActive ? 'rgba(45,138,74,0.08)' : 'rgba(220,38,38,0.08)',
+            background: killSwitchActive ? 'rgba(18,128,95,0.08)' : 'rgba(176,38,59,0.08)',
             border: `1px solid ${killSwitchActive ? COLORS.green : COLORS.red}`,
             color: killSwitchActive ? COLORS.green : COLORS.red,
             fontFamily: 'Space Mono', fontWeight: 700, fontSize: 11, cursor: 'pointer',
@@ -146,7 +148,7 @@ export default function Layout() {
           <button onClick={handleLogout} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             padding: '8px 16px', borderRadius: 8, border: 'none', background: 'transparent',
-            color: COLORS.muted, fontFamily: 'Syne', fontSize: 13, cursor: 'pointer',
+            color: COLORS.muted, fontFamily: 'Manrope', fontSize: 13, cursor: 'pointer',
           }}>
             <LogOut size={13} /> Logout
           </button>

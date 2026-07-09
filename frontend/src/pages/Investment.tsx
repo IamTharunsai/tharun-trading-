@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getPortfolio, getPositions, getTradeStats, getStocksUniverse, getRegimes } from '../services/api';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { TrendingUp, TrendingDown, DollarSign, Shield, BarChart2, Activity, Ban } from 'lucide-react';
+import LastUpdated from '../components/common/LastUpdated';
 
-const ASSET_COLORS = ['#FF8C42', '#2D8A4A', '#F5A623', '#DC2626', '#8B6F47', '#1B5E3F', '#C4A882', '#3B7DDB'];
+const ASSET_COLORS = ['#C9A24B', '#12805F', '#C9A24B', '#B0263B', '#5B6472', '#0A4636', '#C4A882', '#3B7DDB'];
 
 const REGIME_LABELS: Record<string, string> = {
   TRENDING_BULL: 'Trending Bull',
@@ -52,11 +53,14 @@ export default function InvestmentPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-sans font-bold text-2xl text-apex-text">Investment Plan</h1>
-        <p className="font-mono text-xs text-apex-muted mt-1">
-          Live portfolio composition + regime-driven strategy guidance — no fixed rules, agents adapt to current market conditions
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="font-sans font-bold text-2xl text-apex-text">Investment Plan</h1>
+          <p className="font-mono text-xs text-apex-muted mt-1">
+            Live portfolio composition + regime-driven strategy guidance — no fixed rules, agents adapt to current market conditions
+          </p>
+        </div>
+        <LastUpdated />
       </div>
 
       {/* Live Portfolio Stats */}
@@ -87,7 +91,7 @@ export default function InvestmentPage() {
                   <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
                     {allocation.map((_, i) => <Cell key={i} fill={ASSET_COLORS[i % ASSET_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`]} contentStyle={{ background: '#FFFBF7', border: '1px solid #E8D5C4', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
+                  <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`]} contentStyle={{ background: '#FFFFFF', border: '1px solid #DCDFE6', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1 mt-2">

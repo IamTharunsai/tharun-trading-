@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
+import LastUpdated from '../components/common/LastUpdated';
 import { getStockCandles, getRegimes } from '../services/api';
 import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
 
@@ -51,18 +52,18 @@ export default function ChartsPage() {
       const chart = createChart(chartRef.current, {
         width: chartRef.current.clientWidth,
         height: 480,
-        layout: { background: { color: '#FFFBF7' }, textColor: '#8B6F47' },
-        grid: { vertLines: { color: '#E8D5C4' }, horzLines: { color: '#E8D5C4' } },
+        layout: { background: { color: '#FFFFFF' }, textColor: '#5B6472' },
+        grid: { vertLines: { color: '#DCDFE6' }, horzLines: { color: '#DCDFE6' } },
         crosshair: { mode: 1 },
-        rightPriceScale: { borderColor: '#E8D5C4' },
-        timeScale: { borderColor: '#E8D5C4', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: '#DCDFE6' },
+        timeScale: { borderColor: '#DCDFE6', timeVisible: true, secondsVisible: false },
       });
       chartInstance.current = chart;
 
       const series = chart.addCandlestickSeries({
-        upColor: '#2D8A4A', downColor: '#DC2626',
-        borderUpColor: '#2D8A4A', borderDownColor: '#DC2626',
-        wickUpColor: '#2D8A4A', wickDownColor: '#DC2626',
+        upColor: '#12805F', downColor: '#B0263B',
+        borderUpColor: '#12805F', borderDownColor: '#B0263B',
+        wickUpColor: '#12805F', wickDownColor: '#B0263B',
       });
 
       const bars = candles.map(c => ({
@@ -72,15 +73,15 @@ export default function ChartsPage() {
       series.setData(bars);
 
       // Real EMA readouts from the backend's own indicator engine — where price sits relative to trend
-      if (indicators?.ema9) series.createPriceLine({ price: indicators.ema9, color: '#F5A623', lineWidth: 1, lineStyle: 2, title: 'EMA9' });
-      if (indicators?.ema21) series.createPriceLine({ price: indicators.ema21, color: '#FF8C42', lineWidth: 1, lineStyle: 2, title: 'EMA21' });
-      if (indicators?.ema200) series.createPriceLine({ price: indicators.ema200, color: '#8B6F47', lineWidth: 1, lineStyle: 2, title: 'EMA200' });
+      if (indicators?.ema9) series.createPriceLine({ price: indicators.ema9, color: '#C9A24B', lineWidth: 1, lineStyle: 2, title: 'EMA9' });
+      if (indicators?.ema21) series.createPriceLine({ price: indicators.ema21, color: '#C9A24B', lineWidth: 1, lineStyle: 2, title: 'EMA21' });
+      if (indicators?.ema200) series.createPriceLine({ price: indicators.ema200, color: '#5B6472', lineWidth: 1, lineStyle: 2, title: 'EMA200' });
 
       const volumeSeries = chart.addHistogramSeries({
-        color: '#FF8C4230', priceFormat: { type: 'volume' }, priceScaleId: '',
+        color: '#C9A24B30', priceFormat: { type: 'volume' }, priceScaleId: '',
       });
       volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-      volumeSeries.setData(candles.map(c => ({ time: Math.floor(c.timestamp / 1000) as any, value: c.volume, color: c.close >= c.open ? '#2D8A4A40' : '#DC262640' })));
+      volumeSeries.setData(candles.map(c => ({ time: Math.floor(c.timestamp / 1000) as any, value: c.volume, color: c.close >= c.open ? '#12805F40' : '#B0263B40' })));
 
       chart.timeScale().fitContent();
 
@@ -113,6 +114,7 @@ export default function ChartsPage() {
           <h1 className="font-sans font-bold text-2xl text-apex-text">Charts</h1>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <LastUpdated />
           {price != null && <span className="font-mono font-bold text-xl text-apex-text">${price.toFixed(2)}</span>}
           {regime?.regime && (
             <span className="font-mono text-xs font-bold px-2 py-1 rounded bg-apex-accent/10 text-apex-accent">
@@ -120,12 +122,12 @@ export default function ChartsPage() {
             </span>
           )}
           <select value={market} onChange={e => { setMarket(e.target.value as any); setSelected(e.target.value === 'crypto' ? 'BTC' : 'NVDA'); }}
-            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #E8D5C4', background: '#FFF8F2', color: '#2C1810' }}>
+            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
             <option value="stocks">Stocks</option>
             <option value="crypto">Crypto</option>
           </select>
           <select value={selected} onChange={e => setSelected(e.target.value)}
-            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #E8D5C4', background: '#FFF8F2', color: '#2C1810' }}>
+            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
             {(market === 'crypto' ? CRYPTO_LIST : STOCK_LIST).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>

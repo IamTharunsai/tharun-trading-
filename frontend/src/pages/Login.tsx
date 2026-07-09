@@ -7,9 +7,10 @@ import { Zap, Lock, Mail, Shield } from 'lucide-react';
 
 const C = {
   bg:     'var(--apex-bg)',
-  card:   'var(--apex-surface)',
+  card:   'rgba(255, 255, 255, 0.6)',
   border: 'var(--apex-border)',
   accent: 'var(--apex-accent)',
+  gold:   'var(--apex-gold)',
   text:   'var(--apex-text)',
   muted:  'var(--apex-muted)',
   green:  'var(--apex-green)',
@@ -53,12 +54,12 @@ export default function LoginPage() {
       alignItems: 'center',
       justifyContent: 'center',
       padding: 16,
-      fontFamily: 'Syne, sans-serif',
+      fontFamily: 'Manrope, sans-serif',
     }}>
       {/* Subtle dot grid background */}
       <div style={{
         position: 'absolute', inset: 0, opacity: 0.35,
-        backgroundImage: 'radial-gradient(circle, #E8D5C4 1px, transparent 1px)',
+        backgroundImage: 'radial-gradient(circle, #DCDFE6 1px, transparent 1px)',
         backgroundSize: '28px 28px',
         pointerEvents: 'none',
       }} />
@@ -70,13 +71,14 @@ export default function LoginPage() {
           <div style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 64, height: 64, borderRadius: 18,
-            background: `linear-gradient(135deg, ${C.accent}, #E8732A)`,
-            marginBottom: 16, boxShadow: '0 8px 24px rgba(255,140,66,0.3)',
+            background: `linear-gradient(135deg, ${C.accent}, #0A4636)`,
+            border: `1px solid ${C.gold}`,
+            marginBottom: 16, boxShadow: '0 8px 24px rgba(14,107,79,0.3)',
           }}>
             <Zap size={30} color="#fff" />
           </div>
-          <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 28, color: C.text, margin: '0 0 6px' }}>
-            APEX TRADER
+          <h1 style={{ fontFamily: 'Fraunces', fontWeight: 700, fontSize: 26, color: C.text, margin: '0 0 6px' }}>
+            THARUN TRADING BOT
           </h1>
           <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: 0, letterSpacing: '0.12em' }}>
             AI-POWERED AUTONOMOUS TRADING
@@ -86,10 +88,12 @@ export default function LoginPage() {
         {/* Card */}
         <div style={{
           background: C.card,
+          backdropFilter: 'blur(18px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(18px) saturate(160%)',
           border: `1.5px solid ${C.border}`,
           borderRadius: 16,
           padding: 28,
-          boxShadow: '0 4px 24px rgba(139,111,71,0.08)',
+          boxShadow: '0 8px 32px rgba(20,30,50,0.08), inset 0 1px 0 rgba(255,255,255,0.5)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
             <Lock size={13} color={C.accent} />
@@ -171,13 +175,14 @@ export default function LoginPage() {
               style={{
                 marginTop: 4,
                 padding: '13px 24px',
-                background: loading ? '#E8D5C4' : `linear-gradient(135deg, ${C.accent}, #E8732A)`,
-                border: 'none', borderRadius: 10,
+                background: loading ? '#DCDFE6' : `linear-gradient(135deg, ${C.accent}, #0A4636)`,
+                border: loading ? 'none' : `1px solid ${C.gold}`,
+                borderRadius: 10,
                 fontFamily: 'Space Mono', fontWeight: 700, fontSize: 13,
                 color: loading ? C.muted : '#FFFFFF',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: loading ? 'none' : '0 4px 16px rgba(255,140,66,0.35)',
+                boxShadow: loading ? 'none' : '0 4px 16px rgba(14,107,79,0.35)',
                 transition: 'all 0.2s ease',
               }}
             >

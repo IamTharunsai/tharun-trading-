@@ -7,33 +7,40 @@ export default {
     extend: {
       fontFamily: {
         mono: ['Space Mono', 'monospace'],
-        sans: ['Syne', 'sans-serif'],
+        sans: ['Manrope', 'sans-serif'],
+        display: ['Fraunces', 'serif'],
       },
       colors: {
         apex: {
-          bg:        '#FAF6F1',
+          bg:        '#EEF1F6',
+          bg2:       '#E4E9F2',
           surface:   '#FFFFFF',
           card:      '#FFF8F2',
-          border:    '#E8D5C4',
-          accent:    '#FF8C42',
-          orange:    '#FF8C42',
-          green:     '#2D8A4A',
-          red:       '#DC2626',
-          yellow:    '#F5A623',
-          muted:     '#8B6F47',
-          text:      '#2C1810',
-          cream:     '#FFF5E6',
-          darkgreen: '#1B5E3F',
+          border:    '#DCDFE6',
+          accent:    '#0E6B4F',
+          orange:    '#C9A24B',
+          gold:      '#C9A24B',
+          green:     '#12805F',
+          red:       '#B0263B',
+          yellow:    '#C9A24B',
+          muted:     '#5B6472',
+          text:      '#14171F',
+          cream:     '#F6F4EE',
+          darkgreen: '#0A4636',
+          navy:      '#16305C',
         }
       },
       backgroundColor: {
-        'apex-bg':      '#FAF6F1',
+        'apex-bg':      '#EEF1F6',
         'apex-surface': '#FFFFFF',
         'apex-card':    '#FFF8F2',
       },
       textColor: {
-        'apex-text':  '#2C1810',
-        'apex-muted': '#8B6F47',
+        'apex-text':  '#14171F',
+        'apex-muted': '#5B6472',
+      },
+      backdropBlur: {
+        xs: '2px',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -42,8 +49,8 @@ export default {
       },
       keyframes: {
         glow: {
-          '0%':   { boxShadow: '0 0 5px rgba(255,140,66,0.3)' },
-          '100%': { boxShadow: '0 0 20px rgba(255,140,66,0.6), 0 0 40px rgba(255,140,66,0.2)' }
+          '0%':   { boxShadow: '0 0 5px rgba(201,162,75,0.3)' },
+          '100%': { boxShadow: '0 0 20px rgba(201,162,75,0.6), 0 0 40px rgba(201,162,75,0.2)' }
         },
         ticker: {
           '0%':   { transform: 'translateX(0)' },
