@@ -377,17 +377,6 @@ journalRouter.post('/generate', requireAuth, async (_req: Request, res: Response
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
 
-// One-time cleanup of leftover dev-session test data — remove after use.
-settingsRouter.post('/clear-test-data', async (_req: Request, res: Response) => {
-  const [trades, positions, decisions, snapshots] = await Promise.all([
-    prisma.trade.deleteMany({}),
-    prisma.position.deleteMany({}),
-    prisma.agentDecision.deleteMany({}),
-    prisma.portfolioSnapshot.deleteMany({}),
-  ]);
-  res.json({ cleared: { trades: trades.count, positions: positions.count, decisions: decisions.count, snapshots: snapshots.count } });
-});
-
 settingsRouter.get('/', async (_req: Request, res: Response) => {
   res.json({
     tradingMode: process.env.TRADING_MODE || 'paper',
