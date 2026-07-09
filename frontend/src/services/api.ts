@@ -48,6 +48,8 @@ export const getStockDetail = (symbol: string, market = 'stocks') =>
   api.get(`/market/stock/${symbol}`, { params: { market } }).then(r => r.data);
 export const getStockCandles = (symbol: string, market = 'stocks') =>
   api.get(`/market/stock/${symbol}/candles`, { params: { market } }).then(r => r.data);
+export const getRegimes = (assets: string[]) =>
+  api.get('/market/regimes', { params: { assets: assets.join(',') } }).then(r => r.data);
 
 // ── JOURNAL ───────────────────────────────────────────────────────────────────
 export const getJournals = () => api.get('/journal').then(r => r.data);

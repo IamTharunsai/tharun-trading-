@@ -337,6 +337,21 @@ marketRouter.get('/stock/:symbol', async (req: Request, res: Response) => {
   }
 });
 
+// ── Market regime per asset (from hourly regime-detection cache) ──────────────
+marketRouter.get('/regimes', async (req: Request, res: Response) => {
+  try {
+    const assets = ((req.query.assets as string) || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!assets.length) return res.json({});
+    const { redis } = await import('../utils/redis');
+    const vals = await redis.mget(assets.map(a => `regime:${a}`));
+    const result: Record<string, any> = {};
+    assets.forEach((a, i) => { if (vals[i]) result[a] = JSON.parse(vals[i]!); });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch regimes' });
+  }
+});
+
 // ── Candles for a stock (from Polygon or Binance) ─────────────────────────────
 marketRouter.get('/stock/:symbol/candles', async (req: Request, res: Response) => {
   try {

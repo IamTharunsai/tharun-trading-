@@ -7,9 +7,7 @@ import { useState } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { AGENTS as ALL_AGENTS } from '../constants/agents';
-
-const STOCK_LIST = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'PLTR', 'SPY', 'QQQ', 'COIN', 'SOFI', 'MSTR'];
-const CRYPTO_LIST = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA'];
+import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
 
 export default function AgentsPage() {
   const { data, refetch } = useQuery({ queryKey: ['decisions'], queryFn: () => getAgentDecisions(1), refetchInterval: 10000 });
