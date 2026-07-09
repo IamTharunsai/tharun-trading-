@@ -1,20 +1,6 @@
 import { useStore } from '../../store';
+import { AGENTS } from '../../constants/agents';
 import { Bot, CheckCircle, Clock, AlertCircle } from 'lucide-react';
-
-const AGENT_NAMES = [
-  'The Technician',
-  'The Newshound',
-  'The Sentiment Analyst',
-  'The Fundamental Analyst',
-  'The Risk Manager',
-  'The Trend Prophet',
-  'The Volume Detective',
-  'The Whale Watcher',
-  'The Macro Economist',
-  "The Devil's Advocate",
-];
-
-const AGENT_ICONS = ['📊', '📰', '🧠', '📈', '🛡️', '🔮', '🔍', '🐋', '🌍', '😈'];
 
 const voteColor = (vote?: string) => {
   if (vote === 'BUY') return 'text-apex-green border-apex-green/30 bg-apex-green/5';
@@ -40,7 +26,7 @@ export default function AgentCouncilPanel() {
         <div className="flex items-center gap-2">
           <Bot size={16} className="text-apex-accent" />
           <span className="font-sans font-semibold text-apex-text">Agent Council</span>
-          <span className="font-mono text-xs text-apex-muted">(10 agents)</span>
+          <span className="font-mono text-xs text-apex-muted">({AGENTS.length} agents)</span>
         </div>
         {currentAnalysis && (
           <span className="font-mono text-xs text-apex-yellow flex items-center gap-1.5">
@@ -50,9 +36,9 @@ export default function AgentCouncilPanel() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {AGENT_NAMES.map((name, i) => {
-          const agentId = i + 1;
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+        {AGENTS.map((agent) => {
+          const agentId = agent.id;
           const state = agentCouncil[agentId];
           const status = state?.status || 'idle';
           const vote = state?.vote;
@@ -67,14 +53,14 @@ export default function AgentCouncilPanel() {
             >
               <div className="flex items-center justify-between mb-0.5">
                 <span className="flex items-center gap-1 font-mono text-[10px] text-apex-muted">
-                  <span>{AGENT_ICONS[i]}</span>
+                  <span>{agent.icon}</span>
                   <span>#{agentId}</span>
                 </span>
                 {status === 'analyzing' && <Clock size={10} className="text-apex-yellow animate-spin" />}
                 {status === 'voted' && vote?.vote !== 'HOLD' && <CheckCircle size={10} className="text-apex-green" />}
                 {status === 'voted' && vote?.vote === 'HOLD' && <AlertCircle size={10} className="text-apex-muted" />}
               </div>
-              <div className="font-sans font-medium text-[11px] text-apex-text truncate">{name}</div>
+              <div className="font-sans font-medium text-[11px] text-apex-text truncate">{agent.name}</div>
               {vote && (
                 <>
                   <div className="flex items-center justify-between mt-1">

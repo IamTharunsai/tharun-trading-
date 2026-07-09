@@ -7,6 +7,8 @@ import RecentTrades from '../components/portfolio/RecentTrades';
 import PortfolioChart from '../components/charts/PortfolioChart';
 import ActivePositions from '../components/portfolio/ActivePositions';
 import RiskMonitor from '../components/portfolio/RiskMonitor';
+import TopMovers from '../components/dashboard/TopMovers';
+import AgentActivityTable from '../components/dashboard/AgentActivityTable';
 import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2 } from 'lucide-react';
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
@@ -89,6 +91,9 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Top Movers */}
+      <TopMovers />
+
       {/* Portfolio Chart + Risk Monitor */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
@@ -104,6 +109,9 @@ export default function DashboardPage() {
         <AgentCouncilPanel />
         <ActivePositions positions={positions || []} />
       </div>
+
+      {/* Per-asset agent reasoning, win rate, trade frequency, strategy adaptation */}
+      <AgentActivityTable />
 
       {/* Recent Trades */}
       <RecentTrades />

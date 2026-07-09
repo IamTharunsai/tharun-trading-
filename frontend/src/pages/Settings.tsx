@@ -62,7 +62,7 @@ export default function SettingsPage() {
 
         <Section title="System" icon={<Settings size={16} className="text-apex-muted" />}>
           <SettingRow label="Backend" value="Node.js + TypeScript" />
-          <SettingRow label="AI Engine" value="Claude Sonnet (10 agents)" />
+          <SettingRow label="AI Engine" value="Claude Sonnet (13 agents)" />
           <SettingRow label="Data Feed" value="Binance WS + Polygon.io" />
           <SettingRow label="Database" value="PostgreSQL + Prisma" />
           <SettingRow label="Cache" value="Redis" />

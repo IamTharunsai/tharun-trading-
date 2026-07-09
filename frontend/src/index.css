@@ -177,6 +177,15 @@ body {
   100% { box-shadow: 0 0 20px rgba(201,162,75,0.6), 0 0 40px rgba(201,162,75,0.2); }
 }
 
+@keyframes mover-in {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
 /* ─── Ensure selects and inputs have correct background ──────────── */
 select, input, textarea {
   background-color: rgba(255, 255, 255, 0.7);
