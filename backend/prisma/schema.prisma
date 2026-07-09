@@ -398,6 +398,7 @@ model CompanyFundamentals {
   analystRating     String?   // 'STRONG_BUY','BUY','HOLD','SELL','STRONG_SELL'
   analystTargetPrice Float?
   nextEarningsDate  DateTime?
+  rawAnalysis       Json?
   lastUpdated       DateTime  @default(now())
   createdAt         DateTime  @default(now())
 

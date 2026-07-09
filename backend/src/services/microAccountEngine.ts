@@ -226,7 +226,8 @@ export function calculateMicroPosition(
   entryPrice: number,
   stopLossPrice: number,
   exchange: keyof typeof EXCHANGE_FEES,
-  confidence: number // 0-100 from agent council
+  confidence: number, // 0-100 from agent council
+  accountModeRiskMultiplier: number = 1.0 // from getAccountMode() — shrinks size in CAUTION/RECOVERY/DEFEND
 ): {
   shares: number;
   positionValue: number;
@@ -237,7 +238,7 @@ export function calculateMicroPosition(
 } {
   // Scale risk with confidence — lower confidence = smaller bet
   const confidenceMultiplier = Math.max(0.3, (confidence - 55) / 45); // 0.3 to 1.0
-  const riskPct = RISK_PCT * confidenceMultiplier;
+  const riskPct = RISK_PCT * confidenceMultiplier * accountModeRiskMultiplier;
   const dollarRisk = currentPortfolio * riskPct;
 
   // Distance to stop loss
@@ -366,12 +367,9 @@ export function getOvernightRules(): {
 export type AccountMode = 'NORMAL' | 'CAUTION' | 'RECOVERY' | 'DEFEND';
 
 export function getAccountMode(
-  currentValue: number,
-  peakValue: number,
+  drawdownFromPeak: number,
   dailyLossPct: number
 ): { mode: AccountMode; riskMultiplier: number; rules: string[] } {
-
-  const drawdownFromPeak = ((peakValue - currentValue) / peakValue) * 100;
 
   if (drawdownFromPeak >= 20 || dailyLossPct <= -5) {
     return {

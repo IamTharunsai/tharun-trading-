@@ -7,6 +7,7 @@ import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualR
 import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
+import { geopoliticalDataService } from '../services/geopoliticalDataService';
 import MASTER_BOOK_KNOWLEDGE from './masterKnowledge';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -14,11 +15,26 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // Compact knowledge injected per agent (keeps tokens low)
 const COMPACT_KNOWLEDGE = `KEY RULES: Risk 1-2% per trade. R/R must be >2:1. CANSLIM: EPS growth >25%, near 52wk high, vol surge. Minervini: price>50MA>150MA>200MA, 52wk high within 25%, RS high. Kelly sizing. RSI>70=overbought RSI<30=oversold. Golden Cross=bullish. Volume confirmation required. Cut losses fast, let winners run.`;
 
+// Running token/cost tally — visible in logs so real spend is observable instead of guessed.
+// Haiku ~$1/$5 per M input/output tokens, Sonnet ~$3/$15 per M — cache reads are ~10% of input cost.
+const tokenTally = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+function logUsage(model: string, usage: any) {
+  if (!usage) return;
+  tokenTally.calls++;
+  tokenTally.input += usage.input_tokens || 0;
+  tokenTally.output += usage.output_tokens || 0;
+  tokenTally.cacheRead += usage.cache_read_input_tokens || 0;
+  tokenTally.cacheWrite += usage.cache_creation_input_tokens || 0;
+  logger.info(`💵 [${model}] in=${usage.input_tokens || 0} out=${usage.output_tokens || 0} cacheRead=${usage.cache_read_input_tokens || 0} cacheWrite=${usage.cache_creation_input_tokens || 0} | session totals: calls=${tokenTally.calls} in=${tokenTally.input} out=${tokenTally.output} cacheRead=${tokenTally.cacheRead}`);
+}
+
 // Call Anthropic with automatic retry on 429 rate limit
 async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await anthropic.messages.create(params);
+      const response = await anthropic.messages.create(params);
+      logUsage(params.model, (response as any).usage);
+      return response;
     } catch (err: any) {
       if (err?.status === 429 && attempt < maxRetries) {
         const retryAfter = parseInt(err?.headers?.['retry-after'] || '15') * 1000;
@@ -459,10 +475,16 @@ export async function runInvestmentCommitteeDebate(
   logger.info('📢 ROUND 1: OPENING ARGUMENTS');
   io?.emit('debate:round', { round: 1, debateId, asset });
 
-  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory);
+  const newsSummary = buildNewsSummary(asset);
+  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary);
   const round1Results: any[] = [];
 
-  const round1AgentResults = await runAgentsSequentially(AGENT_ROSTER.slice(0, 12), async (agent) => {
+  // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
+  // contextual call below that sees every other agent's round-1 argument, so
+  // including it in this generic loop too was a duplicate paid API call that
+  // also produced two conflicting round1 entries for the same agent.
+  const round1Roster = AGENT_ROSTER.filter(a => a.id !== 10);
+  const round1AgentResults = await runAgentsSequentially(round1Roster, async (agent) => {
     try {
       io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
@@ -470,8 +492,18 @@ export async function runInvestmentCommitteeDebate(
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.7,
         max_tokens: 600,
-        system: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
-        messages: [{ role: 'user', content: `COMMITTEE — ${asset}\n\n${round1Prompt}\n\nState your position with specific numbers.` }]
+        system: [{
+          type: 'text',
+          text: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
+          cache_control: { type: 'ephemeral' }
+        }],
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: `COMMITTEE — ${asset}\n\n${round1Prompt}`, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: 'State your position with specific numbers.' }
+          ]
+        }]
       });
 
       const content = response.content[0];
@@ -555,7 +587,7 @@ export async function runInvestmentCommitteeDebate(
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.3,
         max_tokens: 300,
-        system: agent.systemPrompt,
+        system: [{ type: 'text', text: agent.systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: [{
           role: 'user',
           content: `You voted: ${originalVote?.vote || 'HOLD'}\n\nAfter debate:\n${debateSummary}\n\nFinal vote?\n\nJSON: {"finalVote":"BUY"|"SELL"|"HOLD","confidence":0-100,"changedMind":true|false,"finalReason":"<reason>"}`
@@ -624,7 +656,7 @@ export async function runInvestmentCommitteeDebate(
         model: 'claude-sonnet-4-6',
         temperature: 0.5,
         max_tokens: 800,
-        system: MASTER_COORDINATOR_PROMPT,
+        system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: fullDebateContext }]
       });
 
@@ -710,7 +742,8 @@ function buildMarketContext(
   portfolio: PortfolioState,
   regime: string,
   fundamentals = '',
-  stockMemory = ''
+  stockMemory = '',
+  newsSummary = ''
 ): string {
   const ind = snapshot.indicators;
   const lines = [
@@ -737,7 +770,32 @@ function buildMarketContext(
   if (stockMemory && !stockMemory.includes('first analysis')) {
     lines.push(`PAST PERFORMANCE: ${stockMemory}`);
   }
+  if (newsSummary) {
+    lines.push(`── NEWS & MARKET SENTIMENT (real, last 2h) ──`, newsSummary);
+  }
   return lines.join('\n');
+}
+
+function buildNewsSummary(asset: string): string {
+  const highImpact = geopoliticalDataService.getHighImpactNews(120);
+  const assetNews = geopoliticalDataService.getRecentNews(120).filter(n =>
+    n.title.toLowerCase().includes(asset.toLowerCase())
+  );
+  const sentiment = geopoliticalDataService.generateMarketSentimentSummary();
+  const geoEvents = geopoliticalDataService.getActiveGeopoliticalEvents(24);
+
+  const lines = [`Market sentiment: ${sentiment.overallSentiment} (${sentiment.positiveNews} positive / ${sentiment.negativeNews} negative headlines)`];
+
+  if (assetNews.length > 0) {
+    lines.push(`${asset}-specific: ${assetNews.slice(0, 3).map(n => n.title).join(' | ')}`);
+  }
+  if (highImpact.length > 0) {
+    lines.push(`High-impact headlines: ${highImpact.slice(0, 3).map(n => n.title).join(' | ')}`);
+  }
+  if (geoEvents.length > 0) {
+    lines.push(`Active geopolitical risk: ${geoEvents.slice(0, 2).map(e => `${e.region}: ${e.event}`).join(' | ')}`);
+  }
+  return lines.length > 1 || highImpact.length > 0 || geoEvents.length > 0 ? lines.join('\n') : '';
 }
 
 function getDominantView(results: any[]): { direction: string; leadAgent: any } {
@@ -755,7 +813,8 @@ function buildDebateSummary(round1: any[], round2: any[]): string {
 function calculateKellySize(winProb: number, riskReward: number): number {
   if (riskReward <= 0) return 0;
   const kelly = winProb - (1 - winProb) / riskReward;
+  if (kelly <= 0) return 0; // non-positive edge — Kelly says bet nothing, don't force a floor
   const halfKelly = kelly * 0.5;
   // Cap at 1% — TOP TRADER LAW 1 blocks anything over 1% for small accounts
-  return Math.min(Math.max(halfKelly * 100, 0.5), 1.0);
+  return Math.min(halfKelly * 100, 1.0);
 }

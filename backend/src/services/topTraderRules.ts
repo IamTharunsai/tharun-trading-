@@ -41,11 +41,16 @@ export async function validateWithTopTraderRules(
   }
 
   // ── LAW 2: FEES MUST NOT EXCEED 20% OF EXPECTED PROFIT ────────────────────
+  // positionSizeUSD = how big a position risking riskPct of the portfolio implies,
+  // given the stop distance — mirrors the real sizing math in calculateMicroPosition.
+  const stopDistancePct = Math.abs((signal.entryPrice - signal.stopLossPrice) / signal.entryPrice);
+  const positionSizeUSD = stopDistancePct > 0 ? (portfolio.totalValue * riskPct) / stopDistancePct : 0;
+
   const viability = checkTradeViability(
     portfolio.totalValue,
-    signal.entryPrice * (riskPct / Math.abs(signal.entryPrice - signal.stopLossPrice) * signal.entryPrice),
+    positionSizeUSD,
     expectedReturnPct,
-    Math.abs((signal.entryPrice - signal.stopLossPrice) / signal.entryPrice),
+    stopDistancePct,
     exchange as any
   );
 
@@ -75,8 +80,7 @@ export async function validateWithTopTraderRules(
   }
 
   // ── LAW 5: ACCOUNT MODE CHECK ──────────────────────────────────────────────
-  const peakValue = portfolio.totalValue * 1.15; // Simplified — track real peak separately
-  const mode = getAccountMode(portfolio.totalValue, peakValue, portfolio.pnlDayPct);
+  const mode = getAccountMode(portfolio.drawdownFromPeak, portfolio.pnlDayPct);
 
   if (mode.mode === 'DEFEND') {
     violations.push(`LAW 5 VIOLATED: Account in DEFEND mode. No new trades until portfolio recovers.`);
@@ -184,14 +188,20 @@ export async function validateWithTopTraderRules(
   }
 
   // ── LAW 22: MARKET HOURS FOR STOCKS ──────────────────────────────────────
+  // Uses America/New_York directly so DST (EDT/EST) is handled by the
+  // platform's tz database instead of a hardcoded UTC offset that silently
+  // goes wrong every time DST flips (this exact bug blocked all stock trades once already).
   if (signal.market === 'stocks') {
-    const hour = new Date().getUTCHours();
-    const minute = new Date().getUTCMinutes();
-    const minutesSinceMidnight = hour * 60 + minute;
-    const marketOpen = 13 * 60 + 30;   // 9:30 AM ET = 13:30 UTC (EDT/UTC-4, Mar–Nov)
-    const marketClose = 20 * 60 + 30;  // 4:00 PM ET = 20:00 UTC (EDT); 21:00 in EST
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit'
+    }).formatToParts(new Date());
+    const hour = Number(parts.find(p => p.type === 'hour')?.value);
+    const minute = Number(parts.find(p => p.type === 'minute')?.value);
+    const minutesSinceMidnightET = hour * 60 + minute;
+    const marketOpen = 9 * 60 + 30;   // 9:30 AM ET
+    const marketClose = 16 * 60;      // 4:00 PM ET
 
-    if (minutesSinceMidnight < marketOpen || minutesSinceMidnight > marketClose) {
+    if (minutesSinceMidnightET < marketOpen || minutesSinceMidnightET > marketClose) {
       violations.push('LAW 22 VIOLATED: US stock market is closed. No stock trades outside 9:30 AM - 4:00 PM ET.');
       score -= 20;
     }

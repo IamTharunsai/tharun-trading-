@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 import { TradeSignal, PortfolioState } from '../agents/types';
 import { getIO } from '../websocket/server';
 import { validateWithTopTraderRules } from '../services/topTraderRules';
-import { checkTradeViability, calculateMicroPosition, EXCHANGE_FEES } from '../services/microAccountEngine';
+import { checkTradeViability, calculateMicroPosition, getAccountMode, EXCHANGE_FEES } from '../services/microAccountEngine';
 
 // Conditional broker imports based on trading mode
 let alpacaClient: any = null;
@@ -93,12 +93,14 @@ export async function executeTradeSignal(
   }
 
   // ── CALCULATE POSITION SIZE (micro-account optimized) ─────────────────────
+  const accountMode = getAccountMode(portfolioState.drawdownFromPeak, portfolioState.pnlDayPct);
   const microPos = calculateMicroPosition(
     portfolioState.totalValue,
     signal.entryPrice,
     signal.stopLossPrice,
     exchange as keyof typeof EXCHANGE_FEES,
-    signal.confidence
+    signal.confidence,
+    accountMode.riskMultiplier
   );
 
   if (!microPos.isAboveMinimum) {

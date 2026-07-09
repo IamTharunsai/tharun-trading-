@@ -71,9 +71,17 @@ export interface DeepCompanyAnalysis {
   keyStrengths: string[];
 }
 
+const FUNDAMENTALS_CACHE_MS = 24 * 60 * 60 * 1000; // fundamentals don't change intraday
+
 // ── MASTER DEEP FETCH ────────────────────────────────────────────────────────
 export async function fetchDeepAnalysis(symbol: string): Promise<DeepCompanyAnalysis | null> {
   try {
+    const cached = await prisma.companyFundamentals.findUnique({ where: { symbol } });
+    if (cached?.rawAnalysis && Date.now() - cached.lastUpdated.getTime() < FUNDAMENTALS_CACHE_MS) {
+      logger.info(`📦 Using cached deep analysis for ${symbol} (age: ${Math.round((Date.now() - cached.lastUpdated.getTime()) / 60000)}m)`);
+      return cached.rawAnalysis as unknown as DeepCompanyAnalysis;
+    }
+
     const [incomeRes, balanceRes, cashFlowRes, earningsRes, insiderRes, recRes, polyRes] =
       await Promise.allSettled([
         axios.get('https://www.alphavantage.co/query', { params: { function: 'INCOME_STATEMENT', symbol, apikey: AV_KEY }, timeout: 10000 }),
@@ -283,6 +291,7 @@ async function storeDeepAnalysis(symbol: string, a: DeepCompanyAnalysis): Promis
         currentRatio: a.currentRatio,
         insiderOwnership: a.insiderBuying > 0 ? a.insiderBuying / (a.insiderBuying + a.insiderSelling) * 100 : undefined,
         analystRating: a.analystConsensus,
+        rawAnalysis: a as any,
         lastUpdated: new Date(),
       },
       create: {
@@ -296,6 +305,7 @@ async function storeDeepAnalysis(symbol: string, a: DeepCompanyAnalysis): Promis
         debtToEquity: a.debtToEquity,
         currentRatio: a.currentRatio,
         analystRating: a.analystConsensus,
+        rawAnalysis: a as any,
       }
     });
 

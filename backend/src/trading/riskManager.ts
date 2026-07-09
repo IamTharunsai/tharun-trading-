@@ -43,9 +43,11 @@ export async function validateTradeSignal(
     return { approved: false, reason: `Cash reserve too low: ${cashPct.toFixed(1)}% (min: ${cashReservePct}%)` };
   }
 
-  // Position concentration check
-  const tradeValue = signal.entryPrice * 0.01 * maxPositionPct; // rough estimate
-  if ((tradeValue / portfolio.totalValue) * 100 > maxPositionPct) {
+  // Position concentration check — signal.positionSizePct is already a
+  // percent of portfolio (from Kelly/micro-position sizing), so the trade's
+  // dollar value is just that percent of totalValue.
+  const tradeValuePct = signal.positionSizePct || 0;
+  if (tradeValuePct > maxPositionPct) {
     return { approved: false, reason: `Position size would exceed ${maxPositionPct}% limit` };
   }
 

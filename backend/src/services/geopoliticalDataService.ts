@@ -2,6 +2,28 @@ import axios from 'axios';
 import { logger } from '../utils/logger';
 import { redis } from '../utils/redis';
 
+const FH_KEY = process.env.FINNHUB_API_KEY;
+
+const GEO_KEYWORDS = ['war', 'sanction', 'tariff', 'election', 'conflict', 'military', 'invasion', 'geopolit', 'opec', 'ceasefire'];
+const NEGATIVE_KEYWORDS = ['crash', 'plunge', 'recession', 'layoff', 'default', 'lawsuit', 'sanction', 'war', 'conflict', 'crisis', 'inflation', 'slump', 'fall', 'drop', 'cut'];
+const POSITIVE_KEYWORDS = ['surge', 'rally', 'record', 'beat', 'growth', 'gain', 'soar', 'upgrade', 'boom', 'recovery'];
+const HIGH_IMPACT_KEYWORDS = ['fed', 'rate', 'war', 'recession', 'inflation', 'crash', 'sanction', 'default'];
+
+// ponytail: keyword heuristics for sentiment/category/impact, not real NLP — upgrade to a sentiment model if headline-level classification proves too noisy
+function classifyHeadline(text: string): { sentiment: NewsItem['sentiment']; impact: NewsItem['impact']; category: NewsItem['category'] } {
+  const lower = text.toLowerCase();
+  const isGeo = GEO_KEYWORDS.some(k => lower.includes(k));
+  const isNeg = NEGATIVE_KEYWORDS.some(k => lower.includes(k));
+  const isPos = POSITIVE_KEYWORDS.some(k => lower.includes(k));
+  const isHighImpact = HIGH_IMPACT_KEYWORDS.some(k => lower.includes(k));
+
+  return {
+    sentiment: isNeg && !isPos ? 'NEGATIVE' : isPos && !isNeg ? 'POSITIVE' : 'NEUTRAL',
+    impact: isHighImpact ? 'HIGH' : 'MEDIUM',
+    category: isGeo ? 'GEOPOLITICS' : 'MACROECONOMICS',
+  };
+}
+
 /**
  * GEOPOLITICAL & NEWS DATA SERVICE
  * Fetches real-time news, geopolitical events, and market-moving information
@@ -61,19 +83,39 @@ class GeopoliticalDataService {
     setInterval(async () => {
       try {
         await this.fetchCryptoNews();
-        await this.fetchMarketNews();
-        await this.fetchGeopoliticalNews();
+        await this.fetchMarketNews(); // also populates geopolitics-tagged items from the same feed
       } catch (err) {
         logger.warn('News fetch failed', { error: String(err) });
       }
     }, 60000); // Every minute
   }
 
+  private async fetchFinnhubNews(category: 'general' | 'crypto', tag: string): Promise<NewsItem[]> {
+    const res = await axios.get('https://finnhub.io/api/v1/news', {
+      params: { category, token: FH_KEY },
+      timeout: 10000,
+    });
+    return (res.data || []).slice(0, 15).map((n: any) => {
+      const cls = classifyHeadline(`${n.headline} ${n.summary || ''}`);
+      return {
+        id: `${category}-${n.id}`,
+        title: n.headline,
+        source: n.source,
+        url: n.url,
+        timestamp: (n.datetime || Date.now() / 1000) * 1000,
+        category: category === 'crypto' ? 'CRYPTO' : cls.category,
+        sentiment: cls.sentiment,
+        impact: cls.impact,
+        tags: [tag],
+        summary: n.summary || n.headline,
+      } as NewsItem;
+    });
+  }
+
   private async fetchCryptoNews() {
     try {
-      // Example data - in production, call real API (Coindesk, CryptoSlate, etc.)
-      const mockNews = this.generateMockCryptoNews();
-      this.newsCache = [...this.newsCache, ...mockNews].slice(-50);
+      const news = await this.fetchFinnhubNews('crypto', 'crypto');
+      this.newsCache = [...this.newsCache, ...news].slice(-50);
     } catch (err) {
       logger.warn('Failed to fetch crypto news', { error: String(err) });
     }
@@ -81,19 +123,13 @@ class GeopoliticalDataService {
 
   private async fetchMarketNews() {
     try {
-      const mockNews = this.generateMockMarketNews();
-      this.newsCache = [...this.newsCache, ...mockNews].slice(-50);
+      const news = await this.fetchFinnhubNews('general', 'markets');
+      for (const n of news) {
+        if (n.category === 'GEOPOLITICS') n.tags.push('geopolitics');
+      }
+      this.newsCache = [...this.newsCache, ...news].slice(-50);
     } catch (err) {
       logger.warn('Failed to fetch market news', { error: String(err) });
-    }
-  }
-
-  private async fetchGeopoliticalNews() {
-    try {
-      const mockNews = this.generateMockGeopoliticalNews();
-      this.newsCache = [...this.newsCache, ...mockNews].slice(-50);
-    } catch (err) {
-      logger.warn('Failed to fetch geopolitical news', { error: String(err) });
     }
   }
 
@@ -111,99 +147,32 @@ class GeopoliticalDataService {
     }, 120000); // Every 2 minutes
   }
 
+  // ponytail: region tagged by keyword match against real headlines, not a geocoding model — upgrade if region accuracy matters
+  private static REGION_KEYWORDS: [string, string[]][] = [
+    ['Middle East', ['israel', 'gaza', 'iran', 'saudi', 'qatar', 'oman', 'opec', 'houthi']],
+    ['US-China', ['china', 'taiwan', 'beijing', 'tariff']],
+    ['Russia-Ukraine', ['russia', 'ukraine', 'moscow', 'kremlin']],
+    ['Europe', ['eu ', 'europe', 'ecb', 'brexit']],
+  ];
+
   private async fetchActivGeopoliticalEvents(): Promise<GeopoliticalEvent[]> {
-    // Mock data - in production, integrate with news API, GDELT, etc.
-    const mockEvents = [
-      {
-        id: 'event-1',
-        region: 'Middle East',
-        event: 'Oil supply disruption concerns',
+    const geoNews = this.newsCache
+      .filter(n => n.category === 'GEOPOLITICS' && n.impact === 'HIGH')
+      .slice(0, 10);
+
+    return geoNews.map(n => {
+      const lower = n.title.toLowerCase();
+      const region = GeopoliticalDataService.REGION_KEYWORDS.find(([, kws]) => kws.some(k => lower.includes(k)))?.[0] || 'Global';
+      return {
+        id: n.id,
+        region,
+        event: n.title,
         severity: 'HIGH' as const,
-        affectedAssets: ['BTC', 'GOLD', 'Oil'],
-        timestamp: Date.now(),
-        source: 'Reuters'
-      },
-      {
-        id: 'event-2',
-        region: 'US-China',
-        event: 'Trade agreement negotiations',
-        severity: 'MEDIUM' as const,
-        affectedAssets: ['STOCKS', 'USD', 'TECH'],
-        timestamp: Date.now() - 3600000,
-        source: 'AP News'
-      }
-    ];
-
-    return mockEvents;
-  }
-
-  /**
-   * Mock data generators (replace with real APIs)
-   */
-  private generateMockCryptoNews(): NewsItem[] {
-    const titles = [
-      'Bitcoin ETF sees record inflows',
-      'Ethereum upgrade improves scalability',
-      'Regulatory clarity in Europe',
-      'Major exchange security update',
-      'DeFi TVL reaches new milestone'
-    ];
-
-    return [{
-      id: `crypto-${Date.now()}`,
-      title: titles[Math.floor(Math.random() * titles.length)],
-      source: 'CryptoSlate',
-      timestamp: Date.now(),
-      category: 'CRYPTO',
-      sentiment: ['POSITIVE', 'NEGATIVE', 'NEUTRAL'][Math.floor(Math.random() * 3)] as any,
-      impact: ['HIGH', 'MEDIUM', 'LOW'][Math.floor(Math.random() * 3)] as any,
-      tags: ['bitcoin', 'ethereum', 'crypto'],
-      summary: 'Important crypto market update affecting trading decisions'
-    }];
-  }
-
-  private generateMockMarketNews(): NewsItem[] {
-    const titles = [
-      'Fed signals inflation control',
-      'Corporate earnings beat expectations',
-      'Market volatility increases',
-      'Tech sector rallies on AI news',
-      'Treasury yields rise again'
-    ];
-
-    return [{
-      id: `market-${Date.now()}`,
-      title: titles[Math.floor(Math.random() * titles.length)],
-      source: 'Bloomberg',
-      timestamp: Date.now(),
-      category: 'MACROECONOMICS',
-      sentiment: ['POSITIVE', 'NEGATIVE', 'NEUTRAL'][Math.floor(Math.random() * 3)] as any,
-      impact: ['HIGH', 'MEDIUM', 'LOW'][Math.floor(Math.random() * 3)] as any,
-      tags: ['markets', 'economy', 'stocks'],
-      summary: 'Market-moving economic data for traders to monitor'
-    }];
-  }
-
-  private generateMockGeopoliticalNews(): NewsItem[] {
-    const titles = [
-      'Geopolitical tensions affect oil prices',
-      'Trade war concerns resurface',
-      'Central bank policy divergence',
-      'Sanctions impact commodity markets',
-      'Regional conflict escalates'
-    ];
-
-    return [{
-      id: `geo-${Date.now()}`,
-      title: titles[Math.floor(Math.random() * titles.length)],
-      source: 'Reuters',
-      timestamp: Date.now(),
-      category: 'GEOPOLITICS',
-      sentiment: ['POSITIVE', 'NEGATIVE', 'NEUTRAL'][Math.floor(Math.random() * 3)] as any,
-      impact: ['HIGH', 'MEDIUM', 'LOW'][Math.floor(Math.random() * 3)] as any,
-      tags: ['geopolitics', 'markets', 'risk'],
-      summary: 'Geopolitical developments affecting global markets'
-    }];
+        affectedAssets: ['STOCKS', 'USD'],
+        timestamp: n.timestamp,
+        source: n.source,
+      };
+    });
   }
 
   /**

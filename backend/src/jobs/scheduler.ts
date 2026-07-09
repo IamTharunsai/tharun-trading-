@@ -88,11 +88,14 @@ export function initScheduler() {
   ];
 
   // ── MARKET OPEN 9:35 AM ET — weekdays (Mon–Fri) ─────────────────────────
-  // EDT (Mar–Nov): 9:35 AM ET = 13:35 UTC
-  // EST (Nov–Mar): 9:35 AM ET = 14:35 UTC
+  // node-cron's timezone option resolves ET vs UTC (incl. DST) itself —
+  // previously this used two hardcoded UTC crons (13:35 + 14:35) that both
+  // fired every single day year-round, double-running (and double-billing)
+  // the market-open scan regardless of season.
   // Top 5 only — keeps API cost low while covering the best opportunities
   const TOP_STOCKS = ['NVDA', 'AAPL', 'TSLA', 'AMZN', 'META'];
   const TOP_CRYPTO = ['BTC', 'ETH', 'SOL'];
+  const ET_ZONE = 'America/New_York';
 
   const marketOpenScan = async () => {
     if (isKillSwitchActive()) return;
@@ -102,28 +105,27 @@ export function initScheduler() {
       await new Promise(r => setTimeout(r, 5000));
     }
   };
-  cron.schedule('35 13 * * 1-5', marketOpenScan); // EDT (Apr–Oct)
-  cron.schedule('35 14 * * 1-5', marketOpenScan); // EST (Nov–Mar)
+  cron.schedule('35 9 * * 1-5', marketOpenScan, { timezone: ET_ZONE });
 
   // ── MID-DAY 1:00 PM ET — 5 more stocks ───────────────────────────────────
-  cron.schedule('0 17 * * 1-5', async () => {   // 17:00 UTC = 1:00 PM EDT
+  cron.schedule('0 13 * * 1-5', async () => {
     if (isKillSwitchActive()) return;
     logger.info('☀️ MID-DAY SCAN — 5 stocks...');
     for (const symbol of ['MSFT', 'GOOGL', 'AMD', 'COIN', 'PLTR']) {
       await runDebateForAsset(symbol, 'stocks').catch(() => {});
       await new Promise(r => setTimeout(r, 5000));
     }
-  });
+  }, { timezone: ET_ZONE });
 
   // ── CRYPTO: once per day at 8 AM ET ──────────────────────────────────────
-  cron.schedule('0 12 * * *', async () => {    // 12:00 UTC = 8:00 AM EDT
+  cron.schedule('0 8 * * *', async () => {
     if (isKillSwitchActive()) return;
     logger.info('🪙 DAILY CRYPTO SCAN...');
     for (const coin of TOP_CRYPTO) {
       await runDebateForAsset(coin, 'crypto').catch(() => {});
       await new Promise(r => setTimeout(r, 5000));
     }
-  });
+  }, { timezone: ET_ZONE });
 
   // ── EVERY 10 SECONDS: Stop Loss Monitor ──────────────────────────────────
   cron.schedule('*/10 * * * * *', async () => {
