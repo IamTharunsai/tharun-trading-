@@ -43,7 +43,7 @@ Write a professional 2-3 paragraph journal entry covering:
 Write in first person as if you are the AI trading system reporting to the owner.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }]
     });

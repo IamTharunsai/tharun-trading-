@@ -150,7 +150,7 @@ Respond in JSON:
 }`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 600,
       messages: [{ role: 'user', content: prompt }]
     });
@@ -295,7 +295,7 @@ Decisions: ${decisions.length}
 Write 3 paragraphs covering performance, lessons, and next week strategy.`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 800,
       messages: [{ role: 'user', content: reportPrompt }]
     });

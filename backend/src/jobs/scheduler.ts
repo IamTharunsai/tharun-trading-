@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount } from '../services/marketData';
 import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
-import { getScreenedSymbols } from '../services/stockScreener';
+import { runDailyScreen } from '../services/stockScreener';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
 import { detectMarketRegime } from '../services/regimeDetector';
 import { executeTradeSignal } from '../trading/executionEngine';
@@ -78,40 +78,54 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
   }
 }
 
-export function initScheduler() {
+// Fallback only — used if the live market screen fails (e.g. Polygon outage)
+const FALLBACK_STOCKS = ['NVDA', 'AAPL', 'TSLA', 'AMZN', 'META'];
 
-  // High-quality stocks always included in every scan cycle
-  const PRIORITY_WATCHLIST = [
-    'NVDA','AAPL','MSFT','TSLA','AMZN','META','GOOGL','AMD','PLTR','MSTR',
-    'COIN','SOFI','ARM','SMCI','CRWD','PANW','SNOW','UBER','LYFT','RIVN',
-    'SPY','QQQ','AAPL','NOW','SHOP','SQ','ROKU','DKNG','RBLX','HOOD'
-  ];
+// Screens the whole market (small + large cap) and returns symbols the current
+// account can actually afford to size a position in — not just a fixed list.
+async function pickDynamicSymbols(count: number, skip = 0): Promise<string[]> {
+  const [screened, portfolio] = await Promise.all([
+    runDailyScreen().catch(() => []),
+    getPortfolioState().catch(() => null),
+  ]);
+  if (screened.length === 0) return skip === 0 ? FALLBACK_STOCKS.slice(0, count) : [];
+
+  const cash = portfolio?.cashBalance ?? 0;
+  // ponytail: fractional-share orders make exact share count irrelevant, this just
+  // excludes impractically-priced picks (e.g. $200k/share) for a small account
+  const maxPrice = Math.max(cash, 20) * 25;
+  const affordable = screened.filter(s => s.price <= maxPrice);
+
+  return affordable.slice(skip, skip + count).map(s => s.symbol);
+}
+
+export function initScheduler() {
 
   // ── MARKET OPEN 9:35 AM ET — weekdays (Mon–Fri) ─────────────────────────
   // node-cron's timezone option resolves ET vs UTC (incl. DST) itself —
   // previously this used two hardcoded UTC crons (13:35 + 14:35) that both
   // fired every single day year-round, double-running (and double-billing)
   // the market-open scan regardless of season.
-  // Top 5 only — keeps API cost low while covering the best opportunities
-  const TOP_STOCKS = ['NVDA', 'AAPL', 'TSLA', 'AMZN', 'META'];
   const TOP_CRYPTO = ['BTC', 'ETH', 'SOL'];
   const ET_ZONE = 'America/New_York';
 
   const marketOpenScan = async () => {
     if (isKillSwitchActive()) return;
-    logger.info('🔔 MARKET OPEN — scanning top 5 stocks...');
-    for (const symbol of TOP_STOCKS) {
+    const symbols = await pickDynamicSymbols(5);
+    logger.info(`🔔 MARKET OPEN — screened top ${symbols.length} opportunities: ${symbols.join(', ')}`);
+    for (const symbol of symbols) {
       await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Market-open debate failed', { err, symbol }));
       await new Promise(r => setTimeout(r, 5000));
     }
   };
   cron.schedule('35 9 * * 1-5', marketOpenScan, { timezone: ET_ZONE });
 
-  // ── MID-DAY 1:00 PM ET — 5 more stocks ───────────────────────────────────
+  // ── MID-DAY 1:00 PM ET — re-screen, take the next batch ──────────────────
   cron.schedule('0 13 * * 1-5', async () => {
     if (isKillSwitchActive()) return;
-    logger.info('☀️ MID-DAY SCAN — 5 stocks...');
-    for (const symbol of ['MSFT', 'GOOGL', 'AMD', 'COIN', 'PLTR']) {
+    const symbols = await pickDynamicSymbols(5, 5);
+    logger.info(`☀️ MID-DAY SCAN — screened ${symbols.length} opportunities: ${symbols.join(', ')}`);
+    for (const symbol of symbols) {
       await runDebateForAsset(symbol, 'stocks').catch(() => {});
       await new Promise(r => setTimeout(r, 5000));
     }
@@ -235,7 +249,7 @@ export function initScheduler() {
   });
 
   logger.info('✅ Tharun Trading Scheduler initialized:');
-  logger.info('   ⏱️ Investment Committee debates every 2 hours');
+  logger.info('   ⏱️ Investment Committee: dynamic market screen at 9:35 AM & 1 PM ET');
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');

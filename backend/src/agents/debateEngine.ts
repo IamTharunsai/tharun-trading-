@@ -8,7 +8,6 @@ import { getStockMemorySummary, recordDebate } from '../services/stockMemoryServ
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService } from '../services/geopoliticalDataService';
-import MASTER_BOOK_KNOWLEDGE from './masterKnowledge';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -653,7 +652,7 @@ export async function runInvestmentCommitteeDebate(
       const fullDebateContext = `DEBATE FOR ${asset} @ $${snapshot.price}\nRegime: ${marketRegime}\nDaily P&L: ${portfolio.pnlDayPct.toFixed(2)}%\n\nRound 1:\n${round1Results.map(r => `${r.agentName}: ${r.vote}`).join('\n')}\n\nVote Tally: BUY ${buyCount}, SELL ${sellCount}, HOLD ${holdCount}`;
 
       const masterResponse = await callWithRetry({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         temperature: 0.5,
         max_tokens: 800,
         system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],

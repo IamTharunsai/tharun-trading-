@@ -44,3 +44,5 @@ prisma/migrations/.prisma
 .turbo/
 .next/
 out/
+.vercel
+.env*
