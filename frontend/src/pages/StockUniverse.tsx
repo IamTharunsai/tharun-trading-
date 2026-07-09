@@ -7,12 +7,9 @@ import {
   Tooltip, CartesianGrid, ReferenceLine, Scatter
 } from 'recharts';
 import { Search, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, X, BarChart2, Activity } from 'lucide-react';
+import { APEX_COLORS } from '../constants/colors';
 
-const C = {
-  bg: '#FAF6F1', card: '#FFF8F2', border: '#E8D5C4',
-  accent: '#FF8C42', text: '#2C1810', muted: '#8B6F47',
-  green: '#2D8A4A', red: '#DC2626', yellow: '#F5A623',
-};
+const C = APEX_COLORS;
 
 type SortKey = 'name' | 'lastVote' | 'debateCount' | 'tradeCount' | 'totalPnl' | 'winRate';
 type FilterKey = 'all' | 'traded' | 'open' | 'buy' | 'sell';

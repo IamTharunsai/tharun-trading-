@@ -29,15 +29,15 @@ const navItems = [
 ];
 
 const COLORS = {
-  bg:      '#FAF6F1',
+  bg:      'var(--apex-bg)',
   sidebar: '#FFF3E8',
-  card:    '#FFF8F2',
-  border:  '#E8D5C4',
-  accent:  '#FF8C42',
-  text:    '#2C1810',
-  muted:   '#8B6F47',
-  green:   '#2D8A4A',
-  red:     '#DC2626',
+  card:    'var(--apex-card)',
+  border:  'var(--apex-border)',
+  accent:  'var(--apex-accent)',
+  text:    'var(--apex-text)',
+  muted:   'var(--apex-muted)',
+  green:   'var(--apex-green)',
+  red:     'var(--apex-red)',
 };
 
 export default function Layout() {

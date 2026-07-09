@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
 import axios from 'axios';
 import { useStore } from '../store';
+import { connectSocket } from '../services/socket';
 
 interface AgentActivity {
   timestamp: number;
@@ -78,8 +78,8 @@ export default function AgentMonitorPage() {
   // Live WebSocket feed — appends new vote events in real time
   useEffect(() => {
     if (!live) return;
-    const socket = io(baseUrl || '/', { transports: ['websocket', 'polling'] });
-    socket.on('agent:voting', (data: any) => {
+    const socket = connectSocket();
+    const onVoting = (data: any) => {
       setActivities(prev => [{
         timestamp: data.timestamp || Date.now(),
         agentId: data.agentId,
@@ -91,8 +91,8 @@ export default function AgentMonitorPage() {
         impact: data.impact,
       }, ...prev].slice(0, 200));
       if (feedRef.current) feedRef.current.scrollTop = 0;
-    });
-    socket.on('debate:agent-voted', (data: any) => {
+    };
+    const onAgentVoted = (data: any) => {
       setActivities(prev => [{
         timestamp: Date.now(),
         agentId: data.agentId,
@@ -103,8 +103,8 @@ export default function AgentMonitorPage() {
         confidence: data.confidence != null ? data.confidence / 100 : undefined,
         impact: ((data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM') as 'HIGH' | 'MEDIUM' | 'LOW',
       }, ...prev].slice(0, 200));
-    });
-    socket.on('debate:final-vote', (data: any) => {
+    };
+    const onFinalVote = (data: any) => {
       setActivities(prev => [{
         timestamp: Date.now(),
         agentId: data.agentId,
@@ -115,8 +115,8 @@ export default function AgentMonitorPage() {
         confidence: data.confidence != null ? data.confidence / 100 : undefined,
         impact: ((data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM') as 'HIGH' | 'MEDIUM' | 'LOW',
       }, ...prev].slice(0, 200));
-    });
-    socket.on('trade:executed', (data: any) => {
+    };
+    const onTradeExecuted = (data: any) => {
       setActivities(prev => [{
         timestamp: Date.now(),
         agentId: 0,
@@ -126,9 +126,19 @@ export default function AgentMonitorPage() {
         content: `${data.trade?.type} ${data.trade?.asset} @ $${data.trade?.entryPrice?.toFixed(2)} [${data.mode?.toUpperCase()}]`,
         impact: 'HIGH' as const,
       }, ...prev].slice(0, 200));
-    });
-    return () => { socket.disconnect(); };
-  }, [live, baseUrl]);
+    };
+
+    socket.on('agent:voting', onVoting);
+    socket.on('debate:agent-voted', onAgentVoted);
+    socket.on('debate:final-vote', onFinalVote);
+    socket.on('trade:executed', onTradeExecuted);
+    return () => {
+      socket.off('agent:voting', onVoting);
+      socket.off('debate:agent-voted', onAgentVoted);
+      socket.off('debate:final-vote', onFinalVote);
+      socket.off('trade:executed', onTradeExecuted);
+    };
+  }, [live]);
 
   const filtered = activities.filter(a => {
     if (filterType !== 'ALL' && a.activityType !== filterType) return false;

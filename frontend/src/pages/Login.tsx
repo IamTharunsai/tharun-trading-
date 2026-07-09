@@ -6,14 +6,14 @@ import toast from 'react-hot-toast';
 import { Zap, Lock, Mail, Shield } from 'lucide-react';
 
 const C = {
-  bg:     '#FAF6F1',
-  card:   '#FFFFFF',
-  border: '#E8D5C4',
-  accent: '#FF8C42',
-  text:   '#2C1810',
-  muted:  '#8B6F47',
-  green:  '#2D8A4A',
-  yellow: '#F5A623',
+  bg:     'var(--apex-bg)',
+  card:   'var(--apex-surface)',
+  border: 'var(--apex-border)',
+  accent: 'var(--apex-accent)',
+  text:   'var(--apex-text)',
+  muted:  'var(--apex-muted)',
+  green:  'var(--apex-green)',
+  yellow: 'var(--apex-yellow)',
 };
 
 export default function LoginPage() {
@@ -76,7 +76,7 @@ export default function LoginPage() {
             <Zap size={30} color="#fff" />
           </div>
           <h1 style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 28, color: C.text, margin: '0 0 6px' }}>
-            THARUN TRADING AGENT
+            APEX TRADER
           </h1>
           <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: 0, letterSpacing: '0.12em' }}>
             AI-POWERED AUTONOMOUS TRADING
