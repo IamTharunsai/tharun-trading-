@@ -490,7 +490,7 @@ export async function runInvestmentCommitteeDebate(
       const response = await callWithRetry({
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.7,
-        max_tokens: 600,
+        max_tokens: 1024,
         system: [{
           type: 'text',
           text: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
@@ -523,7 +523,7 @@ export async function runInvestmentCommitteeDebate(
       agentActivityMonitor.logVote(agent.id, agent.name, asset, result.vote, result.openingArgument, result.confidence / 100, 1).catch(() => {});
       return result;
     } catch (err) {
-      logger.error(`Agent ${agent.id} Round 1 failed`, { err });
+      logger.error(`Agent ${agent.id} Round 1 failed`, { err: (err as Error)?.message || err });
       const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
       io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
       return fallback;
@@ -539,7 +539,7 @@ export async function runInvestmentCommitteeDebate(
     const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
     const devilResponse = await callWithRetry({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
+      max_tokens: 1024,
       system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond ONLY in valid JSON:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
       messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
     });
@@ -561,7 +561,7 @@ export async function runInvestmentCommitteeDebate(
       io?.emit('debate:agent-voted', { ...devilResult, round: 1, debateId });
     }
   } catch (err) {
-    logger.error('Devil\'s Advocate Round 1 failed', { err });
+    logger.error('Devil\'s Advocate Round 1 failed', { err: (err as Error)?.message || err });
     const fallback = { agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
     round1Results.push(fallback);
     transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: 'HOLD', argument: 'Analysis unavailable' });
@@ -585,7 +585,7 @@ export async function runInvestmentCommitteeDebate(
       const response = await callWithRetry({
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.3,
-        max_tokens: 300,
+        max_tokens: 500,
         system: [{ type: 'text', text: agent.systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: [{
           role: 'user',
@@ -654,7 +654,7 @@ export async function runInvestmentCommitteeDebate(
       const masterResponse = await callWithRetry({
         model: 'claude-sonnet-5',
         temperature: 0.5,
-        max_tokens: 800,
+        max_tokens: 1400,
         system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: fullDebateContext }]
       });
@@ -664,7 +664,7 @@ export async function runInvestmentCommitteeDebate(
         masterDecision = JSON.parse(mc.text.replace(/```json\n?|\n?```/g, '').trim());
       }
     } catch (err) {
-      logger.error('Master Coordinator failed', { err });
+      logger.error('Master Coordinator failed', { err: (err as Error)?.message || err });
       masterDecision = { finalDecision: 'HOLD', confidence: 0, synthesis: 'Error', blockReason: 'System error', positionSizeRecommendation: 0 };
     }
   }
