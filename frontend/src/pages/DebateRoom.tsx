@@ -1,26 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { connectSocket } from '../services/socket';
 import { useStore } from '../store';
-import axios from 'axios';
+import api from '../services/api';
 import toast from 'react-hot-toast';
-
-const AGENTS = [
-  { id: 1,  name: 'Technician',  icon: '📊' },
-  { id: 2,  name: 'Newshound',   icon: '📰' },
-  { id: 3,  name: 'Sentiment',   icon: '🧠' },
-  { id: 4,  name: 'Fundamental', icon: '📈' },
-  { id: 5,  name: 'Risk Mgr',    icon: '🛡️', veto: true },
-  { id: 6,  name: 'Trend',       icon: '🔮' },
-  { id: 7,  name: 'Volume',      icon: '🔍' },
-  { id: 8,  name: 'Whale Watch', icon: '🐋' },
-  { id: 9,  name: 'Macro',       icon: '🌍' },
-  { id: 10, name: "Devil's Adv", icon: '😈' },
-  { id: 11, name: 'Elliott Wave',icon: '🌊' },
-  { id: 12, name: 'Options Flow',icon: '📉' },
-  { id: 13, name: 'Polymarket',  icon: '🎯' },
-  { id: 14, name: 'Arbitrageur', icon: '⚖️' },
-  { id: 15, name: 'Coordinator', icon: '🧩', master: true },
-];
+import { AGENTS } from '../constants/agents';
 
 const CRYPTO_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX', 'LINK'];
 const STOCK_ASSETS  = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'PLTR', 'SPY', 'QQQ'];
@@ -45,8 +28,7 @@ interface TranscriptEntry {
 }
 
 export default function DebateRoomPage() {
-  const token = useStore(s => s.token);
-  const [agentStates, setAgentStates] = useState<Record<number, AgentState>>({});
+    const [agentStates, setAgentStates] = useState<Record<number, AgentState>>({});
   const [isDebating, setIsDebating] = useState(false);
   const [currentAsset, setCurrentAsset] = useState('BTC');
   const [selectedAsset, setSelectedAsset] = useState('BTC');
@@ -148,7 +130,7 @@ export default function DebateRoomPage() {
         noGoVotes: result.noGoVotes,
         confidence: result.avgConfidence,
       });
-      toast.success(`✅ Decision: ${result.finalDecision} (${result.goVotes}/15 votes)`, { duration: 8000 });
+      toast.success(`✅ Decision: ${result.finalDecision} (${result.goVotes}/13 votes)`, { duration: 8000 });
     });
 
     return () => {
@@ -167,11 +149,7 @@ export default function DebateRoomPage() {
     if (triggering || isDebating) return;
     setTriggering(true);
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || '';
-      await axios.post(`${baseUrl}/api/agents/trigger-debate`,
-        { asset: selectedAsset, market: getMarket(selectedAsset) },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/agents/trigger-debate', { asset: selectedAsset, market: getMarket(selectedAsset) });
       toast(`🤖 Debate started for ${selectedAsset} — watch agents vote live!`, { duration: 5000 });
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to trigger debate');
@@ -198,7 +176,7 @@ export default function DebateRoomPage() {
             Investment Committee
           </h1>
           <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
-            15-agent 3-round debate before every trade
+            13-agent 3-round debate before every trade
           </p>
         </div>
 
@@ -270,7 +248,7 @@ export default function DebateRoomPage() {
       {/* 15 Agent Cards */}
       <div style={{ background: 'var(--apex-card)', border: '1px solid var(--apex-border)', borderRadius: 12, padding: 16 }}>
         <div style={{ fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 12 }}>
-          AGENT COUNCIL — 15 SPECIALISTS
+          AGENT COUNCIL — 13 SPECIALISTS
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
           {AGENTS.map(agent => {
@@ -287,7 +265,6 @@ export default function DebateRoomPage() {
                 <div style={{ fontSize: 18, marginBottom: 3 }}>{agent.icon}</div>
                 <div style={{ fontFamily: 'Syne', fontSize: 10, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 2 }}>{agent.name}</div>
                 {agent.veto   && <div style={{ fontFamily: 'Space Mono', fontSize: 7, color: '#DC2626', marginBottom: 3 }}>⚡ VETO</div>}
-                {agent.master && <div style={{ fontFamily: 'Space Mono', fontSize: 7, color: '#F5A623', marginBottom: 3 }}>👑 MASTER</div>}
                 <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: bc, fontWeight: 700 }}>
                   {state?.vote || (state?.status === 'analyzing' ? '...' : 'IDLE')}
                 </div>

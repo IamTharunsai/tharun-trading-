@@ -6,22 +6,7 @@ import { Bot, PlayCircle, Zap } from 'lucide-react';
 import { useState } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-
-const ALL_AGENTS = [
-  { id: 1,  name: 'The Technician',        icon: '📊', role: 'Technical Analysis' },
-  { id: 2,  name: 'The Newshound',          icon: '📰', role: 'News & Events' },
-  { id: 3,  name: 'Sentiment Analyst',      icon: '🧠', role: 'Market Sentiment' },
-  { id: 4,  name: 'Fundamental Analyst',    icon: '📈', role: 'Fundamentals' },
-  { id: 5,  name: 'Risk Manager',           icon: '🛡️', role: 'Risk Guard', veto: true },
-  { id: 6,  name: 'Trend Prophet',          icon: '🔮', role: 'Future Prediction' },
-  { id: 7,  name: 'Volume Detective',       icon: '🔍', role: 'Volume Analysis' },
-  { id: 8,  name: 'Whale Watcher',          icon: '🐋', role: 'Whale Activity' },
-  { id: 9,  name: 'Macro Economist',        icon: '🌍', role: 'Macro Economics' },
-  { id: 10, name: "Devil's Advocate",       icon: '😈', role: 'Counter-Argument' },
-  { id: 11, name: 'Elliott Wave',           icon: '🌊', role: 'Wave Structure' },
-  { id: 12, name: 'Options Flow',           icon: '📉', role: 'Smart Money Flow' },
-  { id: 13, name: 'Arbitrageur',            icon: '⚖️', role: 'Mispricing Detector' },
-];
+import { AGENTS as ALL_AGENTS } from '../constants/agents';
 
 const STOCK_LIST = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'PLTR', 'SPY', 'QQQ', 'COIN', 'SOFI', 'MSTR'];
 const CRYPTO_LIST = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA'];
@@ -62,6 +47,7 @@ export default function AgentsPage() {
   };
 
   const forceBuy = async () => {
+    if (!confirm(`Place a real paper BUY order for ${symbol} right now, skipping the 13-agent debate? This executes immediately.`)) return;
     try {
       const r = await api.post('/agents/force-trade', { asset: symbol, market, direction: 'BUY' });
       toast.success(r.data.message || `✅ Paper trade executed!`, { duration: 6000 });

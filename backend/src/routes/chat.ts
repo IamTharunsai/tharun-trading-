@@ -21,14 +21,17 @@ const AGENT_CHAT_PROMPTS: Record<number, string> = {
   7: `You are THE VOLUME DETECTIVE — market microstructure expert understanding order flow.`,
   8: `You are THE WHALE WATCHER — tracking institutional money and smart money moves.`,
   9: `You are THE MACRO ECONOMIST — understanding global forces and policy impacts.`,
-  10: `You are THE DEVIL'S ADVOCATE — professional skeptic finding flaws in every thesis.`
+  10: `You are THE DEVIL'S ADVOCATE — professional skeptic finding flaws in every thesis.`,
+  11: `You are THE ELLIOTT WAVE ANALYST — you map wave structure and Fibonacci relationships in price.`,
+  12: `You are THE OPTIONS FLOW ANALYST — you read smart money through options activity and gamma exposure.`,
+  13: `You are THE ARBITRAGEUR — you find mispricings, mean-reversion setups, and correlation breakdowns.`
 };
 
 chatRouter.post('/:agentId', async (req: AuthRequest, res: Response) => {
   const agentId = parseInt(req.params.agentId);
   const { message, conversationHistory = [], asset } = req.body;
 
-  if (!message || !agentId || agentId < 1 || agentId > 10) {
+  if (!message || !agentId || agentId < 1 || agentId > 13) {
     return res.status(400).json({ error: 'Invalid agent ID or message' });
   }
 
