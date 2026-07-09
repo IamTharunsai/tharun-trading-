@@ -27,6 +27,28 @@ function logUsage(model: string, usage: any) {
   logger.info(`💵 [${model}] in=${usage.input_tokens || 0} out=${usage.output_tokens || 0} cacheRead=${usage.cache_read_input_tokens || 0} cacheWrite=${usage.cache_creation_input_tokens || 0} | session totals: calls=${tokenTally.calls} in=${tokenTally.input} out=${tokenTally.output} cacheRead=${tokenTally.cacheRead}`);
 }
 
+// Pulls the first complete {...} object out of a model response, ignoring any
+// markdown fences or trailing commentary the model tacks on after the JSON.
+function extractJSON(text: string): any {
+  const stripped = text.replace(/```json\n?|```\n?/g, '').trim();
+  const start = stripped.indexOf('{');
+  if (start === -1) return JSON.parse(stripped);
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return JSON.parse(stripped.slice(start, i + 1));
+    }
+  }
+  return JSON.parse(stripped.slice(start)); // unterminated — throws with a clear position
+}
+
 // Call Anthropic with automatic retry on 429 rate limit
 async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -403,7 +425,7 @@ DECISION STANDARDS:
 - If risk/reward is unfavorable — you vote HOLD
 - Only vote BUY or SELL when you have GENUINE conviction
 
-OUTPUT FORMAT — always respond in valid JSON:
+Respond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep synthesis under 50 words, every other text field under 20 words, and each array to at most 2 short items:
 {
   "finalDecision": "BUY" | "SELL" | "HOLD",
   "confidence": <0-100>,
@@ -490,10 +512,10 @@ export async function runInvestmentCommitteeDebate(
       const response = await callWithRetry({
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.7,
-        max_tokens: 1024,
+        max_tokens: 1536,
         system: [{
           type: 'text',
-          text: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond ONLY in valid JSON: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
+          text: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
           cache_control: { type: 'ephemeral' }
         }],
         messages: [{
@@ -507,7 +529,7 @@ export async function runInvestmentCommitteeDebate(
 
       const content = response.content[0];
       if (content.type !== 'text') throw new Error('Bad response');
-      const parsed = JSON.parse(content.text.replace(/```json\n?|\n?```/g, '').trim());
+      const parsed = extractJSON(content.text);
 
       const result = {
         agentId: agent.id, agentName: agent.name, agentIcon: agent.icon,
@@ -539,13 +561,13 @@ export async function runInvestmentCommitteeDebate(
     const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
     const devilResponse = await callWithRetry({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond ONLY in valid JSON:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
+      max_tokens: 1536,
+      system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
       messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
     });
     const dc = devilResponse.content[0];
     if (dc.type === 'text') {
-      const dp = JSON.parse(dc.text.replace(/```json\n?|\n?```/g, '').trim());
+      const dp = extractJSON(dc.text);
       const devilResult = {
         agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon,
         vote: dp.vote as 'BUY' | 'SELL' | 'HOLD',
@@ -585,16 +607,16 @@ export async function runInvestmentCommitteeDebate(
       const response = await callWithRetry({
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.3,
-        max_tokens: 500,
+        max_tokens: 700,
         system: [{ type: 'text', text: agent.systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: [{
           role: 'user',
-          content: `You voted: ${originalVote?.vote || 'HOLD'}\n\nAfter debate:\n${debateSummary}\n\nFinal vote?\n\nJSON: {"finalVote":"BUY"|"SELL"|"HOLD","confidence":0-100,"changedMind":true|false,"finalReason":"<reason>"}`
+          content: `You voted: ${originalVote?.vote || 'HOLD'}\n\nAfter debate:\n${debateSummary}\n\nFinal vote? Respond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep finalReason under 15 words:\n{"finalVote":"BUY"|"SELL"|"HOLD","confidence":0-100,"changedMind":true|false,"finalReason":"<reason>"}`
         }]
       });
       const content = response.content[0];
       if (content.type !== 'text') throw new Error('Bad response');
-      const parsed = JSON.parse(content.text.replace(/```json\n?|\n?```/g, '').trim());
+      const parsed = extractJSON(content.text);
 
       const changed = parsed.changedMind && parsed.finalVote !== originalVote?.vote;
       if (changed) logger.info(`  🔄 ${agent.name} CHANGED: ${originalVote?.vote} → ${parsed.finalVote}`);
@@ -654,14 +676,14 @@ export async function runInvestmentCommitteeDebate(
       const masterResponse = await callWithRetry({
         model: 'claude-sonnet-5',
         temperature: 0.5,
-        max_tokens: 1400,
+        max_tokens: 1800,
         system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: fullDebateContext }]
       });
 
       const mc = masterResponse.content[0];
       if (mc.type === 'text') {
-        masterDecision = JSON.parse(mc.text.replace(/```json\n?|\n?```/g, '').trim());
+        masterDecision = extractJSON(mc.text);
       }
     } catch (err) {
       logger.error('Master Coordinator failed', { err: (err as Error)?.message || err });
