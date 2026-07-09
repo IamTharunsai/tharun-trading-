@@ -7,7 +7,8 @@ const unwrapNestedErrors = winston.format((info) => {
   for (const key of Object.keys(info)) {
     if (info[key] instanceof Error) {
       const err = info[key] as Error;
-      info[key] = { ...err, message: err.message, stack: err.stack };
+      // Don't spread the raw error (Axios/HTTP errors carry circular req/res refs)
+      info[key] = { message: err.message, stack: err.stack };
     }
   }
   return info;
@@ -26,8 +27,16 @@ export const logger = winston.createLogger({
       format: winston.format.combine(
         winston.format.colorize(),
         winston.format.printf(({ timestamp, level, message, ...meta }) => {
-          const metaStr = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
-          return `${timestamp} [${level}] ${message}${metaStr}`;
+          if (!Object.keys(meta).length) return `${timestamp} [${level}] ${message}`;
+          const seen = new WeakSet();
+          const metaStr = JSON.stringify(meta, (_k, v) => {
+            if (typeof v === 'object' && v !== null) {
+              if (seen.has(v)) return '[Circular]';
+              seen.add(v);
+            }
+            return v;
+          });
+          return `${timestamp} [${level}] ${message} ${metaStr}`;
         })
       )
     }),
