@@ -71,7 +71,7 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
     }
     return transcript;
   } catch (error) {
-    logger.error('Debate failed', { error, asset });
+    logger.error('Debate failed', { error: (error as Error)?.message || error, stack: (error as Error)?.stack, asset });
     throw error;
   } finally {
     setTimeout(() => debateLocks.delete(lockKey), 80000);
