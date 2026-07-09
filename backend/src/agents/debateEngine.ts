@@ -675,7 +675,6 @@ export async function runInvestmentCommitteeDebate(
 
       const masterResponse = await callWithRetry({
         model: 'claude-sonnet-5',
-        temperature: 0.5,
         max_tokens: 1800,
         system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: fullDebateContext }]
