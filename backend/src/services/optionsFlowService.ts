@@ -52,7 +52,11 @@ export class OptionsFlowService {
     // failure must not take down the whole analysis; only the cache lookup
     // itself is allowed to fail silently. (Same bug class fixed earlier
     // tonight in intermarketService.ts.)
-    const cacheKey = `options-flow:${asset}`;
+    // Keyed by asset AND a rounded price bucket — moneyness (ATM/OTM/ITM) is
+    // price-relative, so a cache hit against a 15-minute-old key with a
+    // meaningfully different price would silently serve moneyness/interpretation
+    // computed against a stale reference price.
+    const cacheKey = `options-flow:${asset}:${Math.round(price)}`;
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
@@ -162,8 +166,12 @@ export class OptionsFlowService {
       }
     }
 
-    callsIV = countCalls > 0 ? callsIV / countCalls : 0.25;
-    putsIV = countPuts > 0 ? putsIV / countPuts : 0.25;
+    // Must match fetchOptionsData's real-contract IV default (0.3) — a
+    // mismatched fallback here (was 0.25) meant a symbol with volume on only
+    // one side (calls or puts) produced a spurious UPSIDE/DOWNSIDE skew from
+    // a data-shape artifact, not real skew, silently flipping sentiment.
+    callsIV = countCalls > 0 ? callsIV / countCalls : 0.3;
+    putsIV = countPuts > 0 ? putsIV / countPuts : 0.3;
 
     const ivSkew = putsIV > callsIV ? 'DOWNSIDE' : callsIV > putsIV ? 'UPSIDE' : 'NEUTRAL';
     const skewMagnitude = Math.abs(putsIV - callsIV);

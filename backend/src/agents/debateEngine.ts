@@ -8,7 +8,7 @@ import { getStockMemorySummary, recordDebate } from '../services/stockMemoryServ
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService } from '../services/geopoliticalDataService';
-import { getAgentSuspensionWeights } from '../services/selfLearning';
+import { getAgentSuspensionWeights, getAgentCalibrationScores } from '../services/selfLearning';
 import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
 import { optionsFlowService } from '../services/optionsFlowService';
@@ -480,11 +480,15 @@ export async function runInvestmentCommitteeDebate(
     agentArguments: [],
   };
 
-  // Deep analysis — fetch ALL data before debate starts
-  const [deepAnalysis, stockMemory, intermarket] = await Promise.all([
+  // Deep analysis — fetch ALL data before debate starts. optionsFlow was
+  // previously a separate `await` after this block (not in the Promise.all),
+  // silently turning 4-way parallel fetch into 3-parallel-then-1-sequential
+  // and adding the full Alpaca options latency to every stock debate.
+  const [deepAnalysis, stockMemory, intermarket, optionsFlow] = await Promise.all([
     snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
     intermarketService.getIntermarketAnalysis().catch(() => null),
+    snapshot.market === 'stocks' ? optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null) : Promise.resolve(null),
   ]);
 
   const fundamentalsSummary = deepAnalysis
@@ -502,12 +506,8 @@ export async function runInvestmentCommitteeDebate(
       (intermarket.signals.length > 0 ? ` | Signals: ${intermarket.signals.map(s => `${s.name}(${s.signal})`).join(', ')}` : '')
     : '';
 
-  // Real options volume/flow (stocks only — Alpaca's options data is US
-  // equities). The Options Flow agent's prompt described unusual-activity
-  // reasoning it had zero data for; its backing service was Math.random().
-  const optionsFlow = snapshot.market === 'stocks'
-    ? await optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null)
-    : null;
+  // optionsFlow (stocks only — Alpaca's options data is US equities) is
+  // fetched above, in parallel with the other debate-prep data.
   const optionsSummary = optionsFlow
     ? `Call/Put volume ratio: ${optionsFlow.callPutRatio.toFixed(2)} (${optionsFlow.sentiment}, ${optionsFlow.confidence.toFixed(0)}% confidence) | ` +
       `Call vol: ${optionsFlow.callVolume.toLocaleString()} | Put vol: ${optionsFlow.putVolume.toLocaleString()}` +
@@ -692,13 +692,28 @@ export async function runInvestmentCommitteeDebate(
   // (e.g. the Risk Manager counts for more in HIGH_VOLATILITY) and by whether
   // self-learning has flagged them as a recent underperformer — previously
   // computed by regimeDetector/selfLearning but never actually applied here.
-  const suspensionWeights = await getAgentSuspensionWeights().catch(() => ({} as Record<number, number>));
+  const [suspensionWeights, calibrationScores] = await Promise.all([
+    getAgentSuspensionWeights().catch(() => ({} as Record<number, number>)),
+    getAgentCalibrationScores().catch(() => ({} as Record<number, number>)),
+  ]);
   const voteWeight = (agentId: number) =>
     (regimeAnalysis?.agentWeights?.[agentId] ?? 1) * (suspensionWeights[agentId] ?? 1);
   const weightSum = finalVotes.reduce((s, v) => s + voteWeight(v.agentId), 0);
   const avgConfidence = weightSum > 0
     ? Math.round(finalVotes.reduce((s, v) => s + v.confidence * voteWeight(v.agentId), 0) / weightSum)
     : Math.round(finalVotes.reduce((s, v) => s + v.confidence, 0) / finalVotes.length);
+
+  // How calibrated are the agents behind this vote, historically? 75 is the
+  // "no evidence either way" baseline (equivalent to a Brier score of 0.25,
+  // i.e. no better than always guessing 50%); only below that do we actually
+  // have evidence the panel is overconfident, so only then do we shrink
+  // sizing — never boost above baseline off a limited sample.
+  const votingAgentIds = finalVotes.map(v => v.agentId);
+  const relevantCalibration = votingAgentIds.map(id => calibrationScores[id]).filter((s): s is number => s !== undefined);
+  const avgCalibration = relevantCalibration.length > 0
+    ? relevantCalibration.reduce((s, v) => s + v, 0) / relevantCalibration.length
+    : 75;
+  const calibrationMultiplier = avgCalibration < 60 ? Math.max(0.5, avgCalibration / 60) : 1.0;
 
   const riskManagerFinalVote = round3Results.find(r => r.agentId === 5)?.finalVote;
   const devilFinalVote = round3Results.find(r => r.agentId === 10);
@@ -727,9 +742,8 @@ export async function runInvestmentCommitteeDebate(
       });
 
       const mc = masterResponse.content[0];
-      if (mc.type === 'text') {
-        masterDecision = extractJSON(mc.text);
-      }
+      if (mc.type !== 'text') throw new Error(`Master Coordinator returned non-text content block: ${mc.type}`);
+      masterDecision = extractJSON(mc.text);
     } catch (err) {
       logger.error('Master Coordinator failed', { err: (err as Error)?.message || err });
       masterDecision = { finalDecision: 'HOLD', confidence: 0, synthesis: 'Error', blockReason: 'System error', positionSizeRecommendation: 0 };
@@ -779,7 +793,12 @@ export async function runInvestmentCommitteeDebate(
   // HIGH_VOLATILITY, 1.0x in a clean trend) but previously discarded; only the
   // regime name was passed through, so every regime got the same sizing.
   const regimeSizeMultiplier = regimeAnalysis?.positionSizeMultiplier ?? 1;
-  const kellyPct = calculateKellySize(avgConfidence / 100, riskReward) * regimeSizeMultiplier;
+  // Kelly sizing treats avgConfidence as a true win probability — but that's
+  // only sound if stated confidence actually predicts outcomes. The
+  // calibrationScore field existed on AgentPerformanceMetrics but was never
+  // computed until tonight; now that it's real, use it to discount Kelly's
+  // input when the voting agents have a track record of being overconfident.
+  const kellyPct = calculateKellySize(avgConfidence / 100, riskReward) * regimeSizeMultiplier * calibrationMultiplier;
 
   transcript.masterSynthesis = masterDecision.synthesis || '';
   transcript.finalDecision = masterDecision.finalDecision || 'HOLD';

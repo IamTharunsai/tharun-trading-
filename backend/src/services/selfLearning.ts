@@ -288,6 +288,30 @@ async function checkAndSuspendUnderperformers(): Promise<void> {
   }
 }
 
+// Both suspension weights and calibration scores read the latest-per-agent
+// record off the same AGENT_ACCURACY_* events — fetched together in every
+// debate's round-3 vote tally (always called as a pair, see debateEngine.ts),
+// so one shared query replaces what were two identical round-trips.
+async function getLatestAgentMetrics(): Promise<Map<number, any>> {
+  const latest = new Map<number, any>();
+  try {
+    const recentMetrics = await prisma.marketEvent.findMany({
+      where: { eventType: { startsWith: 'AGENT_ACCURACY_' } },
+      orderBy: { timestamp: 'desc' },
+      take: 40,
+    });
+    for (const metric of recentMetrics) {
+      const data = metric.data as any;
+      const agentId = data?.agentId;
+      if (!agentId || latest.has(agentId)) continue;
+      latest.set(agentId, data);
+    }
+  } catch (err) {
+    logger.warn('Failed to load agent metrics', { err });
+  }
+  return latest;
+}
+
 // Per-agent vote weight derived from suspension status — 1.0 for a healthy
 // agent, SUSPENDED_AGENT_WEIGHT for one whose last-20 accuracy dropped below
 // 45%. Read by the debate engine to weight the confidence average and Kelly
@@ -295,24 +319,23 @@ async function checkAndSuspendUnderperformers(): Promise<void> {
 // only logged.
 export async function getAgentSuspensionWeights(): Promise<Record<number, number>> {
   const weights: Record<number, number> = {};
-  try {
-    const recentMetrics = await prisma.marketEvent.findMany({
-      where: { eventType: { startsWith: 'AGENT_ACCURACY_' } },
-      orderBy: { timestamp: 'desc' },
-      take: 40,
-    });
-    const seen = new Set<number>();
-    for (const metric of recentMetrics) {
-      const data = metric.data as any;
-      const agentId = data?.agentId;
-      if (!agentId || seen.has(agentId)) continue;
-      seen.add(agentId);
-      weights[agentId] = data?.suspended ? SUSPENDED_AGENT_WEIGHT : 1;
-    }
-  } catch (err) {
-    logger.warn('Failed to load agent suspension weights', { err });
+  for (const [agentId, data] of await getLatestAgentMetrics()) {
+    weights[agentId] = data?.suspended ? SUSPENDED_AGENT_WEIGHT : 1;
   }
   return weights;
+}
+
+// Per-agent calibration score (0-100, see calculateAgentMetrics's Brier-score
+// comment) — defaults to 75 (the "no evidence of miscalibration" baseline,
+// equivalent to Brier=0.25/always-guessing-50%) for agents with no lesson
+// history yet, so a brand-new agent isn't penalized for lack of data.
+export async function getAgentCalibrationScores(): Promise<Record<number, number>> {
+  const scores: Record<number, number> = {};
+  for (const [agentId, data] of await getLatestAgentMetrics()) {
+    if (data?.calibrationScore === undefined) continue;
+    scores[agentId] = data.calibrationScore;
+  }
+  return scores;
 }
 
 export async function generateWeeklyReport(): Promise<string> {

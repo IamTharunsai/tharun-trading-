@@ -105,6 +105,14 @@ class IntermarketService {
       return analysis;
     } catch (error) {
       logger.error('Error in getIntermarketAnalysis:', error);
+      // A total data-fetch failure (all proxies unreachable) is re-thrown
+      // rather than papered over with getDefaultAnalysis()'s plausible-looking
+      // numbers — the caller (debateEngine.ts) treats a rejected promise as
+      // "no data" and omits the section, instead of presenting fabricated
+      // defaults to agents as if they were real. Other errors (e.g. a bug in
+      // the relationship/signal computation after a partial real fetch) still
+      // fall back to defaults, since some real data was actually obtained.
+      if (error instanceof Error && error.message.includes('All macro proxy fetches failed')) throw error;
       return this.getDefaultAnalysis();
     }
   }
@@ -273,6 +281,15 @@ class IntermarketService {
         }).catch(() => null),
       ]);
 
+      // If every single proxy fetch failed (e.g. missing/rotated Alpaca
+      // credentials), don't silently synthesize an all-zero "flat market"
+      // reading — that would present fabricated data as real to agents with
+      // no indication the feed is dead. Let the caller's catch/default path
+      // handle it instead of returning confidently-wrong zeros.
+      if ([spy, qqq, uup, uso, gld, vixy, tlt].every(v => v === null)) {
+        throw new Error('All macro proxy fetches failed — no real data available');
+      }
+
       // TLT price and yields move inversely (bond price up = yield down) — the
       // previous version used the raw TLT % change as-is, which had "Rising
       // Yields" firing exactly when yields were falling. Negate it.
@@ -280,7 +297,11 @@ class IntermarketService {
       // VIXY (VIX futures ETF) tracks volatility expectations directionally,
       // not the literal VIX level — scaled to sit in the same rough 10-40
       // range the rest of this service's thresholds (20, 25, 40) assume.
-      const vix = vixy !== null ? Math.max(0, 20 + vixy * 3) : 0;
+      // Defaults to 20 (the "no move" baseline of this formula, i.e. vixy=0)
+      // on fetch failure, not 0 — 0 would misrepresent a data gap as
+      // impossibly-calm markets and could suppress the CONTRACTION regime
+      // check exactly when volatility data is most needed.
+      const vix = vixy !== null ? Math.max(0, 20 + vixy * 3) : 20;
 
       return {
         sp500: spy ?? 0,
