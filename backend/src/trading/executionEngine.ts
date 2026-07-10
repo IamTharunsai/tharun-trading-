@@ -44,6 +44,32 @@ async function getBrokerClient(market: string) {
   }
 }
 
+// Polls a just-placed Alpaca order until it reaches the terminal 'filled'
+// status, then returns the REAL fill price/qty — never the pre-trade quote.
+// Must check status === 'filled' specifically, not just a truthy
+// filled_avg_price: Alpaca populates that field as soon as ANY shares fill,
+// while status stays 'partially_filled' until the rest finishes working.
+// Trusting the first partial fill would record e.g. 10-of-100 shares as the
+// whole (closed) position, leaving the other 90 live on Alpaca's book with
+// nothing tracking them locally. If the order never reaches 'filled' within
+// this window, throws rather than falling back to the stale quote — used to
+// be the exact root cause of a ~$204 phantom unrealized gain on a real NVDA
+// position, and (separately) a $1,060 fully-fabricated profit on an SDOT
+// order that Alpaca had actually rejected.
+export async function confirmOrderFill(client: any, orderId: string, attempts = 5, pollIntervalMs = 1000): Promise<{ fillPrice: number; fillQty: number }> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await new Promise(r => setTimeout(r, pollIntervalMs));
+    const status = await client.getOrder(orderId).catch(() => null);
+    if (status?.status === 'filled' && status.filled_avg_price) {
+      return { fillPrice: parseFloat(status.filled_avg_price), fillQty: parseFloat(status.filled_qty) };
+    }
+    if (status?.status === 'canceled' || status?.status === 'rejected' || status?.status === 'expired') {
+      throw new Error(`Order ended as ${status.status}`);
+    }
+  }
+  throw new Error('Order did not reach a confirmed fill within the poll window — not tracking an unconfirmed quantity/price as real');
+}
+
 export async function executeTradeSignal(
   signal: TradeSignal,
   portfolioState: PortfolioState
@@ -181,19 +207,10 @@ export async function executeTradeSignal(
         brokerOrderId = order.id || brokerOrderId;
         logger.info(`✅ Alpaca paper order placed: ${order.id}`);
 
-        for (let attempt = 0; attempt < 5; attempt++) {
-          await new Promise(r => setTimeout(r, 1000));
-          const status = await client.getOrder(order.id).catch(() => null);
-          if (status?.filled_avg_price) {
-            fillPrice = parseFloat(status.filled_avg_price);
-            fillQty = parseFloat(status.filled_qty) || finalQty;
-            logger.info(`💵 Real fill: ${signal.asset} @ $${fillPrice} (quoted $${signal.entryPrice})`);
-            break;
-          }
-          if (status?.status === 'canceled' || status?.status === 'rejected' || status?.status === 'expired') {
-            throw new Error(`Order ended as ${status.status}`);
-          }
-        }
+        const fill = await confirmOrderFill(client, order.id);
+        fillPrice = fill.fillPrice;
+        fillQty = fill.fillQty;
+        logger.info(`💵 Real fill: ${signal.asset} @ $${fillPrice} (quoted $${signal.entryPrice})`);
       } catch (brokerErr: any) {
         logger.error(`🚫 Alpaca paper order FAILED for ${signal.asset} — not tracking as a real trade`, { error: brokerErr.message });
         await prisma.trade.update({ where: { id: tradeRecord.id }, data: { status: 'FAILED', exitReason: `Broker rejected: ${brokerErr.message}` } });
@@ -226,6 +243,8 @@ export async function executeTradeSignal(
   try {
     const client = await getBrokerClient(signal.market);
     let brokerOrderId: string;
+    let liveFillPrice = signal.entryPrice;
+    let liveFillQty = finalQty;
 
     if (signal.market === 'crypto') {
       const side = signal.direction === 'BUY' ? 'BUY' : 'SELL';
@@ -240,12 +259,20 @@ export async function executeTradeSignal(
         time_in_force: 'gtc'
       });
       brokerOrderId = order.id;
+      // Same reconciliation as paper mode — this is real money, an order
+      // that's accepted synchronously but rejected/never fills moments later
+      // must not be recorded as a confirmed position at the stale quoted
+      // price.
+      const fill = await confirmOrderFill(client, order.id);
+      liveFillPrice = fill.fillPrice;
+      liveFillQty = fill.fillQty;
+      logger.info(`💵 Real live fill: ${signal.asset} @ $${liveFillPrice} (quoted $${signal.entryPrice})`);
     }
 
     // Confirm in DB
     await prisma.trade.update({
       where: { id: tradeRecord.id },
-      data: { brokerConfirmed: true, brokerOrderId }
+      data: { brokerConfirmed: true, brokerOrderId, entryPrice: liveFillPrice, quantity: liveFillQty }
     });
 
     // Place stop-loss order

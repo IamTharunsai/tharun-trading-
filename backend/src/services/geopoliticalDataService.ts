@@ -73,7 +73,7 @@ export interface GeopoliticalEvent {
   region: string;
   event: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-  affectedAssets: string[]; // BTC, stocks, etc.
+  affectedAssets: string[]; // real sectors touched (Energy, Financials, etc.) — see classifySectors
   timestamp: number;
   source: string;
 }

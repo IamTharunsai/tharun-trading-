@@ -5,6 +5,7 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot } from '../services/marketData';
 import { getPortfolioState } from '../services/portfolio';
+import { extractResponseText } from '../utils/anthropicText';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -69,7 +70,7 @@ chatRouter.post('/:agentId', async (req: AuthRequest, res: Response) => {
       messages
     });
 
-    const reply = response.content[0].type === 'text' ? response.content[0].text : 'Unable to respond.';
+    const reply = extractResponseText(response.content);
 
     await prisma.systemLog.create({
       data: {

@@ -2,6 +2,7 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot } from './marketData';
+import { extractResponseText } from '../utils/anthropicText';
 
 const client = new Anthropic();
 
@@ -317,8 +318,7 @@ The user is asking a question or giving an instruction about trading decisions.
       messages: messages as any
     });
 
-    const agentResponse =
-      response.content[0].type === 'text' ? response.content[0].text : 'No response generated';
+    const agentResponse = extractResponseText(response.content);
 
     // Save conversation to database
     const conversation = await prisma.agentConversation.create({

@@ -1,6 +1,7 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
+import { extractResponseText } from '../utils/anthropicText';
 
 const client = new Anthropic();
 
@@ -139,12 +140,7 @@ Format: Clear, actionable insight for the agent's future decision-making.`;
       ]
     });
 
-    const reasoning =
-      response.content[0].type === 'text'
-        ? response.content[0].text
-        : 'No analysis generated';
-
-    return reasoning;
+    return extractResponseText(response.content);
   } catch (err) {
     logger.error(`Error generating agent lesson: ${err}`);
     return 'Lesson analysis failed';
@@ -334,7 +330,7 @@ Keep it concise and actionable.`;
       ]
     });
 
-    return response.content[0].type === 'text' ? response.content[0].text : 'Report generation failed';
+    return extractResponseText(response.content);
   } catch (err) {
     logger.error(`Error generating weekly report: ${err}`);
     return 'Report generation failed';
