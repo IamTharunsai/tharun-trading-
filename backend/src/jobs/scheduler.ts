@@ -45,7 +45,7 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       volumeAvg20: snapshot.indicators.volumeAvg20, atr14: snapshot.indicators.atr14,
     });
     const portfolio = await getPortfolioState();
-    const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime);
+    const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime);
     if (transcript.executionApproved && transcript.finalDecision !== 'HOLD') {
       const decision = await prisma.agentDecision.findFirst({ where: { asset }, orderBy: { timestamp: 'desc' } });
       const signal: TradeSignal = {

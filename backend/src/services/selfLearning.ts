@@ -3,6 +3,11 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { updateStockMemory } from './stockMemoryService';
 
+// Weight applied to a suspended agent's vote — reduced, not silenced, so a
+// single bad stretch can't create a no-quorum deadlock, but a persistently
+// wrong voice stops dominating the confidence average and Kelly sizing.
+const SUSPENDED_AGENT_WEIGHT = 0.25;
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface AgentLesson {
@@ -222,13 +227,26 @@ async function updateAgentMetrics(lessons: AgentLesson[]): Promise<void> {
 
       const allLessons = historicalLogs.map(l => l.metadata as any).filter(Boolean);
       const last20 = allLessons.slice(0, 20);
-      const correctLast20 = last20.filter((l: any) =>
+      const wasRight = (l: any) =>
         (l.tradeOutcome === 'WIN' && l.originalVote !== 'HOLD') ||
-        (l.tradeOutcome === 'LOSS' && l.originalVote === 'HOLD')
-      ).length;
+        (l.tradeOutcome === 'LOSS' && l.originalVote === 'HOLD');
+      const correctLast20 = last20.filter(wasRight).length;
       const last20Accuracy = last20.length > 0 ? (correctLast20 / last20.length) * 100 : 50;
 
-      logger.info(`  📊 ${agentLessons[0].agentName}: ${last20Accuracy.toFixed(1)}% (last 20)`);
+      // Brier score: mean squared error between stated confidence (as a
+      // probability) and the binary outcome — the standard calibration metric
+      // (same one used in weather forecasting). 0 = perfectly calibrated,
+      // 0.25 = no better than always guessing 50/50, 1 = maximally overconfident
+      // and wrong. Converted to a 0-100 score where higher is better calibrated.
+      const brierScore = last20.length > 0
+        ? last20.reduce((sum: number, l: any) => {
+            const statedProb = (l.originalConfidence || 50) / 100;
+            return sum + Math.pow(statedProb - (wasRight(l) ? 1 : 0), 2);
+          }, 0) / last20.length
+        : 0.25;
+      const calibrationScore = Math.round((1 - brierScore) * 100);
+
+      logger.info(`  📊 ${agentLessons[0].agentName}: ${last20Accuracy.toFixed(1)}% accuracy | ${calibrationScore}/100 calibration (last 20)`);
 
       await prisma.marketEvent.create({
         data: {
@@ -238,6 +256,7 @@ async function updateAgentMetrics(lessons: AgentLesson[]): Promise<void> {
             agentId,
             agentName: agentLessons[0].agentName,
             last20Accuracy,
+            calibrationScore,
             totalLessons: allLessons.length,
             suspended: last20Accuracy < 45 && last20.length >= 10
           } as any
@@ -267,6 +286,33 @@ async function checkAndSuspendUnderperformers(): Promise<void> {
   } catch (err) {
     logger.error('Suspension check failed', { err });
   }
+}
+
+// Per-agent vote weight derived from suspension status — 1.0 for a healthy
+// agent, SUSPENDED_AGENT_WEIGHT for one whose last-20 accuracy dropped below
+// 45%. Read by the debate engine to weight the confidence average and Kelly
+// sizing, closing the loop that checkAndSuspendUnderperformers previously
+// only logged.
+export async function getAgentSuspensionWeights(): Promise<Record<number, number>> {
+  const weights: Record<number, number> = {};
+  try {
+    const recentMetrics = await prisma.marketEvent.findMany({
+      where: { eventType: { startsWith: 'AGENT_ACCURACY_' } },
+      orderBy: { timestamp: 'desc' },
+      take: 40,
+    });
+    const seen = new Set<number>();
+    for (const metric of recentMetrics) {
+      const data = metric.data as any;
+      const agentId = data?.agentId;
+      if (!agentId || seen.has(agentId)) continue;
+      seen.add(agentId);
+      weights[agentId] = data?.suspended ? SUSPENDED_AGENT_WEIGHT : 1;
+    }
+  } catch (err) {
+    logger.warn('Failed to load agent suspension weights', { err });
+  }
+  return weights;
 }
 
 export async function generateWeeklyReport(): Promise<string> {

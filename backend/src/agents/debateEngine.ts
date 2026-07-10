@@ -8,6 +8,8 @@ import { getStockMemorySummary, recordDebate } from '../services/stockMemoryServ
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService } from '../services/geopoliticalDataService';
+import { getAgentSuspensionWeights } from '../services/selfLearning';
+import { RegimeAnalysis } from '../services/regimeDetector';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -445,7 +447,8 @@ Respond with ONLY the JSON object below, nothing before or after it, no markdown
 export async function runInvestmentCommitteeDebate(
   snapshot: MarketSnapshot,
   portfolio: PortfolioState,
-  marketRegime: string
+  marketRegime: string,
+  regimeAnalysis?: RegimeAnalysis
 ): Promise<DebateTranscript> {
 
   const io = getIO();
@@ -652,7 +655,18 @@ export async function runInvestmentCommitteeDebate(
   const buyCount = finalVotes.filter(v => v.finalVote === 'BUY').length;
   const sellCount = finalVotes.filter(v => v.finalVote === 'SELL').length;
   const holdCount = finalVotes.filter(v => v.finalVote === 'HOLD').length;
-  const avgConfidence = Math.round(finalVotes.reduce((s, v) => s + v.confidence, 0) / finalVotes.length);
+
+  // Weight each agent's confidence by the current regime's per-agent weighting
+  // (e.g. the Risk Manager counts for more in HIGH_VOLATILITY) and by whether
+  // self-learning has flagged them as a recent underperformer — previously
+  // computed by regimeDetector/selfLearning but never actually applied here.
+  const suspensionWeights = await getAgentSuspensionWeights().catch(() => ({} as Record<number, number>));
+  const voteWeight = (agentId: number) =>
+    (regimeAnalysis?.agentWeights?.[agentId] ?? 1) * (suspensionWeights[agentId] ?? 1);
+  const weightSum = finalVotes.reduce((s, v) => s + voteWeight(v.agentId), 0);
+  const avgConfidence = weightSum > 0
+    ? Math.round(finalVotes.reduce((s, v) => s + v.confidence * voteWeight(v.agentId), 0) / weightSum)
+    : Math.round(finalVotes.reduce((s, v) => s + v.confidence, 0) / finalVotes.length);
 
   const riskManagerFinalVote = round3Results.find(r => r.agentId === 5)?.finalVote;
   const devilFinalVote = round3Results.find(r => r.agentId === 10);
@@ -729,7 +743,11 @@ export async function runInvestmentCommitteeDebate(
   const stopLoss = direction === 'BUY' ? snapshot.price * (1 - stopLossPct) : snapshot.price * (1 + stopLossPct);
   const takeProfit = direction === 'BUY' ? snapshot.price * (1 + takeProfitPct) : snapshot.price * (1 - takeProfitPct);
   const riskReward = Math.abs(takeProfit - snapshot.price) / Math.abs(stopLoss - snapshot.price);
-  const kellyPct = calculateKellySize(avgConfidence / 100, riskReward);
+  // Regime-adjusted Kelly size — was computed by regimeDetector (e.g. 0.3x in
+  // HIGH_VOLATILITY, 1.0x in a clean trend) but previously discarded; only the
+  // regime name was passed through, so every regime got the same sizing.
+  const regimeSizeMultiplier = regimeAnalysis?.positionSizeMultiplier ?? 1;
+  const kellyPct = calculateKellySize(avgConfidence / 100, riskReward) * regimeSizeMultiplier;
 
   transcript.masterSynthesis = masterDecision.synthesis || '';
   transcript.finalDecision = masterDecision.finalDecision || 'HOLD';
