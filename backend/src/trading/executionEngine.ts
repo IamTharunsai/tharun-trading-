@@ -116,6 +116,13 @@ export async function executeTradeSignal(
   }
 
   // ── WRITE TO DB FIRST (before any order placement) ───────────────────────
+  // agentDecisionId is a nullable FK in the schema, but TradeSignal types it
+  // as a required string — force-trade (no real debate behind it) satisfied
+  // that by passing '', which Prisma then tried to satisfy as a real foreign
+  // key reference instead of treating as absent, failing every force-trade
+  // with a foreign key violation and aborting before any order was placed
+  // (confirmed safe — no untracked Alpaca order resulted, but no trade
+  // executed either). Omit the field entirely when there's no real ID.
   let tradeRecord;
   try {
     tradeRecord = await prisma.trade.create({
@@ -128,7 +135,7 @@ export async function executeTradeSignal(
         status: 'OPEN',
         stopLossPrice: signal.stopLossPrice,
         takeProfitPrice: signal.takeProfitPrice,
-        agentDecisionId: signal.agentDecisionId,
+        ...(signal.agentDecisionId ? { agentDecisionId: signal.agentDecisionId } : {}),
       }
     });
   } catch (dbError) {
@@ -209,7 +216,9 @@ export async function executeTradeSignal(
     // Place stop-loss order
     await placeStopLossOrder(signal, finalQty, client);
 
-    await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } });
+    if (signal.agentDecisionId) {
+      await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } }).catch(() => {});
+    }
 
     const io = getIO();
     io?.emit('trade:executed', { trade: tradeRecord, mode: 'live', signal, brokerOrderId });
