@@ -186,8 +186,13 @@ Respond ONLY in valid JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-    const content = response.content[0];
-    if (content.type !== 'text') throw new Error('Bad response');
+    // Was `response.content[0]`, assuming the text block is always first —
+    // every single call in production was hitting the "Bad response" throw
+    // (100% failure rate observed live), meaning that assumption doesn't
+    // hold for whatever this model/response shape actually returns. Find the
+    // text block by type instead of assuming its position.
+    const content = response.content.find(c => c.type === 'text');
+    if (!content || content.type !== 'text') throw new Error('Bad response — no text content block in Anthropic response');
 
     const parsed = JSON.parse(content.text.replace(/```json\n?|\n?```/g, '').trim());
 

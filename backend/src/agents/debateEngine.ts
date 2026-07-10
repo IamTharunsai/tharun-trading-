@@ -16,7 +16,15 @@ import { optionsFlowService } from '../services/optionsFlowService';
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Compact knowledge injected per agent (keeps tokens low)
-const COMPACT_KNOWLEDGE = `KEY RULES: Risk 1-2% per trade. R/R must be >2:1. CANSLIM: EPS growth >25%, near 52wk high, vol surge. Minervini: price>50MA>150MA>200MA, 52wk high within 25%, RS high. Kelly sizing. RSI>70=overbought RSI<30=oversold. Golden Cross=bullish. Volume confirmation required. Cut losses fast, let winners run.`;
+// Individual agents were defaulting to HOLD as a hedge — not because the data
+// genuinely supported no-trade, but because that's the non-committal answer
+// an LLM reaches for absent explicit pressure to actually commit. This costs
+// nothing to fix at the confidence-threshold level (65% still gates weak
+// signal from executing) but was masking real signal behind reflexive caution
+// before it ever reached that gate. Only the shared block needs this — it's
+// injected into every agent's round-1 prompt.
+const COMPACT_KNOWLEDGE = `KEY RULES: Risk 1-2% per trade. R/R must be >2:1. CANSLIM: EPS growth >25%, near 52wk high, vol surge. Minervini: price>50MA>150MA>200MA, 52wk high within 25%, RS high. Kelly sizing. RSI>70=overbought RSI<30=oversold. Golden Cross=bullish. Volume confirmation required. Cut losses fast, let winners run.
+DECISIVENESS: HOLD is not the safe default — it's a specific claim that the data is genuinely balanced with no edge either way. If the data leans BUY or SELL, even moderately, vote that direction with a confidence that honestly reflects your conviction (a real but modest edge is a real but modest confidence, not an automatic HOLD). Reserve HOLD for when you've actually looked and found nothing — not as a hedge against being wrong. The system already has a 65% confidence floor and a 2:1 risk/reward requirement downstream — your job is to report your honest read, not to pre-filter for caution the system already enforces.`;
 
 // Running token/cost tally — visible in logs so real spend is observable instead of guessed.
 // Haiku ~$1/$5 per M input/output tokens, Sonnet ~$3/$15 per M — cache reads are ~10% of input cost.
