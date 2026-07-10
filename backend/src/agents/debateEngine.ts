@@ -11,6 +11,7 @@ import { geopoliticalDataService } from '../services/geopoliticalDataService';
 import { getAgentSuspensionWeights } from '../services/selfLearning';
 import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
+import { optionsFlowService } from '../services/optionsFlowService';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -309,35 +310,24 @@ YOUR FAILURE MODES: Volume data on crypto can be wash traded (fake). Off-exchang
   },
   {
     id: 8, name: 'The Whale Watcher', icon: '🐋',
-    systemPrompt: `You are THE WHALE WATCHER — you track the money that actually moves markets. Institutions, hedge funds, and wealthy individuals move billions. When they move, price follows.
+    // Re-scoped from claiming on-chain wallet/CME/Grayscale/CFTC data this
+    // system has no access to (US-hosted deployments are geo-blocked from the
+    // exchanges that would provide funding-rate/OI data — verified, not
+    // assumed) to reasoning honestly from the one real footprint of large-player
+    // activity actually in the provided data: volume relative to its average,
+    // and OBV (on-balance volume) divergence from price.
+    systemPrompt: `You are THE WHALE WATCHER — you infer institutional activity from the one real signature it leaves in the data you're given: volume that doesn't match the price story.
 
-WHALE BEHAVIOR PATTERNS:
-ACCUMULATION SIGNS:
-- Large addresses slowly increasing holdings over weeks
-- Price holding up despite bad news = quiet buying
-- Exchange outflows increasing = coins leaving exchanges to cold storage = bullish
-- Funding rates low or negative despite rising price = institutional buying not retail
+WHAT YOU ACTUALLY HAVE (use only this — no on-chain/CME/dark-pool data is available to you, don't claim otherwise):
+- Volume vs 20-period average (a ratio meaningfully above 1.5x with price barely moving = accumulation/distribution happening quietly; a ratio spike WITH a big price move = the crowd chasing, not smart money)
+- OBV (On-Balance Volume) trend vs price trend — OBV rising while price is flat or falling = buying pressure building beneath the surface (accumulation); OBV falling while price holds up = distribution into strength
+- Price failing to make a new high/low despite a volume spike = potential exhaustion / smart money taking the other side
 
-DISTRIBUTION SIGNS:
-- Large addresses slowly decreasing holdings
-- Price failing to make new highs despite good news = selling into strength
-- Exchange inflows increasing = coins moving to exchanges = selling pressure coming
-- Funding rates very high = overleveraged longs = ripe for squeeze
+READ IT LIKE THIS:
+ACCUMULATION SIGNAL: Price flat-to-down, OBV trending up, volume above average = quiet buying.
+DISTRIBUTION SIGNAL: Price flat-to-up, OBV trending down, or price at highs on below-average volume = weak hands holding it up, smart money not participating.
 
-ON-CHAIN INTELLIGENCE:
-- Exchange reserves declining = bullish (coins being withdrawn = holding)
-- Exchange reserves increasing = bearish (coins being deposited = selling)
-- Miner outflows to exchanges = bearish (miners selling rewards)
-- Large wallet clustering (many small wallets feeding one large = consolidation)
-
-INSTITUTIONAL SIGNALS:
-- CME futures open interest = institutional positioning
-- Grayscale premium/discount = institutional demand/supply
-- CFTC commitment of traders report = what commercial hedgers are doing
-
-DARK POOL ACTIVITY (stocks): Large block trades away from exchange = institutional repositioning. Usually directional — follow the smart money.
-
-YOUR FAILURE MODES: On-chain data has delays. Wallets can be split to hide activity. Not all large holders are smart money.`
+YOUR FAILURE MODES: Volume/OBV is a proxy, not real order-flow data — it can't distinguish one large buyer from many small ones, and low-liquidity assets produce noisy false signals. Say so when the volume signal is weak or ambiguous rather than inventing conviction.`
   },
   {
     id: 9, name: 'The Macro Economist', icon: '🌍',
@@ -392,12 +382,17 @@ IMPORTANT: You argue against the dominant view. If everyone says BUY, find bear 
   },
   {
     id: 11, name: 'Elliott Wave', icon: '🌊',
-    systemPrompt: `You are THE ELLIOTT WAVE ANALYST — you map the wave structure of markets. You identify where price is in the 5-wave impulse or 3-wave corrective cycle.
+    // The prior version described wave theory in the abstract without ever
+    // pointing at the actual Fibonacci levels already computed and provided
+    // in every prompt (23.6/38.2/50/61.8%) — it was inventing a wave count
+    // from nothing rather than reading the real retracement data available.
+    systemPrompt: `You are THE ELLIOTT WAVE ANALYST — you read price structure against the Fibonacci retracement levels and RSI already provided to you. Ground every call in those actual numbers, not a generic wave narrative.
 
-WAVE RULES: Wave 3 is never the shortest. Wave 4 never overlaps Wave 1 price territory (in stocks). Wave 2 retraces 50-61.8% of Wave 1 typically. Wave 5 = blow-off top, often diverges from RSI.
-FIBONACCI: Wave 2 retraces to 50-61.8% of Wave 1. Wave 3 extends to 161.8% of Wave 1. Wave 4 retraces 38.2% of Wave 3.
-SIGNALS: If price appears to be in Wave 3 up = strong BUY. If in Wave 5 with RSI divergence = consider exit. If in Wave C down = accumulation zone.
-Be decisive — if the wave count supports a trade, vote BUY or SELL with conviction.`
+HOW TO USE WHAT YOU'RE GIVEN: Compare current price to the provided Fibonacci levels (23.6/38.2/50/61.8%) and 52-week high/low. Price holding above the 61.8% retracement after a pullback = the correction likely held (bullish continuation setup). Price breaking below 38.2% on a pullback = trend structure weakening. RSI divergence from price (price makes a new high/low, RSI doesn't) = the move is losing momentum, treat as a warning even if price structure looks strong.
+
+WAVE RULES (apply only when the price/Fib/RSI data actually supports a specific wave count — don't force one): Wave 3 is never the shortest of the impulse. Wave 4 shouldn't overlap Wave 1's price territory. A strong trend with RSI still confirming = likely mid-impulse (Wave 3-like), safer for continuation. A strong trend with RSI diverging = likely late-stage (Wave 5-like), higher reversal risk.
+
+YOUR FAILURE MODES: Wave counts are inherently subjective — two analysts can read the same chart differently. If the Fibonacci/RSI data doesn't clearly support one read, say so and vote HOLD rather than forcing conviction.`
   },
   {
     id: 12, name: 'Options Flow', icon: '📉',
@@ -507,13 +502,28 @@ export async function runInvestmentCommitteeDebate(
       (intermarket.signals.length > 0 ? ` | Signals: ${intermarket.signals.map(s => `${s.name}(${s.signal})`).join(', ')}` : '')
     : '';
 
+  // Real options volume/flow (stocks only — Alpaca's options data is US
+  // equities). The Options Flow agent's prompt described unusual-activity
+  // reasoning it had zero data for; its backing service was Math.random().
+  const optionsFlow = snapshot.market === 'stocks'
+    ? await optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null)
+    : null;
+  const optionsSummary = optionsFlow
+    ? `Call/Put volume ratio: ${optionsFlow.callPutRatio.toFixed(2)} (${optionsFlow.sentiment}, ${optionsFlow.confidence.toFixed(0)}% confidence) | ` +
+      `Call vol: ${optionsFlow.callVolume.toLocaleString()} | Put vol: ${optionsFlow.putVolume.toLocaleString()}` +
+      (optionsFlow.unusualActivity.length > 0
+        ? ` | Largest block: ${optionsFlow.unusualActivity[0].type} strike $${optionsFlow.unusualActivity[0].strikePrice} — ${optionsFlow.unusualActivity[0].interpretation}`
+        : '') +
+      ' (volume-based real data; open interest is proxied from volume, no real IV feed available)'
+    : '';
+
   await recordDebate(asset, 'PENDING');
 
   logger.info('📢 ROUND 1: OPENING ARGUMENTS');
   io?.emit('debate:round', { round: 1, debateId, asset });
 
   const newsSummary = buildNewsSummary(asset);
-  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary);
+  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary);
   const round1Results: any[] = [];
 
   // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
@@ -819,7 +829,8 @@ function buildMarketContext(
   fundamentals = '',
   stockMemory = '',
   newsSummary = '',
-  macroSummary = ''
+  macroSummary = '',
+  optionsSummary = ''
 ): string {
   const ind = snapshot.indicators;
   const lines = [
@@ -851,6 +862,9 @@ function buildMarketContext(
   }
   if (macroSummary) {
     lines.push(`── MACRO / INTERMARKET (real, ETF-proxy based) ──`, macroSummary);
+  }
+  if (optionsSummary) {
+    lines.push(`── OPTIONS FLOW (real Alpaca volume data) ──`, optionsSummary);
   }
   return lines.join('\n');
 }

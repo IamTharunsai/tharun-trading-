@@ -48,23 +48,20 @@ export class OptionsFlowService {
    * Analyze options flow for an asset
    */
   async analyzeOptionsFlow(asset: string, price: number): Promise<OptionsFlow> {
-    // Check cache first (15 minute TTL)
+    // Redis is optional (this deployment runs without it) — a cache-read
+    // failure must not take down the whole analysis; only the cache lookup
+    // itself is allowed to fail silently. (Same bug class fixed earlier
+    // tonight in intermarketService.ts.)
     const cacheKey = `options-flow:${asset}`;
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached);
-    }
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch { /* no cache available — fall through to a fresh fetch */ }
 
     try {
-      // Fetch options data from Polygon.io or Finnhub
       const optionsData = await this.fetchOptionsData(asset, price);
-      
-      // Analyze and enrich
       const flow = this.analyzeData(optionsData, asset, price);
-
-      // Cache for 15 minutes
-      await redis.setex(cacheKey, 900, JSON.stringify(flow));
-
+      try { await redis.setex(cacheKey, 900, JSON.stringify(flow)); } catch { /* cache write is best-effort */ }
       return flow;
     } catch (error) {
       logger.error(`Options flow analysis failed for ${asset}:`, error);
@@ -75,33 +72,64 @@ export class OptionsFlowService {
   /**
    * Fetch options data from external API
    */
+  // Was Math.random() — not even wired into the debate engine, and the shape
+  // it returned (flat callVolume/putVolume) didn't match what analyzeData()
+  // below actually reads (data.expirations[].calls/puts) — this would have
+  // thrown on data.expirations being undefined the first time it was ever
+  // exercised. Real Alpaca options snapshots don't include open interest or
+  // implied volatility directly (that's a separate/paid feed), so this uses
+  // real volume and real bid/ask (real premium, real notional) and is honest
+  // about what it doesn't have: OI is proxied from volume, IV defaults
+  // neutral rather than inventing a skew number with nothing behind it.
   private async fetchOptionsData(asset: string, price: number): Promise<any> {
+    const expirations = new Map<string, { days: number; calls: any[]; puts: any[] }>();
     try {
-      // Would use Polygon.io or similar for real options data
-      // For now, returning simulated structure
-      const response = {
-        callVolume: Math.floor(Math.random() * 1000000) + 100000,
-        putVolume: Math.floor(Math.random() * 800000) + 50000,
-        callOpenInterest: Math.floor(Math.random() * 5000000) + 1000000,
-        putOpenInterest: Math.floor(Math.random() * 4000000) + 800000,
-        unusualBlocks: [
-          {
-            strikePrice: price * 1.05,
-            expirationDays: 7,
-            contractCount: 500,
-            notionalValue: 250000,
-            type: 'CALL' as const,
-            moneyness: 'OTM' as const,
-            premium: 0.50,
-            timeValue: 0.35,
-            impliedMove: 2.5,
-            interpretation: 'Bullish bet on upside move',
-            confidence: 75
-          }
-        ]
-      };
+      let pageToken: string | undefined;
+      let pagesFetched = 0;
+      do {
+        const res = await axios.get(`https://data.alpaca.markets/v1beta1/options/snapshots/${asset}`, {
+          headers: {
+            'APCA-API-KEY-ID': process.env.ALPACA_API_KEY,
+            'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
+          },
+          params: { limit: 100, page_token: pageToken },
+          timeout: 10000,
+        });
 
-      return response;
+        for (const [symbol, snap] of Object.entries<any>(res.data?.snapshots || {})) {
+          // OCC symbol: ROOT + YYMMDD + C|P + strike*1000 (8 digits)
+          const m = symbol.match(/^[A-Z]+(\d{6})([CP])(\d{8})$/);
+          if (!m) continue;
+          const [, dateStr, cp, strikeRaw] = m;
+          const expiry = new Date(`20${dateStr.slice(0, 2)}-${dateStr.slice(2, 4)}-${dateStr.slice(4, 6)}`);
+          const days = Math.max(0, Math.round((expiry.getTime() - Date.now()) / 86400000));
+          const strike = parseInt(strikeRaw, 10) / 1000;
+          const bid = snap.latestQuote?.bp || 0;
+          const ask = snap.latestQuote?.ap || 0;
+          const volume = snap.dailyBar?.v || 0;
+          if (volume === 0 && bid === 0 && ask === 0) continue;
+
+          const key = dateStr;
+          if (!expirations.has(key)) expirations.set(key, { days, calls: [], puts: [] });
+          const bucket = expirations.get(key)!;
+          const contract = { strike, volume, bid, ask, impliedVolatility: 0.3 }; // no real IV feed available — neutral default, not fabricated
+          if (cp === 'C') bucket.calls.push(contract); else bucket.puts.push(contract);
+        }
+
+        pageToken = res.data?.next_page_token;
+        pagesFetched++;
+      } while (pageToken && pagesFetched < 3); // a few hundred contracts is enough for a volume-based read, not the whole chain
+
+      const callOpenInterest = [...expirations.values()].reduce((s, e) => s + e.calls.reduce((s2, c) => s2 + c.volume, 0), 0);
+      const putOpenInterest = [...expirations.values()].reduce((s, e) => s + e.puts.reduce((s2, p) => s2 + p.volume, 0), 0);
+
+      return {
+        callVolume: callOpenInterest,
+        putVolume: putOpenInterest,
+        callOpenInterest, // proxied from volume — Alpaca's snapshot endpoint doesn't expose real OI
+        putOpenInterest,
+        expirations: [...expirations.values()],
+      };
     } catch (error) {
       logger.error(`Failed to fetch options data for ${asset}:`, error);
       throw error;
