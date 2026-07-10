@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
-import { getStockCandles, getRegimes, getStocksUniverse } from '../services/api';
+import { getStockCandles, getRegimes, getStocksUniverse, getPositions } from '../services/api';
 import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
 
 const REGIME_LABELS: Record<string, string> = {
@@ -39,12 +39,24 @@ export default function ChartsPage() {
     queryFn: getStocksUniverse,
     staleTime: 60000,
   });
-  const universeSymbols: string[] = (universe || []).map((u: any) => u.symbol as string);
+  // Union in open positions and the baseline list — a force-bought position
+  // (no debate history, e.g. NVDA/AMZN here) was otherwise invisible on this
+  // page entirely, since the universe endpoint only returns debated symbols.
+  const { data: positions } = useQuery({
+    queryKey: ['positions'],
+    queryFn: getPositions,
+    staleTime: 60000,
+  });
+  const positionSymbols: string[] = (positions || []).map((p: any) => p.asset as string);
+  const universeSymbols: string[] = Array.from(new Set([
+    ...(universe || []).map((u: any) => u.symbol as string),
+    ...positionSymbols,
+    ...STOCK_LIST,
+    ...CRYPTO_LIST,
+  ]));
   const cryptoSymbols = universeSymbols.filter((s: string) => CRYPTO_LIST.includes(s));
   const stockSymbols = universeSymbols.filter((s: string) => !CRYPTO_LIST.includes(s));
-  const symbolOptions = market === 'crypto'
-    ? (cryptoSymbols.length > 0 ? cryptoSymbols : CRYPTO_LIST)
-    : (stockSymbols.length > 0 ? stockSymbols : STOCK_LIST);
+  const symbolOptions = market === 'crypto' ? cryptoSymbols : stockSymbols;
 
   const candles: any[] = snapshot?.candles || [];
   const indicators: any = snapshot?.indicators || null;

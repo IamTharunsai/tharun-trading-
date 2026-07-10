@@ -147,6 +147,14 @@ export async function executeTradeSignal(
   if (isPaper) {
     logger.info(`📄 PAPER TRADE: ${signal.direction} ${finalQty.toFixed(4)} ${signal.asset} @ $${signal.entryPrice}`);
     let brokerOrderId = `PAPER-${Date.now()}`;
+    // signal.entryPrice is the pre-trade quote — a market order can fill at a
+    // meaningfully different price by the time it executes (confirmed live:
+    // NVDA quoted at $202.78, actually filled at $206.92, a ~$204 phantom
+    // unrealized gain baked into every P&L figure downstream until this was
+    // caught). Reconciled below against Alpaca's real filled_avg_price once
+    // the order actually fills.
+    let fillPrice = signal.entryPrice;
+    let fillQty = finalQty;
 
     // Send to Alpaca paper API so it shows in dashboard
     try {
@@ -161,20 +169,35 @@ export async function executeTradeSignal(
         });
         brokerOrderId = order.id || brokerOrderId;
         logger.info(`✅ Alpaca paper order placed: ${order.id}`);
+
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const status = await client.getOrder(order.id).catch(() => null);
+          if (status?.filled_avg_price) {
+            fillPrice = parseFloat(status.filled_avg_price);
+            fillQty = parseFloat(status.filled_qty) || finalQty;
+            logger.info(`💵 Real fill: ${signal.asset} @ $${fillPrice} (quoted $${signal.entryPrice})`);
+            break;
+          }
+          if (status?.status === 'canceled' || status?.status === 'rejected' || status?.status === 'expired') {
+            logger.warn(`Order ${order.id} ended as ${status.status} — keeping quoted price`);
+            break;
+          }
+        }
       }
     } catch (brokerErr: any) {
       logger.warn(`Alpaca paper order failed (trade still recorded): ${brokerErr.message}`);
     }
 
-    await prisma.trade.update({ where: { id: tradeRecord.id }, data: { brokerConfirmed: true, brokerOrderId } });
+    await prisma.trade.update({ where: { id: tradeRecord.id }, data: { brokerConfirmed: true, brokerOrderId, entryPrice: fillPrice, quantity: fillQty } });
 
     // Check if position already open — don't overwrite with duplicate
     const existing = await prisma.position.findUnique({ where: { asset: signal.asset } });
     if (!existing || existing.status === 'CLOSED') {
       await prisma.position.upsert({
         where: { asset: signal.asset },
-        create: { asset: signal.asset, market: signal.market, side: signal.direction, quantity: finalQty, entryPrice: signal.entryPrice, currentPrice: signal.entryPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice },
-        update: { side: signal.direction, quantity: finalQty, entryPrice: signal.entryPrice, currentPrice: signal.entryPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice, status: 'OPEN' }
+        create: { asset: signal.asset, market: signal.market, side: signal.direction, quantity: fillQty, entryPrice: fillPrice, currentPrice: fillPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice },
+        update: { side: signal.direction, quantity: fillQty, entryPrice: fillPrice, currentPrice: fillPrice, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice, status: 'OPEN' }
       });
     }
 
