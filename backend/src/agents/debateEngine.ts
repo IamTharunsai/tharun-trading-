@@ -530,7 +530,7 @@ export async function runInvestmentCommitteeDebate(
   logger.info('📢 ROUND 1: OPENING ARGUMENTS');
   io?.emit('debate:round', { round: 1, debateId, asset });
 
-  const newsSummary = buildNewsSummary(asset);
+  const newsSummary = await buildNewsSummary(asset);
   const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary);
   const round1Results: any[] = [];
 
@@ -637,12 +637,52 @@ export async function runInvestmentCommitteeDebate(
   io?.emit('debate:round', { round: 2, debateId, asset });
 
   const dominantView = getDominantView(round1Results);
-  const round2Results: any[] = [];
+
+  // The strongest dissenting voice directly challenges the dominant view's
+  // actual argument, and its lead agent has to respond to that specific
+  // challenge — 2 calls, not 13, but real adversarial engagement instead of
+  // a no-op (this used to just emit a UI event and populate nothing, so
+  // Round 3 below only ever saw a bare vote tally).
+  let round2Exchange: { challenger: string; target: string; challenge: string; rebuttal: string } | null = null;
+  const dissenters = round1Results.filter(r => r.vote !== dominantView.direction && r.agentId !== dominantView.leadAgent?.agentId);
+  const challenger = dissenters.sort((a, b) => b.confidence - a.confidence)[0];
+
+  if (challenger && dominantView.leadAgent) {
+    try {
+      const challengeResponse = await callWithRetry({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        system: `You are ${challenger.agentName}. You voted ${challenger.vote} (${challenger.confidence}%) on ${asset}. The committee is leaning ${dominantView.direction}, led by ${dominantView.leadAgent.agentName}'s argument: "${dominantView.leadAgent.openingArgument}"\n\nIssue ONE sharp, specific challenge to that argument, under 30 words. Respond with ONLY {"challenge":"<text>"}`,
+        messages: [{ role: 'user', content: 'What is your strongest specific challenge to their argument?' }]
+      });
+      const cc = challengeResponse.content[0];
+      const challengeText = cc.type === 'text' ? extractJSON(cc.text).challenge : null;
+
+      if (challengeText) {
+        const rebuttalResponse = await callWithRetry({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 300,
+          system: `You are ${dominantView.leadAgent.agentName}. You voted ${dominantView.leadAgent.vote} (${dominantView.leadAgent.confidence}%) on ${asset}, arguing: "${dominantView.leadAgent.openingArgument}"\n\n${challenger.agentName} just challenged you: "${challengeText}"\n\nRespond directly to their specific point, under 30 words. Respond with ONLY {"rebuttal":"<text>"}`,
+          messages: [{ role: 'user', content: 'Defend your position against this specific challenge.' }]
+        });
+        const rc = rebuttalResponse.content[0];
+        const rebuttalText = (rc.type === 'text' ? extractJSON(rc.text).rebuttal : null) || 'No response';
+
+        round2Exchange = { challenger: challenger.agentName, target: dominantView.leadAgent.agentName, challenge: challengeText, rebuttal: rebuttalText };
+        transcript.round2.push(round2Exchange);
+        io?.emit('debate:cross-examination', { ...round2Exchange, debateId });
+        logger.info(`  ⚔️ ${challenger.agentName} → ${dominantView.leadAgent.agentName}: "${challengeText}"`);
+        logger.info(`  🛡️ ${dominantView.leadAgent.agentName}: "${rebuttalText}"`);
+      }
+    } catch (err) {
+      logger.error('Round 2 cross-examination failed', { err: (err as Error)?.message || err });
+    }
+  }
 
   logger.info('\n🗳️  ROUND 3: FINAL VERDICT');
   io?.emit('debate:round', { round: 3, debateId, asset });
 
-  const debateSummary = buildDebateSummary(round1Results, round2Results);
+  const debateSummary = buildDebateSummary(round1Results, round2Exchange);
 
   const round3Results = await runAgentsSequentially(AGENT_ROSTER, async (agent) => {
     const originalVote = round1Results.find(r => r.agentId === agent.id);
@@ -740,7 +780,24 @@ export async function runInvestmentCommitteeDebate(
     };
   } else {
     try {
-      const fullDebateContext = `DEBATE FOR ${asset} @ $${snapshot.price}\nRegime: ${marketRegime}\nDaily P&L: ${portfolio.pnlDayPct.toFixed(2)}%\n\nRound 1:\n${round1Results.map(r => `${r.agentName}: ${r.vote}`).join('\n')}\n\nVote Tally: BUY ${buyCount}, SELL ${sellCount}, HOLD ${holdCount}`;
+      // The Master Coordinator makes the actual go/no-go call on real capital —
+      // it was previously given only Round 1 vote labels (no arguments) and a
+      // tally, with Round 2's cross-examination and Round 3's "final verdict"
+      // (changed minds, final reasoning) completely discarded before the one
+      // synthesis step that matters most saw any of it.
+      const round1Lines = round1Results.map(r => {
+        const factors = r.keyFactors?.length ? ` | Factors: ${r.keyFactors.join('; ')}` : '';
+        const risks = r.riskWarnings?.length ? ` | Risks: ${r.riskWarnings.join('; ')}` : '';
+        return `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}${factors}${risks}`;
+      }).join('\n');
+      const round2Lines = round2Exchange
+        ? `\n\nROUND 2 — CROSS-EXAMINATION:\n${round2Exchange.challenger} challenged ${round2Exchange.target}: "${round2Exchange.challenge}"\n${round2Exchange.target} responded: "${round2Exchange.rebuttal}"`
+        : '';
+      const round3Lines = round3Results.map(r =>
+        `${r.agentName}: ${r.finalVote} (${r.confidence}%)${r.changedMind ? ` [CHANGED from ${r.initialVote}]` : ''} — ${r.finalReason}`
+      ).join('\n');
+
+      const fullDebateContext = `DEBATE FOR ${asset} @ $${snapshot.price}\nRegime: ${marketRegime}\nDaily P&L: ${portfolio.pnlDayPct.toFixed(2)}%\n\nROUND 1 — OPENING ARGUMENTS:\n${round1Lines}${round2Lines}\n\nROUND 3 — FINAL VERDICT:\n${round3Lines}\n\nFinal Vote Tally: BUY ${buyCount}, SELL ${sellCount}, HOLD ${holdCount}`;
 
       const masterResponse = await callWithRetry({
         model: 'claude-sonnet-5',
@@ -896,11 +953,19 @@ function buildMarketContext(
   return lines.join('\n');
 }
 
-function buildNewsSummary(asset: string): string {
+async function buildNewsSummary(asset: string): Promise<string> {
   const highImpact = geopoliticalDataService.getHighImpactNews(120);
-  const assetNews = geopoliticalDataService.getRecentNews(120).filter(n =>
-    n.title.toLowerCase().includes(asset.toLowerCase())
-  );
+  // Headlines say "Amazon", not "AMZN" — matching on the raw ticker alone
+  // meant asset-specific news almost never matched for stocks (crypto
+  // tickers like BTC/ETH are the exception, since headlines do use those).
+  // Also match on the company's common name from fundamentals.
+  const fund = await prisma.companyFundamentals.findUnique({ where: { symbol: asset }, select: { name: true } }).catch(() => null);
+  const companyName = fund?.name?.split(/[,.]| Inc| Corp| Class/)[0]?.trim();
+  const matchTerms = [asset.toLowerCase(), companyName?.toLowerCase()].filter(Boolean) as string[];
+  const assetNews = geopoliticalDataService.getRecentNews(120).filter(n => {
+    const title = n.title.toLowerCase();
+    return matchTerms.some(term => title.includes(term));
+  });
   const sentiment = geopoliticalDataService.generateMarketSentimentSummary();
   const geoEvents = geopoliticalDataService.getActiveGeopoliticalEvents(24);
 
@@ -926,8 +991,21 @@ function getDominantView(results: any[]): { direction: string; leadAgent: any } 
   return { direction: 'HOLD', leadAgent: results[0] };
 }
 
-function buildDebateSummary(round1: any[], round2: any[]): string {
-  return `Agents: ${round1.map(r => `${r.agentName}:${r.vote}`).join(', ')}`;
+// Was just "Agents: Technician:HOLD, Newshound:HOLD, ..." — a bare vote
+// tally with no reasoning, which is why every agent's Round 3 "final vote"
+// just cited the vote count instead of actually engaging with anyone's
+// argument. Now carries each agent's real case plus the Round 2 rebuttal.
+function buildDebateSummary(round1: any[], round2: { challenger: string; target: string; challenge: string; rebuttal: string } | null): string {
+  const lines = round1.map(r => {
+    const factors = r.keyFactors?.length ? ` | Factors: ${r.keyFactors.join('; ')}` : '';
+    const risks = r.riskWarnings?.length ? ` | Risks: ${r.riskWarnings.join('; ')}` : '';
+    return `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}${factors}${risks}`;
+  });
+  if (round2) {
+    lines.push(`\nCROSS-EXAMINATION: ${round2.challenger} challenged ${round2.target}: "${round2.challenge}"`);
+    lines.push(`${round2.target} responded: "${round2.rebuttal}"`);
+  }
+  return lines.join('\n');
 }
 
 function calculateKellySize(winProb: number, riskReward: number): number {
