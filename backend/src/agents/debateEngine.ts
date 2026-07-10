@@ -525,20 +525,29 @@ export async function runInvestmentCommitteeDebate(
     try {
       io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
+      // Prompt caching only hits when the content BEFORE a cache_control
+      // breakpoint is byte-identical across calls. Previously agent.systemPrompt
+      // (unique per agent) sat in front of both cache points, so the cumulative
+      // prefix differed for every one of the 9 agents and neither breakpoint
+      // ever matched — cacheRead was 0 on every single call, every debate,
+      // all night. Moved the shared instructions to `system` (identical across
+      // every agent and every debate) and round1Prompt to the front of the
+      // user message (identical across the 9 agents within this one debate);
+      // each agent's distinct persona now comes after both cache points.
       const response = await callWithRetry({
         model: 'claude-haiku-4-5-20251001',
         temperature: 0.7,
         max_tokens: 1536,
         system: [{
           type: 'text',
-          text: `${agent.systemPrompt}\n${COMPACT_KNOWLEDGE}\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
+          text: `${COMPACT_KNOWLEDGE}\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
           cache_control: { type: 'ephemeral' }
         }],
         messages: [{
           role: 'user',
           content: [
             { type: 'text', text: `COMMITTEE — ${asset}\n\n${round1Prompt}`, cache_control: { type: 'ephemeral' } },
-            { type: 'text', text: 'State your position with specific numbers.' }
+            { type: 'text', text: `YOUR ROLE:\n${agent.systemPrompt}\n\nState your position with specific numbers.` }
           ]
         }]
       });
