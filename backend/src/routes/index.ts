@@ -148,12 +148,21 @@ agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
     const { getPortfolioState } = await import('../services/portfolio');
     const axios = (await import('axios')).default;
 
-    // Try snapshot first, fall back to direct Polygon price fetch
+    // Try snapshot first, fall back to direct Polygon price fetch. This runs
+    // on the same production process as every other cron job hammering
+    // Polygon/Alpaca (portfolio snapshots, regime detection, Polymarket
+    // scans) — a single transient rate-limit blip previously failed the
+    // whole request with no retry, even though the exact same lookup
+    // reliably succeeds moments later. One retry with a short backoff smooths
+    // that over without masking a genuinely bad symbol/real outage.
     let price: number | null = null;
-    const snapshot = await buildMarketSnapshot(asset, market).catch(() => null);
-    if (snapshot) {
-      price = snapshot.price;
-    } else {
+    for (let attempt = 0; attempt < 2 && !price; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500));
+      const snapshot = await buildMarketSnapshot(asset, market).catch(() => null);
+      if (snapshot) {
+        price = snapshot.price;
+        continue;
+      }
       // Direct Polygon fetch as fallback
       price = getCurrentPrice(asset);
       if (!price && process.env.POLYGON_API_KEY) {
