@@ -82,16 +82,28 @@ export async function fetchDeepAnalysis(symbol: string): Promise<DeepCompanyAnal
       return cached.rawAnalysis as unknown as DeepCompanyAnalysis;
     }
 
-    const [incomeRes, balanceRes, cashFlowRes, earningsRes, insiderRes, recRes, polyRes] =
-      await Promise.allSettled([
-        axios.get('https://www.alphavantage.co/query', { params: { function: 'INCOME_STATEMENT', symbol, apikey: AV_KEY }, timeout: 10000 }),
-        axios.get('https://www.alphavantage.co/query', { params: { function: 'BALANCE_SHEET', symbol, apikey: AV_KEY }, timeout: 10000 }),
-        axios.get('https://www.alphavantage.co/query', { params: { function: 'CASH_FLOW', symbol, apikey: AV_KEY }, timeout: 10000 }),
-        axios.get('https://www.alphavantage.co/query', { params: { function: 'EARNINGS', symbol, apikey: AV_KEY }, timeout: 10000 }),
-        axios.get('https://finnhub.io/api/v1/stock/insider-transactions', { params: { symbol, token: FH_KEY }, timeout: 8000 }),
-        axios.get('https://finnhub.io/api/v1/stock/recommendation', { params: { symbol, token: FH_KEY }, timeout: 8000 }),
-        axios.get(`https://api.polygon.io/v3/reference/tickers/${symbol}`, { params: { apiKey: POLY_KEY }, timeout: 8000 }),
-      ]);
+    // Alpha Vantage's free tier throttles at 1 req/sec — firing all 4 calls at once
+    // (as this used to) meant 3 of them came back as a throttle notice instead of
+    // real financials, silently starving the agents of the data this function exists
+    // to provide. Space them out; Finnhub/Polygon aren't subject to that limit.
+    const settle = <T>(p: Promise<T>): Promise<PromiseSettledResult<T>> =>
+      p.then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }));
+    const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const avCall = (fn: string) => axios.get('https://www.alphavantage.co/query', { params: { function: fn, symbol, apikey: AV_KEY }, timeout: 10000 });
+
+    const incomeRes = await settle(avCall('INCOME_STATEMENT'));
+    await wait(1100);
+    const balanceRes = await settle(avCall('BALANCE_SHEET'));
+    await wait(1100);
+    const cashFlowRes = await settle(avCall('CASH_FLOW'));
+    await wait(1100);
+    const earningsRes = await settle(avCall('EARNINGS'));
+
+    const [insiderRes, recRes, polyRes] = await Promise.allSettled([
+      axios.get('https://finnhub.io/api/v1/stock/insider-transactions', { params: { symbol, token: FH_KEY }, timeout: 8000 }),
+      axios.get('https://finnhub.io/api/v1/stock/recommendation', { params: { symbol, token: FH_KEY }, timeout: 8000 }),
+      axios.get(`https://api.polygon.io/v3/reference/tickers/${symbol}`, { params: { apiKey: POLY_KEY }, timeout: 8000 }),
+    ]);
 
     const income = incomeRes.status === 'fulfilled' ? incomeRes.value.data : null;
     const balance = balanceRes.status === 'fulfilled' ? balanceRes.value.data : null;
