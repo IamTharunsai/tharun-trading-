@@ -157,6 +157,32 @@ export function getCurrentPrices(): Record<string, number> {
   return { ...latestPrices };
 }
 
+// Stock prices were only ever set once, at boot, from the PREVIOUS day's
+// close (fetchInitialStockPrices) — crypto gets continuous updates via the
+// Binance WebSocket, but nothing ever refreshed stocks afterward. That
+// silently broke live P&L display AND stop-loss/take-profit monitoring for
+// stocks (checkStopLosses compares against this same frozen cache), since a
+// real price move would never be reflected. Alpaca's snapshot endpoint
+// (already used elsewhere tonight, confirmed fast/reliable) gives the actual
+// latest trade price — refresh only symbols with real open positions, not
+// the whole tracked universe, to keep this cheap and frequent.
+export async function refreshOpenPositionStockPrices(symbols: string[]): Promise<void> {
+  if (symbols.length === 0) return;
+  await Promise.all(symbols.map(async (symbol) => {
+    try {
+      const res = await axios.get(`https://data.alpaca.markets/v2/stocks/${symbol}/snapshot`, {
+        headers: {
+          'APCA-API-KEY-ID': process.env.ALPACA_API_KEY,
+          'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
+        },
+        timeout: 8000,
+      });
+      const price = res.data?.latestTrade?.p;
+      if (price) latestPrices[symbol] = price;
+    } catch { /* leave the last known price in place rather than clearing it */ }
+  }));
+}
+
 export function getCurrentPrice(asset: string): number | null {
   return latestPrices[asset] || null;
 }

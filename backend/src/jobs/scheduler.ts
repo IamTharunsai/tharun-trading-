@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { logger } from '../utils/logger';
-import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount } from '../services/marketData';
+import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount, refreshOpenPositionStockPrices } from '../services/marketData';
 import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
 import { runDailyScreen } from '../services/stockScreener';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
@@ -168,6 +168,19 @@ export function initScheduler() {
       }
     }
   }, { timezone: ET_ZONE });
+
+  // ── EVERY 60 SECONDS: Refresh live prices for open stock positions ───────
+  // Stock prices were only ever set once at boot (previous day's close) —
+  // crypto gets continuous Binance WebSocket updates, stocks got nothing
+  // after startup, so the stop-loss monitor below was comparing against a
+  // frozen snapshot instead of real prices. Only refreshes symbols with an
+  // actual open stock position, not the whole tracked universe.
+  cron.schedule('*/60 * * * * *', async () => {
+    try {
+      const openStockPositions = await prisma.position.findMany({ where: { status: 'OPEN', market: 'stocks' }, select: { asset: true } });
+      await refreshOpenPositionStockPrices(openStockPositions.map(p => p.asset));
+    } catch (err) { logger.error('Open-position price refresh failed', { err }); }
+  });
 
   // ── EVERY 10 SECONDS: Stop Loss Monitor ──────────────────────────────────
   cron.schedule('*/10 * * * * *', async () => {
