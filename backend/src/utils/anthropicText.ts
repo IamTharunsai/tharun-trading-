@@ -7,3 +7,18 @@ export function extractResponseText(content: Array<{ type: string; text?: string
   if (!block?.text) throw new Error('No text content block in Anthropic response');
   return block.text;
 }
+
+// One retry with a short backoff — for the once-a-night/week crons
+// (journal, weekly report) where a single transient API blip previously
+// meant losing that day's entry silently with no second chance.
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 3000): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === attempts - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error('unreachable');
+}

@@ -125,6 +125,8 @@ export interface AgentArgument {
   riskWarnings: string[];
 }
 
+export interface CrossExam { challenger: string; target: string; challenge: string; rebuttal: string }
+
 export interface DebateTranscript {
   id: string;
   asset: string;
@@ -134,7 +136,7 @@ export interface DebateTranscript {
   priceChange24h: number;
   marketRegime: string;
   round1: { agentId: number; agentName: string; vote: string; argument: string }[];
-  round2: { challenger: string; target: string; challenge: string; rebuttal: string }[];
+  round2: CrossExam[];
   round3: { agentId: number; agentName: string; finalVote: string; confidence: number; reason: string }[];
   masterSynthesis: string;
   finalDecision: 'BUY' | 'SELL' | 'HOLD';
@@ -643,7 +645,7 @@ export async function runInvestmentCommitteeDebate(
   // challenge — 2 calls, not 13, but real adversarial engagement instead of
   // a no-op (this used to just emit a UI event and populate nothing, so
   // Round 3 below only ever saw a bare vote tally).
-  let round2Exchange: { challenger: string; target: string; challenge: string; rebuttal: string } | null = null;
+  let round2Exchange: CrossExam | null = null;
   const dissenters = round1Results.filter(r => r.vote !== dominantView.direction && r.agentId !== dominantView.leadAgent?.agentId);
   const challenger = dissenters.sort((a, b) => b.confidence - a.confidence)[0];
 
@@ -1006,7 +1008,7 @@ function getDominantView(results: any[]): { direction: string; leadAgent: any } 
 // tally with no reasoning, which is why every agent's Round 3 "final vote"
 // just cited the vote count instead of actually engaging with anyone's
 // argument. Now carries each agent's real case plus the Round 2 rebuttal.
-function buildDebateSummary(round1: any[], round2: { challenger: string; target: string; challenge: string; rebuttal: string } | null): string {
+function buildDebateSummary(round1: any[], round2: CrossExam | null): string {
   const lines = round1.map(r => {
     const factors = r.keyFactors?.length ? ` | Factors: ${r.keyFactors.join('; ')}` : '';
     const risks = r.riskWarnings?.length ? ` | Risks: ${r.riskWarnings.join('; ')}` : '';
