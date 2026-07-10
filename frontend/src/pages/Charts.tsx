@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
-import { getStockCandles, getRegimes, getStocksUniverse, getPositions } from '../services/api';
+import { getStockCandles, getRegimes, getStocksUniverse, getPositions, getAllStocks } from '../services/api';
 import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
+import { glossaryTitle } from '../constants/glossary';
 
 const REGIME_LABELS: Record<string, string> = {
   TRENDING_BULL: 'Trending Bull',
@@ -18,6 +19,8 @@ const REGIME_LABELS: Record<string, string> = {
 export default function ChartsPage() {
   const [market, setMarket] = useState<'stocks' | 'crypto'>('crypto');
   const [selected, setSelected] = useState('BTC');
+  const [browseAll, setBrowseAll] = useState(false);
+  const [sortBy, setSortBy] = useState<'debates' | 'alpha'>('debates');
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
 
@@ -56,7 +59,29 @@ export default function ChartsPage() {
   ]));
   const cryptoSymbols = universeSymbols.filter((s: string) => CRYPTO_LIST.includes(s));
   const stockSymbols = universeSymbols.filter((s: string) => !CRYPTO_LIST.includes(s));
-  const symbolOptions = market === 'crypto' ? cryptoSymbols : stockSymbols;
+
+  // "Browse all" pulls every tradeable US stock (~7000), not just what's been
+  // debated — separate query, only fetched when actually toggled on.
+  const { data: allStocksList } = useQuery({
+    queryKey: ['all-stocks'],
+    queryFn: getAllStocks,
+    enabled: browseAll && market === 'stocks',
+    staleTime: 5 * 60000,
+  });
+  const universeMap = new Map<string, any>((universe || []).map((u: any) => [u.symbol, u]));
+
+  type Opt = { symbol: string; name: string; debateCount: number };
+  let optionList: Opt[];
+  if (market === 'crypto') {
+    optionList = cryptoSymbols.map(s => ({ symbol: s, name: s, debateCount: universeMap.get(s)?.debateCount || 0 }));
+  } else if (browseAll) {
+    optionList = (allStocksList || []).map((a: any) => ({ symbol: a.symbol, name: a.name, debateCount: universeMap.get(a.symbol)?.debateCount || 0 }));
+  } else {
+    optionList = stockSymbols.map(s => ({ symbol: s, name: universeMap.get(s)?.name || s, debateCount: universeMap.get(s)?.debateCount || 0 }));
+  }
+  const symbolOptions = [...optionList].sort((a, b) =>
+    sortBy === 'alpha' ? a.symbol.localeCompare(b.symbol) : (b.debateCount - a.debateCount) || a.symbol.localeCompare(b.symbol)
+  );
 
   const candles: any[] = snapshot?.candles || [];
   const indicators: any = snapshot?.indicators || null;
@@ -152,10 +177,28 @@ export default function ChartsPage() {
             <option value="stocks">Stocks</option>
             <option value="crypto">Crypto</option>
           </select>
-          <select value={selected} onChange={e => setSelected(e.target.value)}
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+            title="Sort symbol list"
             style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
-            {symbolOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
+            <option value="debates">Sort: Most debated</option>
+            <option value="alpha">Sort: A-Z</option>
           </select>
+          <input
+            list="chart-symbol-list"
+            value={selected}
+            onChange={e => setSelected(e.target.value.toUpperCase())}
+            placeholder="Search symbol or name…"
+            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F', width: 220 }}
+          />
+          <datalist id="chart-symbol-list">
+            {symbolOptions.map(o => <option key={o.symbol} value={o.symbol}>{o.name !== o.symbol ? o.name : ''}</option>)}
+          </datalist>
+          {market === 'stocks' && (
+            <label className="flex items-center gap-1 font-mono text-xs text-apex-muted cursor-pointer select-none">
+              <input type="checkbox" checked={browseAll} onChange={e => setBrowseAll(e.target.checked)} />
+              All US stocks
+            </label>
+          )}
         </div>
       </div>
 
@@ -181,8 +224,8 @@ export default function ChartsPage() {
               { label: 'Bollinger', value: bbRead },
               { label: `Stochastic ${indicators.stochasticK?.toFixed(0) ?? ''}`, value: stochRead },
             ].map(s => (
-              <div key={s.label} className="p-3 rounded-lg border border-apex-border bg-apex-surface">
-                <div className="font-mono text-[10px] text-apex-muted uppercase mb-1">{s.label}</div>
+              <div key={s.label} className="p-3 rounded-lg border border-apex-border bg-apex-surface" title={glossaryTitle(s.label)}>
+                <div className="font-mono text-[10px] text-apex-muted uppercase mb-1 border-b border-dotted border-apex-muted/50 inline-block">{s.label}</div>
                 <div className="font-sans font-bold text-sm text-apex-text">{s.value}</div>
               </div>
             ))}
@@ -198,8 +241,8 @@ export default function ChartsPage() {
               { label: 'Bollinger Lower', value: indicators.bollingerBands?.lower },
               { label: 'MACD Histogram',  value: indicators.macd?.histogram },
             ].map(s => (
-              <div key={s.label}>
-                <div className="font-mono text-[10px] text-apex-muted tracking-widest mb-1">{s.label}</div>
+              <div key={s.label} title={glossaryTitle(s.label)}>
+                <div className="font-mono text-[10px] text-apex-muted tracking-widest mb-1 border-b border-dotted border-apex-muted/50 inline-block">{s.label}</div>
                 <div className="font-mono font-bold text-apex-text">{s.value != null ? Number(s.value).toFixed(2) : '—'}</div>
               </div>
             ))}

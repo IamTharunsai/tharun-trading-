@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getNews } from '../services/api';
+import { getNews, getIpoCalendar } from '../services/api';
 import api from '../services/api';
-import { Newspaper, ExternalLink, Globe } from 'lucide-react';
+import { Newspaper, ExternalLink, Globe, Rocket } from 'lucide-react';
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
 
@@ -16,6 +16,7 @@ interface NewsItem {
   impact: 'HIGH' | 'MEDIUM' | 'LOW';
   tags: string[];
   summary: string;
+  sectorsAffected: string[];
 }
 
 interface GeopoliticalEvent {
@@ -246,6 +247,14 @@ function GeopoliticsTab() {
                     }}>
                       {item.impact} IMPACT
                     </span>
+                    {item.sectorsAffected?.map(sector => (
+                      <span key={sector} style={{
+                        background: 'rgba(91,100,114,0.12)', color: 'var(--apex-text)',
+                        padding: '2px 6px', borderRadius: 3, fontFamily: 'Space Mono', fontSize: 8, fontWeight: 700
+                      }}>
+                        {sector}
+                      </span>
+                    ))}
                   </div>
                 </div>
               ))
@@ -288,8 +297,44 @@ function GeopoliticsTab() {
   );
 }
 
+function IpoCalendarTab() {
+  const { data: ipos = [] } = useQuery({ queryKey: ['ipo-calendar'], queryFn: getIpoCalendar, staleTime: 60 * 60000 });
+
+  const statusColor = (status: string) =>
+    status === 'priced' ? '#12805F' : status === 'filed' ? '#C9A24B' : '#5B6472';
+
+  return (
+    <div className="space-y-3">
+      {ipos.length === 0 && (
+        <div className="card text-center py-12 font-mono text-xs text-apex-muted">No upcoming IPOs in the next 30 days</div>
+      )}
+      {ipos.map((ipo: any) => (
+        <div key={`${ipo.symbol}-${ipo.date}`} className="card hover:border-apex-border/80 transition-colors">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-mono text-xs font-bold text-apex-accent">{ipo.symbol}</span>
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded text-white" style={{ background: statusColor(ipo.status) }}>
+                  {ipo.status?.toUpperCase()}
+                </span>
+                {ipo.exchange && <span className="font-mono text-[10px] text-apex-muted">{ipo.exchange}</span>}
+              </div>
+              <h3 className="font-sans font-semibold text-sm text-apex-text">{ipo.name}</h3>
+              <div className="flex items-center gap-4 mt-2 font-mono text-[10px] text-apex-muted">
+                <span>Date: {ipo.date}</span>
+                {ipo.priceRange && <span>Price: ${ipo.priceRange}</span>}
+                {ipo.numberOfShares && <span>Shares: {(ipo.numberOfShares / 1e6).toFixed(1)}M</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function NewsPage() {
-  const [tab, setTab] = useState<'news' | 'geo'>('news');
+  const [tab, setTab] = useState<'news' | 'geo' | 'ipo'>('news');
 
   return (
     <div className="space-y-6">
@@ -306,6 +351,7 @@ export default function NewsPage() {
         {([
           { id: 'news' as const, label: 'Market News', icon: Newspaper },
           { id: 'geo' as const, label: 'Geopolitics & Sentiment', icon: Globe },
+          { id: 'ipo' as const, label: 'Upcoming IPOs', icon: Rocket },
         ]).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -327,7 +373,7 @@ export default function NewsPage() {
         ))}
       </div>
 
-      {tab === 'news' ? <MarketNewsTab /> : <GeopoliticsTab />}
+      {tab === 'news' ? <MarketNewsTab /> : tab === 'geo' ? <GeopoliticsTab /> : <IpoCalendarTab />}
     </div>
   );
 }

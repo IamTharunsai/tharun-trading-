@@ -248,6 +248,26 @@ marketRouter.get('/predictions', async (req: Request, res: Response) => {
   res.json(predictions);
 });
 
+// ── Upcoming IPOs (Finnhub, cached 6h) ─────────────────────────────────────────
+marketRouter.get('/ipo-calendar', async (_req: Request, res: Response) => {
+  try {
+    const { getIpoCalendar } = await import('../services/ipoService');
+    res.json(await getIpoCalendar());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch IPO calendar' });
+  }
+});
+
+// ── Every tradeable US stock (browse-all, not just debated) ───────────────────
+marketRouter.get('/all-stocks', async (_req: Request, res: Response) => {
+  try {
+    const { getAllStocksDetailed } = await import('../services/marketData');
+    res.json(getAllStocksDetailed());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch stock list' });
+  }
+});
+
 // ── Stock Universe — every asset agents have analyzed ─────────────────────────
 marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
   try {

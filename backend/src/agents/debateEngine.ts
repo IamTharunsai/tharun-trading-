@@ -7,7 +7,7 @@ import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualR
 import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
-import { geopoliticalDataService } from '../services/geopoliticalDataService';
+import { geopoliticalDataService, classifySectors } from '../services/geopoliticalDataService';
 import { getAgentSuspensionWeights, getAgentCalibrationScores } from '../services/selfLearning';
 import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
@@ -959,7 +959,7 @@ async function buildNewsSummary(asset: string): Promise<string> {
   // meant asset-specific news almost never matched for stocks (crypto
   // tickers like BTC/ETH are the exception, since headlines do use those).
   // Also match on the company's common name from fundamentals.
-  const fund = await prisma.companyFundamentals.findUnique({ where: { symbol: asset }, select: { name: true } }).catch(() => null);
+  const fund = await prisma.companyFundamentals.findUnique({ where: { symbol: asset }, select: { name: true, sector: true } }).catch(() => null);
   const companyName = fund?.name?.split(/[,.]| Inc| Corp| Class/)[0]?.trim();
   const matchTerms = [asset.toLowerCase(), companyName?.toLowerCase()].filter(Boolean) as string[];
   const assetNews = geopoliticalDataService.getRecentNews(120).filter(n => {
@@ -979,6 +979,17 @@ async function buildNewsSummary(asset: string): Promise<string> {
   }
   if (geoEvents.length > 0) {
     lines.push(`Active geopolitical risk: ${geoEvents.slice(0, 2).map(e => `${e.region}: ${e.event}`).join(' | ')}`);
+  }
+  // Does this asset's own sector actually get hit by anything happening
+  // right now — not just "is there bad news somewhere," but "does it touch
+  // this company's segment specifically" (e.g. a chip-export headline
+  // matters a lot more to a semiconductor stock than to a retailer).
+  const companySectors = fund?.sector ? classifySectors(fund.sector).filter(s => s !== 'Broad Market') : [];
+  const sectorNews = companySectors.length > 0
+    ? highImpact.filter(n => n.sectorsAffected.some(s => companySectors.includes(s)))
+    : [];
+  if (sectorNews.length > 0) {
+    lines.push(`Sector-relevant (${companySectors.join('/')}): ${sectorNews.slice(0, 2).map(n => n.title).join(' | ')}`);
   }
   return lines.length > 1 || highImpact.length > 0 || geoEvents.length > 0 ? lines.join('\n') : '';
 }

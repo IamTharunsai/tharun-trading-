@@ -9,8 +9,31 @@ const NEGATIVE_KEYWORDS = ['crash', 'plunge', 'recession', 'layoff', 'default', 
 const POSITIVE_KEYWORDS = ['surge', 'rally', 'record', 'beat', 'growth', 'gain', 'soar', 'upgrade', 'boom', 'recovery'];
 const HIGH_IMPACT_KEYWORDS = ['fed', 'rate', 'war', 'recession', 'inflation', 'crash', 'sanction', 'default'];
 
+// Which real-world sectors a headline actually touches — was previously
+// hardcoded to ['STOCKS', 'USD'] for every single geopolitical event
+// regardless of content, so two completely different Middle East headlines
+// both showed "Affects: STOCKS, USD". ponytail: keyword heuristics, not a
+// real event->impact model — upgrade if segment accuracy matters more.
+const SECTOR_KEYWORDS: [string, string[]][] = [
+  ['Energy', ['oil', 'opec', 'crude', 'gas price', 'pipeline', 'refinery', 'petroleum']],
+  ['Financials', ['fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'treasury yield', 'bank ', 'banking']],
+  ['Technology', ['chip', 'semiconductor', 'nvidia', ' ai ', 'artificial intelligence', 'software', 'tech stocks']],
+  ['Industrials', ['tariff', 'trade war', 'supply chain', 'manufacturing', 'shipping', 'export', 'import']],
+  ['Airlines & Travel', ['airline', 'flight', 'travel ban', 'airspace', 'tourism']],
+  ['Defense', ['military', 'missile', 'defense contractor', 'weapons', 'pentagon']],
+  ['Consumer', ['retail', 'consumer spending', 'inflation', 'cpi']],
+  ['Crypto', ['bitcoin', 'crypto', 'blockchain', 'ethereum']],
+  ['Healthcare', ['fda', 'drug price', 'pharma', 'vaccine', 'biotech']],
+];
+
+export function classifySectors(text: string): string[] {
+  const lower = text.toLowerCase();
+  const sectors = SECTOR_KEYWORDS.filter(([, kws]) => kws.some(k => lower.includes(k))).map(([sector]) => sector);
+  return sectors.length > 0 ? sectors : ['Broad Market'];
+}
+
 // ponytail: keyword heuristics for sentiment/category/impact, not real NLP — upgrade to a sentiment model if headline-level classification proves too noisy
-function classifyHeadline(text: string): { sentiment: NewsItem['sentiment']; impact: NewsItem['impact']; category: NewsItem['category'] } {
+function classifyHeadline(text: string): { sentiment: NewsItem['sentiment']; impact: NewsItem['impact']; category: NewsItem['category']; sectorsAffected: string[] } {
   const lower = text.toLowerCase();
   const isGeo = GEO_KEYWORDS.some(k => lower.includes(k));
   const isNeg = NEGATIVE_KEYWORDS.some(k => lower.includes(k));
@@ -21,6 +44,7 @@ function classifyHeadline(text: string): { sentiment: NewsItem['sentiment']; imp
     sentiment: isNeg && !isPos ? 'NEGATIVE' : isPos && !isNeg ? 'POSITIVE' : 'NEUTRAL',
     impact: isHighImpact ? 'HIGH' : 'MEDIUM',
     category: isGeo ? 'GEOPOLITICS' : 'MACROECONOMICS',
+    sectorsAffected: classifySectors(text),
   };
 }
 
@@ -41,6 +65,7 @@ export interface NewsItem {
   impact: 'HIGH' | 'MEDIUM' | 'LOW';
   tags: string[];
   summary: string;
+  sectorsAffected: string[];
 }
 
 export interface GeopoliticalEvent {
@@ -119,6 +144,7 @@ class GeopoliticalDataService {
         impact: cls.impact,
         tags: [tag],
         summary: n.summary || n.headline,
+        sectorsAffected: cls.sectorsAffected,
       } as NewsItem;
     });
   }
@@ -179,7 +205,7 @@ class GeopoliticalDataService {
         region,
         event: n.title,
         severity: 'HIGH' as const,
-        affectedAssets: ['STOCKS', 'USD'],
+        affectedAssets: n.sectorsAffected,
         timestamp: n.timestamp,
         source: n.source,
       };

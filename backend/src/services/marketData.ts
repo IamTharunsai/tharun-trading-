@@ -21,6 +21,7 @@ export let STOCK_ASSETS: string[] = [
 
 // Full list fetched from Alpaca — all active tradeable US equities
 let allAlpacaAssets: string[] = [];
+let allAlpacaAssetsDetailed: { symbol: string; name: string; exchange: string }[] = [];
 let assetRotationIndex = 0;
 
 export async function fetchAllAlpacaAssets(): Promise<string[]> {
@@ -34,16 +35,25 @@ export async function fetchAllAlpacaAssets(): Promise<string[]> {
       params: { status: 'active', asset_class: 'us_equity', tradable: true },
       timeout: 15000
     });
-    const symbols: string[] = res.data
-      .filter((a: any) => a.tradable && a.fractionable !== false && !a.symbol.includes('/'))
-      .map((a: any) => a.symbol);
-    allAlpacaAssets = symbols;
-    logger.info(`📋 Loaded ${symbols.length} tradeable US stocks from Alpaca`);
-    return symbols;
+    const filtered = res.data.filter((a: any) => a.tradable && a.fractionable !== false && !a.symbol.includes('/'));
+    allAlpacaAssets = filtered.map((a: any) => a.symbol);
+    allAlpacaAssetsDetailed = filtered.map((a: any) => ({ symbol: a.symbol, name: a.name || a.symbol, exchange: a.exchange || '' }));
+    logger.info(`📋 Loaded ${allAlpacaAssets.length} tradeable US stocks from Alpaca`);
+    return allAlpacaAssets;
   } catch (err) {
     logger.warn('Could not fetch Alpaca asset list — using default stocks', { err });
     return STOCK_ASSETS;
   }
+}
+
+// For the "browse every US stock" picker — every tradeable symbol with its
+// real company name, not just the small subset that's been debated. Falls
+// back to the hardcoded list (still with real names via STOCK_ASSETS'
+// tickers) if Alpaca's asset list hasn't loaded yet.
+export function getAllStocksDetailed(): { symbol: string; name: string; exchange: string }[] {
+  return allAlpacaAssetsDetailed.length > 0
+    ? allAlpacaAssetsDetailed
+    : STOCK_ASSETS.map(s => ({ symbol: s, name: s, exchange: '' }));
 }
 
 // Returns next batch of stocks to analyze (rotates through ALL listed stocks)
