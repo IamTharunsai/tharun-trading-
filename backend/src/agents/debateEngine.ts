@@ -10,6 +10,7 @@ import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService } from '../services/geopoliticalDataService';
 import { getAgentSuspensionWeights } from '../services/selfLearning';
 import { RegimeAnalysis } from '../services/regimeDetector';
+import { intermarketService } from '../services/intermarketService';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -485,14 +486,26 @@ export async function runInvestmentCommitteeDebate(
   };
 
   // Deep analysis — fetch ALL data before debate starts
-  const [deepAnalysis, stockMemory] = await Promise.all([
+  const [deepAnalysis, stockMemory, intermarket] = await Promise.all([
     snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
+    intermarketService.getIntermarketAnalysis().catch(() => null),
   ]);
 
   const fundamentalsSummary = deepAnalysis
     ? formatDeepAnalysisForAgents(deepAnalysis)
     : snapshot.market === 'stocks' ? await getFundamentalsSummary(asset) : '';
+
+  // Real cross-asset macro context — was previously nothing; The Macro Economist
+  // agent's prompt describes rate/DXY/yield-curve reasoning it had zero data to
+  // actually apply.
+  const macroSummary = intermarket
+    ? `Phase: ${intermarket.marketPhase} | Health: ${intermarket.marketHealth}/100 | Risk: ${intermarket.riskLevel} | Yield curve: ${intermarket.relationships.yieldCurveSlope} | ` +
+      `SPY ${intermarket.assets.sp500 >= 0 ? '+' : ''}${intermarket.assets.sp500.toFixed(2)}% | DXY proxy ${intermarket.assets.dxy >= 0 ? '+' : ''}${intermarket.assets.dxy.toFixed(2)}% | ` +
+      `Gold ${intermarket.assets.stocksGold >= 0 ? '+' : ''}${intermarket.assets.stocksGold.toFixed(2)}% | Oil ${intermarket.assets.oilEnergy >= 0 ? '+' : ''}${intermarket.assets.oilEnergy.toFixed(2)}% | ` +
+      `10Y yield proxy ${intermarket.assets.treasuryYield10Y >= 0 ? '+' : ''}${intermarket.assets.treasuryYield10Y.toFixed(2)}% | VIX proxy ${intermarket.assets.vix.toFixed(1)}` +
+      (intermarket.signals.length > 0 ? ` | Signals: ${intermarket.signals.map(s => `${s.name}(${s.signal})`).join(', ')}` : '')
+    : '';
 
   await recordDebate(asset, 'PENDING');
 
@@ -500,7 +513,7 @@ export async function runInvestmentCommitteeDebate(
   io?.emit('debate:round', { round: 1, debateId, asset });
 
   const newsSummary = buildNewsSummary(asset);
-  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary);
+  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary);
   const round1Results: any[] = [];
 
   // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
@@ -796,7 +809,8 @@ function buildMarketContext(
   regime: string,
   fundamentals = '',
   stockMemory = '',
-  newsSummary = ''
+  newsSummary = '',
+  macroSummary = ''
 ): string {
   const ind = snapshot.indicators;
   const lines = [
@@ -825,6 +839,9 @@ function buildMarketContext(
   }
   if (newsSummary) {
     lines.push(`── NEWS & MARKET SENTIMENT (real, last 2h) ──`, newsSummary);
+  }
+  if (macroSummary) {
+    lines.push(`── MACRO / INTERMARKET (real, ETF-proxy based) ──`, macroSummary);
   }
   return lines.join('\n');
 }

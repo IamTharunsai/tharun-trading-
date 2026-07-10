@@ -58,14 +58,16 @@ class IntermarketService {
    * Get comprehensive intermarket analysis
    */
   async getIntermarketAnalysis(): Promise<IntermarketData> {
+    // Redis is optional (this deployment runs without it) — a cache-read
+    // failure must not take down the whole analysis; only the cache lookup
+    // itself is allowed to fail silently.
+    const cacheKey = 'intermarket:analysis';
     try {
-      const cacheKey = 'intermarket:analysis';
       const cached = await redis.get(cacheKey);
-      
-      if (cached) {
-        return JSON.parse(cached);
-      }
+      if (cached) return JSON.parse(cached);
+    } catch { /* no cache available — fall through to a fresh fetch */ }
 
+    try {
       const macroData = await this.fetchMacroIndicators();
       const relationships = this.analyzeRelationships(macroData);
       const signals = this.generateSignals(macroData, relationships);
@@ -99,7 +101,7 @@ class IntermarketService {
         recommendations: this.generateRecommendations(marketPhase, riskLevel, relationships)
       };
 
-      await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(analysis));
+      try { await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(analysis)); } catch { /* cache write is best-effort */ }
       return analysis;
     } catch (error) {
       logger.error('Error in getIntermarketAnalysis:', error);
@@ -232,29 +234,64 @@ class IntermarketService {
   /**
    * Fetch macro indicator data
    */
+  // IEX Cloud (the original data source here) shut down as a service — every
+  // call to it failed silently via Promise.allSettled, so this returned all
+  // zeros forever. Replaced with Alpaca's snapshot endpoint (already-configured
+  // credentials, no new signup) against liquid ETF proxies for each factor:
+  // SPY/QQQ for equities, UUP for the dollar, GLD for gold, USO for oil, VIXY
+  // for volatility, TLT for long bond yields. CoinGecko (no key required) for BTC.
+  private async fetchAlpacaChangePercent(symbol: string): Promise<number | null> {
+    try {
+      const res = await axios.get(`https://data.alpaca.markets/v2/stocks/${symbol}/snapshot`, {
+        headers: {
+          'APCA-API-KEY-ID': process.env.ALPACA_API_KEY,
+          'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
+        },
+        timeout: 8000,
+      });
+      const latest = res.data?.latestTrade?.p;
+      const prevClose = res.data?.prevDailyBar?.c;
+      if (!latest || !prevClose) return null;
+      return ((latest - prevClose) / prevClose) * 100;
+    } catch {
+      return null;
+    }
+  }
+
   private async fetchMacroIndicators(): Promise<MacroIndicators> {
     try {
-      const token = process.env.IEX_CLOUD_API_KEY;
-      
-      const [spxRes, dxyRes, btcRes, oilRes, goldRes, tsyRes] = await Promise.allSettled([
-        axios.get(`https://cloud.iexapis.com/stable/stock/SPY/quote?token=${token}`, { timeout: 5000 }),
-        axios.get(`https://cloud.iexapis.com/stable/stock/UUP/quote?token=${token}`, { timeout: 5000 }),
-        axios.get(`https://cloud.iexapis.com/stable/crypto/BTC/quote?token=${token}`, { timeout: 5000 }),
-        axios.get(`https://cloud.iexapis.com/stable/stock/USO/quote?token=${token}`, { timeout: 5000 }),
-        axios.get(`https://cloud.iexapis.com/stable/stock/GLD/quote?token=${token}`, { timeout: 5000 }),
-        axios.get(`https://cloud.iexapis.com/stable/stock/TLT/quote?token=${token}`, { timeout: 5000 })
+      const [spy, qqq, uup, uso, gld, vixy, tlt, btcRes] = await Promise.all([
+        this.fetchAlpacaChangePercent('SPY'),
+        this.fetchAlpacaChangePercent('QQQ'),
+        this.fetchAlpacaChangePercent('UUP'),
+        this.fetchAlpacaChangePercent('USO'),
+        this.fetchAlpacaChangePercent('GLD'),
+        this.fetchAlpacaChangePercent('VIXY'),
+        this.fetchAlpacaChangePercent('TLT'),
+        axios.get('https://api.coingecko.com/api/v3/simple/price', {
+          params: { ids: 'bitcoin', vs_currencies: 'usd', include_24hr_change: true }, timeout: 8000
+        }).catch(() => null),
       ]);
 
+      // TLT price and yields move inversely (bond price up = yield down) — the
+      // previous version used the raw TLT % change as-is, which had "Rising
+      // Yields" firing exactly when yields were falling. Negate it.
+      const treasurys10Y = tlt !== null ? -tlt : 0;
+      // VIXY (VIX futures ETF) tracks volatility expectations directionally,
+      // not the literal VIX level — scaled to sit in the same rough 10-40
+      // range the rest of this service's thresholds (20, 25, 40) assume.
+      const vix = vixy !== null ? Math.max(0, 20 + vixy * 3) : 0;
+
       return {
-        sp500: spxRes.status === 'fulfilled' ? spxRes.value.data.changePercent : 0,
-        nasdaq: 0,
-        dxy: dxyRes.status === 'fulfilled' ? dxyRes.value.data.changePercent : 0,
-        bitcoin: btcRes.status === 'fulfilled' ? btcRes.value.data.changePercent : 0,
+        sp500: spy ?? 0,
+        nasdaq: qqq ?? 0,
+        dxy: uup ?? 0,
+        bitcoin: btcRes?.data?.bitcoin?.usd_24h_change ?? 0,
         ethereum: 0,
-        oil: oilRes.status === 'fulfilled' ? oilRes.value.data.changePercent : 0,
-        gold: goldRes.status === 'fulfilled' ? goldRes.value.data.changePercent : 0,
-        treasurys10Y: tsyRes.status === 'fulfilled' ? tsyRes.value.data.changePercent : 0,
-        vix: 0 // Would fetch from separate source
+        oil: uso ?? 0,
+        gold: gld ?? 0,
+        treasurys10Y,
+        vix,
       };
     } catch (error) {
       logger.error('Error fetching macro indicators:', error);
