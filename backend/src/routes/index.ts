@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { prisma } from '../utils/prisma';
+import { redis } from '../utils/redis';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { getPortfolioState } from '../services/portfolio';
 import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '../agents/orchestrator';
@@ -404,9 +405,13 @@ settingsRouter.use(requireAuth);
 settingsRouter.get('/', async (_req: Request, res: Response) => {
   res.json({
     tradingMode: process.env.TRADING_MODE || 'paper',
-    stopLossCrypto: process.env.STOP_LOSS_CRYPTO_PCT || '3',
-    stopLossStocks: process.env.STOP_LOSS_STOCKS_PCT || '2',
-    takeProfitPct: process.env.TAKE_PROFIT_PCT || '6',
+    // Stop-loss/take-profit are NOT fixed percentages — they're computed per
+    // trade from that asset's ATR (volatility-adaptive), take-profit set at
+    // 2.5x the stop distance (LAW 3: min 2:1 risk/reward). These env vars
+    // were never read anywhere else in the codebase; showing them as if they
+    // were the real values was misleading.
+    stopLossMethod: 'ATR-based (dynamic per trade, not a fixed %)',
+    takeProfitMethod: '2.5x the ATR-based stop distance (min 2:1 risk/reward)',
     maxRiskPerTrade: process.env.MAX_RISK_PER_TRADE_PCT || '1',
     maxPositionSize: process.env.MAX_POSITION_SIZE_PCT || '10',
     dailyLossLimit: process.env.DAILY_LOSS_LIMIT_PCT || '5',
@@ -416,6 +421,7 @@ settingsRouter.get('/', async (_req: Request, res: Response) => {
     maxTradesPerDay: process.env.MAX_TRADES_PER_DAY || '50',
     minAgentConfidence: process.env.MIN_AGENT_CONFIDENCE || '65',
     minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '7',
+    cacheStatus: redis.status === 'ready' ? 'Redis (connected)' : 'None — running without cache',
   });
 });
 

@@ -47,9 +47,8 @@ export default function SettingsPage() {
         <Section title="Risk Per Trade" icon={<Shield size={16} className="text-apex-accent" />}>
           <SettingRow label="Max Risk Per Trade" value={`${settings?.maxRiskPerTrade || 1}%`} desc="% of portfolio risked per trade" />
           <SettingRow label="Max Position Size" value={`${settings?.maxPositionSize || 10}%`} desc="Max % of portfolio in one asset" />
-          <SettingRow label="Stop Loss — Crypto" value={`${settings?.stopLossCrypto || 3}%`} desc="Auto stop-loss for crypto" />
-          <SettingRow label="Stop Loss — Stocks" value={`${settings?.stopLossStocks || 2}%`} desc="Auto stop-loss for stocks" />
-          <SettingRow label="Take Profit" value={`${settings?.takeProfitPct || 6}%`} desc="Auto take-profit level" />
+          <SettingRow label="Stop Loss" value={settings?.stopLossMethod || 'ATR-based'} desc="Volatility-adaptive, computed per trade — not a fixed %" />
+          <SettingRow label="Take Profit" value={settings?.takeProfitMethod || '2.5x stop distance'} desc="Min 2:1 risk/reward (LAW 3)" />
         </Section>
 
         <Section title="Portfolio Guardrails" icon={<Shield size={16} className="text-apex-red" />}>
@@ -65,7 +64,7 @@ export default function SettingsPage() {
           <SettingRow label="AI Engine" value="Claude Sonnet (13 agents)" />
           <SettingRow label="Data Feed" value="Binance WS + Polygon.io" />
           <SettingRow label="Database" value="PostgreSQL + Prisma" />
-          <SettingRow label="Cache" value="Redis" />
+          <SettingRow label="Cache" value={settings?.cacheStatus || 'Unknown'} />
           <SettingRow label="Auth" value="JWT + TOTP 2FA" />
         </Section>
       </div>
