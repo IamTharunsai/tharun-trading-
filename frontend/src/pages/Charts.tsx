@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart2 } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
-import { getStockCandles, getRegimes } from '../services/api';
+import { getStockCandles, getRegimes, getStocksUniverse } from '../services/api';
 import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
 
 const REGIME_LABELS: Record<string, string> = {
@@ -31,6 +31,20 @@ export default function ChartsPage() {
     queryFn: () => getRegimes([selected]),
     refetchInterval: 60000,
   });
+  // Real tracked universe (every symbol the council has actually debated), not
+  // a small hand-typed list — was hardcoded to 14 stocks/5 crypto so most
+  // analyzed assets (e.g. METU, DOT, LINK) had no way to be charted at all.
+  const { data: universe } = useQuery({
+    queryKey: ['stocks-universe'],
+    queryFn: getStocksUniverse,
+    staleTime: 60000,
+  });
+  const universeSymbols: string[] = (universe || []).map((u: any) => u.symbol as string);
+  const cryptoSymbols = universeSymbols.filter((s: string) => CRYPTO_LIST.includes(s));
+  const stockSymbols = universeSymbols.filter((s: string) => !CRYPTO_LIST.includes(s));
+  const symbolOptions = market === 'crypto'
+    ? (cryptoSymbols.length > 0 ? cryptoSymbols : CRYPTO_LIST)
+    : (stockSymbols.length > 0 ? stockSymbols : STOCK_LIST);
 
   const candles: any[] = snapshot?.candles || [];
   const indicators: any = snapshot?.indicators || null;
@@ -128,7 +142,7 @@ export default function ChartsPage() {
           </select>
           <select value={selected} onChange={e => setSelected(e.target.value)}
             style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
-            {(market === 'crypto' ? CRYPTO_LIST : STOCK_LIST).map(s => <option key={s} value={s}>{s}</option>)}
+            {symbolOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
       </div>

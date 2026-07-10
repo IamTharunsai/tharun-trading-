@@ -70,20 +70,31 @@ class GeopoliticalDataService {
   private cacheTTL = 300; // 5 minutes
 
   async initialize() {
-    // Start fetching news/events in background
+    // Fetch once synchronously before serving any requests — setInterval's
+    // first tick doesn't fire until 60s/120s later, so every request in that
+    // window (e.g. right after a restart) got an empty cache and rendered as
+    // "No news analyzed yet" even though the feeds were fine.
+    await Promise.all([
+      this.fetchNewsOnce().catch(err => logger.warn('Initial news fetch failed', { error: String(err) })),
+      this.fetchActivGeopoliticalEvents().then(events => { this.geopoliticalEvents = events; }).catch(err => logger.warn('Initial geopolitical fetch failed', { error: String(err) })),
+    ]);
     this.fetchNewsLoop();
     this.fetchGeopoliticalEventsLoop();
     logger.info('✅ Geopolitical data service initialized');
   }
 
+  private async fetchNewsOnce() {
+    await this.fetchCryptoNews();
+    await this.fetchMarketNews(); // also populates geopolitics-tagged items from the same feed
+  }
+
   /**
    * Fetch real-time news from multiple sources
    */
-  private async fetchNewsLoop() {
+  private fetchNewsLoop() {
     setInterval(async () => {
       try {
-        await this.fetchCryptoNews();
-        await this.fetchMarketNews(); // also populates geopolitics-tagged items from the same feed
+        await this.fetchNewsOnce();
       } catch (err) {
         logger.warn('News fetch failed', { error: String(err) });
       }

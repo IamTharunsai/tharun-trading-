@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { updateStockMemory } from './stockMemoryService';
+import { extractResponseText } from '../utils/anthropicText';
 
 // Weight applied to a suspended agent's vote — reduced, not silenced, so a
 // single bad stretch can't create a no-quorum deadlock, but a persistently
@@ -160,10 +161,7 @@ Respond in JSON:
       messages: [{ role: 'user', content: prompt }]
     });
 
-    const content = response.content[0];
-    if (content.type !== 'text') return null;
-
-    const parsed = JSON.parse(content.text.replace(/```json\n?|\n?```/g, '').trim());
+    const parsed = JSON.parse(extractResponseText(response.content).replace(/```json\n?|\n?```/g, '').trim());
 
     const lesson: AgentLesson = {
       agentId,
@@ -363,13 +361,20 @@ Decisions: ${decisions.length}
 
 Write 3 paragraphs covering performance, lessons, and next week strategy.`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 800,
-      messages: [{ role: 'user', content: reportPrompt }]
-    });
-
-    const report = response.content[0].type === 'text' ? response.content[0].text : 'Failed';
+    let report = '';
+    for (let attempt = 0; attempt < 2 && !report; attempt++) {
+      try {
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-5',
+          max_tokens: 800,
+          messages: [{ role: 'user', content: reportPrompt }]
+        });
+        report = extractResponseText(response.content);
+      } catch (err) {
+        if (attempt === 1) throw err;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
 
     const dateStr = new Date().toISOString().split('T')[0];
     await prisma.dailyJournal.upsert({

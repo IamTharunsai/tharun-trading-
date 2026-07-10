@@ -11,6 +11,7 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' } });
 
   let invested = 0;
+  let unrealizedPnlTotal = 0;
   for (const pos of openPositions) {
     const currentPrice = prices[pos.asset] || pos.currentPrice;
     invested += currentPrice * pos.quantity;
@@ -21,24 +22,23 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     const unrealizedPnlPct = isShort
       ? ((pos.entryPrice - currentPrice) / pos.entryPrice) * 100
       : ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
+    unrealizedPnlTotal += unrealizedPnl;
     await prisma.position.update({
       where: { id: pos.id },
       data: { currentPrice, unrealizedPnl, unrealizedPnlPct }
     }).catch(() => {});
   }
 
-  // Get today's realized P&L
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayTrades = await prisma.trade.findMany({
-    where: { closedAt: { gte: today }, status: 'CLOSED' }
-  });
-  const pnlDay = todayTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
   const tradesExecutedToday = await prisma.trade.count({ where: { openedAt: { gte: today } } });
 
-  // Total P&L
+  // Total P&L = realized (closed trades) + unrealized (open positions) — was
+  // realized-only, so it read exactly $0.00 forever until the first trade
+  // closed even while open positions had real, visible gains/losses.
   const allTrades = await prisma.trade.findMany({ where: { status: 'CLOSED' } });
-  const pnlTotal = allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+  const realizedPnlTotal = allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+  const pnlTotal = realizedPnlTotal + unrealizedPnlTotal;
 
   let cashBalance = STARTING_CAPITAL + pnlTotal - invested;
   let totalValue = cashBalance + invested;
@@ -64,6 +64,18 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     logger.warn('Alpaca account fetch failed, falling back to locally-tracked portfolio value', { error: (err as Error).message });
   }
 
+  // Today's P&L = change in total portfolio value since the start of today,
+  // not just realized trades — matches what "Today's P&L" means on every real
+  // broker dashboard (and what the Portfolio Value chart right next to it
+  // already implies). Falls back to realized+unrealized when there's no prior
+  // snapshot yet (e.g. very first day of a fresh deployment).
+  const startOfDaySnapshot = await prisma.portfolioSnapshot.findFirst({
+    where: { timestamp: { lt: today } },
+    orderBy: { timestamp: 'desc' }
+  });
+  const pnlDay = startOfDaySnapshot
+    ? totalValue - startOfDaySnapshot.totalValue
+    : realizedPnlTotal + unrealizedPnlTotal;
   const pnlDayPct = (pnlDay / totalValue) * 100;
 
   // Get portfolio peak

@@ -208,9 +208,18 @@ export function initScheduler() {
 
   // ── EVERY HOUR: Market Regime Detection (crypto + next stock batch) ─────
   cron.schedule('0 * * * *', async () => {
-    const cryptoAssets = CRYPTO_ASSETS.slice(0, 3).map(a => ({ asset: a, market: 'crypto' as const }));
-    const stockAssets = getNextStockBatch(2).map(a => ({ asset: a, market: 'stocks' as const }));
-    const regimeAssets = [...cryptoAssets, ...stockAssets];
+    // Held positions always get a fresh regime read regardless of where they
+    // land in the rotation — same reasoning as refreshOpenPositionStockPrices:
+    // Investment Plan showed "No cached regime read yet" for NVDA/AMZN
+    // indefinitely, since the blind rotation could take weeks to reach them
+    // out of the full ~7000-stock universe.
+    const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true, market: true } });
+    const heldAssets = openPositions.map(p => ({ asset: p.asset, market: p.market as 'crypto' | 'stocks' }));
+    const heldSymbols = new Set(heldAssets.map(a => a.asset));
+
+    const cryptoAssets = CRYPTO_ASSETS.slice(0, 3).map(a => ({ asset: a, market: 'crypto' as const })).filter(a => !heldSymbols.has(a.asset));
+    const stockAssets = getNextStockBatch(2).map(a => ({ asset: a, market: 'stocks' as const })).filter(a => !heldSymbols.has(a.asset));
+    const regimeAssets = [...heldAssets, ...cryptoAssets, ...stockAssets];
     for (const { asset, market } of regimeAssets) {
       try {
         const snapshot = await buildMarketSnapshot(asset, market);

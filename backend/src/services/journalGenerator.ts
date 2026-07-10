@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
+import { extractResponseText } from '../utils/anthropicText';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -42,13 +43,23 @@ Write a professional 2-3 paragraph journal entry covering:
 
 Write in first person as if you are the AI trading system reporting to the owner.`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }]
-    });
-
-    const summary = response.content[0].type === 'text' ? response.content[0].text : 'Journal generation failed';
+    // This cron only runs once a night — a single transient API blip
+    // previously lost that day's entry silently with no retry, which is how
+    // 80 of the last 82 nights ended up with no journal row at all.
+    let summary = '';
+    for (let attempt = 0; attempt < 2 && !summary; attempt++) {
+      try {
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-5',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: prompt }]
+        });
+        summary = extractResponseText(response.content);
+      } catch (err) {
+        if (attempt === 1) throw err;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
 
     await prisma.dailyJournal.upsert({
       where: { date: dateStr },
