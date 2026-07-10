@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { TradeSignal, PortfolioState } from '../agents/types';
 import { getIO } from '../websocket/server';
 import { activateKillSwitch } from '../agents/orchestrator';
+import { correlationService } from '../services/correlationService';
 
 // ── RISK MANAGER ──────────────────────────────────────────────────────────────
 export async function validateTradeSignal(
@@ -49,6 +50,19 @@ export async function validateTradeSignal(
   const tradeValuePct = signal.positionSizePct || 0;
   if (tradeValuePct > maxPositionPct) {
     return { approved: false, reason: `Position size would exceed ${maxPositionPct}% limit` };
+  }
+
+  // Cross-asset correlation check — topTraderRules LAW 15 only counts crypto
+  // positions, so e.g. 5 correlated tech stocks wasn't caught. Uses real
+  // Pearson correlation on daily returns (correlationService), not the flat
+  // always-true stub this used to be.
+  const heldAssets = (portfolio.positions || []).map((p: any) => p.asset).filter((a: string) => a !== signal.asset);
+  if (heldAssets.length > 0) {
+    const concentration = await correlationService.shouldAddAssetToPortfolio(signal.asset, heldAssets, 0.75).catch(() => null);
+    if (concentration && !concentration.shouldAdd) {
+      logger.warn(`🛑 Concentration risk blocked: ${signal.asset}`, { reason: concentration.reason });
+      return { approved: false, reason: concentration.reason };
+    }
   }
 
   return { approved: true };
