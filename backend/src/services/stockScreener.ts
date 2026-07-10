@@ -61,11 +61,11 @@ export async function runDailyScreen(): Promise<ScreenedStock[]> {
 function recentTradingDates(n: number): string[] {
   const dates: string[] = [];
   const d = new Date();
-  d.setDate(d.getDate() - 1);
+  d.setUTCDate(d.getUTCDate() - 1);
   while (dates.length < n) {
-    const day = d.getDay();
+    const day = d.getUTCDay();
     if (day !== 0 && day !== 6) dates.push(d.toISOString().slice(0, 10));
-    d.setDate(d.getDate() - 1);
+    d.setUTCDate(d.getUTCDate() - 1);
   }
   return dates;
 }
@@ -94,7 +94,8 @@ async function fetchGroupedDailyCandidates(): Promise<ScreenedStock[]> {
   }
 
   return (latestRes.value.data?.results || []).map((bar: any) => {
-    const prevVolume = prevBySymbol.get(bar.T) || bar.v;
+    const prevBarVolume = prevBySymbol.get(bar.T);
+    const prevVolume = prevBarVolume !== undefined ? prevBarVolume : bar.v;
     const changePercent = bar.o > 0 ? ((bar.c - bar.o) / bar.o) * 100 : 0;
     const volumeRatio = bar.v / Math.max(prevVolume, 1);
     const norm = { price: bar.c, changePercent, volume: bar.v, volumeRatio };

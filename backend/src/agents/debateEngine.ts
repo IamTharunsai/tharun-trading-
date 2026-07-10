@@ -710,12 +710,21 @@ export async function runInvestmentCommitteeDebate(
 
   // Volatility-based risk distance (ATR) instead of a flat percentage — a quiet
   // stock and a wild one shouldn't get the same stop distance. Floors/ceilings
-  // guard against degenerate ATR readings (near-zero or spiking).
+  // guard against degenerate ATR readings (near-zero or spiking); falls back to
+  // the floor (tightest stop) if ATR is unavailable (e.g. thin/no candle history)
+  // instead of letting a NaN silently become an un-triggerable stop-loss.
   const floorPct = snapshot.market === 'crypto' ? 0.02 : 0.01;
   const ceilingPct = snapshot.market === 'crypto' ? 0.10 : 0.07;
-  const atrPct = snapshot.indicators.atr14 / snapshot.price;
+  const rawAtrPct = snapshot.indicators.atr14 / snapshot.price;
+  const atrPct = Number.isFinite(rawAtrPct) && rawAtrPct > 0 ? rawAtrPct : floorPct;
   const stopLossPct = Math.min(Math.max(atrPct * 1.5, floorPct), ceilingPct);
-  const takeProfitPct = Math.min(Math.max(atrPct * 3, floorPct * 2), ceilingPct * 2);
+  // Take-profit is derived from the already-clamped stop distance with a fixed
+  // 2.5x margin, not computed independently — topTraderRules LAW 3 rejects any
+  // trade under a 2:1 ratio, and deriving both sides from the same ATR reading
+  // with matching clamp multipliers made every trade land exactly on that
+  // boundary, where floating-point rounding could tip a valid trade into a
+  // false rejection.
+  const takeProfitPct = stopLossPct * 2.5;
   const direction = masterDecision.finalDecision;
   const stopLoss = direction === 'BUY' ? snapshot.price * (1 - stopLossPct) : snapshot.price * (1 + stopLossPct);
   const takeProfit = direction === 'BUY' ? snapshot.price * (1 + takeProfitPct) : snapshot.price * (1 - takeProfitPct);

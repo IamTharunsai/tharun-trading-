@@ -106,43 +106,54 @@ export function initScheduler() {
   // previously this used two hardcoded UTC crons (13:35 + 14:35) that both
   // fired every single day year-round, double-running (and double-billing)
   // the market-open scan regardless of season.
-  // Most liquid 10 of the 30 tracked coins — was hardcoded to just BTC/ETH/SOL before.
+  // First 10 of the 30 tracked coins (list is roughly market-cap ordered, not
+  // measured) — was hardcoded to just BTC/ETH/SOL before. ponytail: not a real
+  // liquidity ranking, upgrade to a scored crypto screen if that matters later.
   const CRYPTO_SCAN_LIST = CRYPTO_ASSETS.slice(0, 10);
   const ET_ZONE = 'America/New_York';
   // Cap on debates per scan window — keeps API cost bounded while still giving
   // the screen room to move past the first batch when everything HOLDs.
   const MAX_STOCKS_PER_SCAN = 20;
 
-  // Keeps pulling the next batch from the screened list — instead of stopping after
+  // Keeps moving to the next symbol in the screened list — instead of stopping after
   // a fixed 5 — until something actually trades or the per-window cap is hit.
-  const scanStocksUntilTrade = async (label: string, startSkip: number) => {
-    if (isKillSwitchActive()) return;
-    let skip = startSkip;
-    let tried = 0;
-    let symbols = await pickDynamicSymbols(5, skip);
+  // Fetches the screened+affordability-filtered pool once and slices it locally
+  // instead of re-screening the whole market on every batch (was hitting Polygon
+  // repeatedly for the same data within one scan window). Returns how many
+  // symbols it actually debated, so a caller with a follow-up window (mid-day)
+  // can start past exactly what was covered instead of assuming the cap was hit.
+  const scanStocksUntilTrade = async (label: string, startSkip: number): Promise<number> => {
+    if (isKillSwitchActive()) return 0;
+    const pool = await pickDynamicSymbols(startSkip + MAX_STOCKS_PER_SCAN, 0);
+    const symbols = pool.slice(startSkip, startSkip + MAX_STOCKS_PER_SCAN);
     logger.info(`${label} — screened top ${symbols.length} opportunities: ${symbols.join(', ')}`);
-    while (symbols.length > 0 && tried < MAX_STOCKS_PER_SCAN) {
-      for (const symbol of symbols) {
-        if (tried >= MAX_STOCKS_PER_SCAN) break;
-        const transcript = await runDebateForAsset(symbol, 'stocks').catch(err => {
-          logger.error(`${label} debate failed`, { err, symbol });
-          return null;
-        });
-        tried++;
-        await new Promise(r => setTimeout(r, 5000));
-        if (transcript?.executionApproved) {
-          logger.info(`${label} — trade found on ${symbol}, stopping scan`);
-          return;
-        }
+    let tried = 0;
+    for (const symbol of symbols) {
+      if (isKillSwitchActive()) return tried;
+      const transcript = await runDebateForAsset(symbol, 'stocks').catch(err => {
+        logger.error(`${label} debate failed`, { err, symbol });
+        return null;
+      });
+      tried++;
+      await new Promise(r => setTimeout(r, 5000));
+      if (transcript?.executionApproved) {
+        logger.info(`${label} — trade found on ${symbol}, stopping scan`);
+        return tried;
       }
-      skip += 5;
-      symbols = await pickDynamicSymbols(5, skip);
     }
+    return tried;
   };
-  cron.schedule('35 9 * * 1-5', () => scanStocksUntilTrade('🔔 MARKET OPEN', 0), { timezone: ET_ZONE });
+  // Tracks how many symbols the market-open scan actually consumed, so the
+  // mid-day scan resumes right after — not at a fixed offset that either
+  // overlaps (wasted re-debates) or skips symbols entirely (an early market-open
+  // exit on a fast trade left #4-20 forever unevaluated under the old fixed skip).
+  let marketOpenTriedCount = MAX_STOCKS_PER_SCAN;
+  cron.schedule('35 9 * * 1-5', async () => {
+    marketOpenTriedCount = await scanStocksUntilTrade('🔔 MARKET OPEN', 0);
+  }, { timezone: ET_ZONE });
 
   // ── MID-DAY 1:00 PM ET — continue past where the market-open scan left off ──
-  cron.schedule('0 13 * * 1-5', () => scanStocksUntilTrade('☀️ MID-DAY SCAN', MAX_STOCKS_PER_SCAN), { timezone: ET_ZONE });
+  cron.schedule('0 13 * * 1-5', () => scanStocksUntilTrade('☀️ MID-DAY SCAN', marketOpenTriedCount), { timezone: ET_ZONE });
 
   // ── CRYPTO: once per day at 8 AM ET — stop early once one trades ─────────
   cron.schedule('0 8 * * *', async () => {
