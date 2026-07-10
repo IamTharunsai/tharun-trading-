@@ -244,12 +244,26 @@ export function initScheduler() {
   });
 
   // ── EVERY 30 MINUTES: Polymarket Opportunity Scan ────────────────────────
+  // placePolymarketBet had no dedup/position-limit check at all — every scan
+  // blindly opened new bets regardless of what was already open, so the same
+  // top-ranked market (whose recommendation doesn't change much scan to scan)
+  // kept getting re-bet every 30 minutes indefinitely, unlike the stock/crypto
+  // path which already checks for an existing open position per asset before
+  // debating. Capped concurrent Polymarket positions at 3 (matching the
+  // existing "top 3 opportunities" sizing) and skip placing more once at cap.
+  const MAX_OPEN_POLYMARKET_POSITIONS = 3;
   cron.schedule('*/30 * * * *', async () => {
     if (isKillSwitchActive()) return;
     try {
+      const openCount = await prisma.trade.count({ where: { asset: 'POLYMARKET', status: 'OPEN' } });
+      const slotsAvailable = MAX_OPEN_POLYMARKET_POSITIONS - openCount;
+      if (slotsAvailable <= 0) {
+        logger.info(`🎯 Polymarket at max open positions (${openCount}/${MAX_OPEN_POLYMARKET_POSITIONS}) — skipping scan`);
+        return;
+      }
       const portfolio = await getPortfolioState();
       const opportunities = await scanPolymarketOpportunities(portfolio.totalValue);
-      for (const opp of opportunities.slice(0, 3)) {
+      for (const opp of opportunities.slice(0, slotsAvailable)) {
         await placePolymarketBet(opp, opp.question, true); // paper mode
       }
     } catch (err: any) { logger.warn(`Polymarket scan skipped: ${err?.message || err?.code || 'network error'}`); }
