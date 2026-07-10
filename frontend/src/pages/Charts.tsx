@@ -21,6 +21,7 @@ export default function ChartsPage() {
   const [selected, setSelected] = useState('BTC');
   const [browseAll, setBrowseAll] = useState(false);
   const [sortBy, setSortBy] = useState<'debates' | 'alpha'>('debates');
+  const [sectorFilter, setSectorFilter] = useState('ALL');
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
 
@@ -70,16 +71,23 @@ export default function ChartsPage() {
   });
   const universeMap = new Map<string, any>((universe || []).map((u: any) => [u.symbol, u]));
 
-  type Opt = { symbol: string; name: string; debateCount: number };
+  type Opt = { symbol: string; name: string; debateCount: number; sector: string | null };
   let optionList: Opt[];
   if (market === 'crypto') {
-    optionList = cryptoSymbols.map(s => ({ symbol: s, name: s, debateCount: universeMap.get(s)?.debateCount || 0 }));
+    optionList = cryptoSymbols.map(s => ({ symbol: s, name: s, debateCount: universeMap.get(s)?.debateCount || 0, sector: null }));
   } else if (browseAll) {
-    optionList = (allStocksList || []).map((a: any) => ({ symbol: a.symbol, name: a.name, debateCount: universeMap.get(a.symbol)?.debateCount || 0 }));
+    optionList = (allStocksList || []).map((a: any) => ({ symbol: a.symbol, name: a.name, debateCount: universeMap.get(a.symbol)?.debateCount || 0, sector: a.sector }));
   } else {
-    optionList = stockSymbols.map(s => ({ symbol: s, name: universeMap.get(s)?.name || s, debateCount: universeMap.get(s)?.debateCount || 0 }));
+    optionList = stockSymbols.map(s => ({ symbol: s, name: universeMap.get(s)?.name || s, debateCount: universeMap.get(s)?.debateCount || 0, sector: universeMap.get(s)?.sector || null }));
   }
-  const symbolOptions = [...optionList].sort((a, b) =>
+  // Sector data only exists for symbols we've actually analyzed — not
+  // guessed for the rest, so the filter list only shows real sectors and
+  // "Not yet analyzed" is its own explicit bucket, not silently dropped.
+  const availableSectors = Array.from(new Set(optionList.map(o => o.sector).filter(Boolean))) as string[];
+  const filteredBySector = sectorFilter === 'ALL' ? optionList
+    : sectorFilter === 'UNANALYZED' ? optionList.filter(o => !o.sector)
+    : optionList.filter(o => o.sector === sectorFilter);
+  const symbolOptions = [...filteredBySector].sort((a, b) =>
     sortBy === 'alpha' ? a.symbol.localeCompare(b.symbol) : (b.debateCount - a.debateCount) || a.symbol.localeCompare(b.symbol)
   );
 
@@ -198,6 +206,15 @@ export default function ChartsPage() {
               <input type="checkbox" checked={browseAll} onChange={e => setBrowseAll(e.target.checked)} />
               All US stocks
             </label>
+          )}
+          {market === 'stocks' && browseAll && (
+            <select value={sectorFilter} onChange={e => setSectorFilter(e.target.value)}
+              title="Sector data only exists for symbols we've actually analyzed"
+              style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
+              <option value="ALL">All sectors</option>
+              {availableSectors.map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="UNANALYZED">Not yet analyzed</option>
+            </select>
           )}
         </div>
       </div>

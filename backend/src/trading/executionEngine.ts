@@ -156,10 +156,21 @@ export async function executeTradeSignal(
     let fillPrice = signal.entryPrice;
     let fillQty = finalQty;
 
-    // Send to Alpaca paper API so it shows in dashboard
-    try {
-      const client = await getBrokerClient(signal.market);
-      if (client && signal.market === 'stocks') {
+    // Send to Alpaca paper API so it shows in dashboard. Stocks route through
+    // a real Alpaca paper account and must actually confirm there — a
+    // rejected order (e.g. SDOT: a SELL/short order Alpaca rejected, most
+    // likely not shortable) was previously swallowed by the catch below and
+    // the trade got recorded as brokerConfirmed:true anyway. The stop-loss
+    // monitor then "closed" that phantom position 19 seconds later using our
+    // own price feed, fabricating a $1,060 profit that never existed on
+    // Alpaca — corrupting every P&L/win-rate stat downstream. Crypto has no
+    // real paper-account integration by design (Binance US isn't configured
+    // here), so it's intentionally exempt from this and stays locally
+    // simulated as before.
+    if (signal.market === 'stocks') {
+      try {
+        const client = await getBrokerClient(signal.market);
+        if (!client) throw new Error('Alpaca client unavailable');
         const order = await client.createOrder({
           symbol: signal.asset,
           qty: Math.max(1, Math.floor(finalQty * 100) / 100),
@@ -180,13 +191,14 @@ export async function executeTradeSignal(
             break;
           }
           if (status?.status === 'canceled' || status?.status === 'rejected' || status?.status === 'expired') {
-            logger.warn(`Order ${order.id} ended as ${status.status} — keeping quoted price`);
-            break;
+            throw new Error(`Order ended as ${status.status}`);
           }
         }
+      } catch (brokerErr: any) {
+        logger.error(`🚫 Alpaca paper order FAILED for ${signal.asset} — not tracking as a real trade`, { error: brokerErr.message });
+        await prisma.trade.update({ where: { id: tradeRecord.id }, data: { status: 'FAILED', exitReason: `Broker rejected: ${brokerErr.message}` } });
+        return false;
       }
-    } catch (brokerErr: any) {
-      logger.warn(`Alpaca paper order failed (trade still recorded): ${brokerErr.message}`);
     }
 
     await prisma.trade.update({ where: { id: tradeRecord.id }, data: { brokerConfirmed: true, brokerOrderId, entryPrice: fillPrice, quantity: fillQty } });

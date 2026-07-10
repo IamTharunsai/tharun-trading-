@@ -259,10 +259,20 @@ marketRouter.get('/ipo-calendar', async (_req: Request, res: Response) => {
 });
 
 // ── Every tradeable US stock (browse-all, not just debated) ───────────────────
+// Sector/industry is only real for symbols we've actually analyzed
+// (CompanyFundamentals, ~20 today, grows as more get debated) — getting real
+// sector data for all ~7400 would mean one rate-limited API call per symbol
+// (hours, and we'd get blocked). Returns null rather than guessing for the
+// rest, so the frontend can show "—" honestly instead of fake coverage.
 marketRouter.get('/all-stocks', async (_req: Request, res: Response) => {
   try {
     const { getAllStocksDetailed } = await import('../services/marketData');
-    res.json(getAllStocksDetailed());
+    const [stocks, fundamentals] = await Promise.all([
+      getAllStocksDetailed(),
+      prisma.companyFundamentals.findMany({ select: { symbol: true, sector: true, industry: true } }),
+    ]);
+    const sectorMap = new Map(fundamentals.map(f => [f.symbol, { sector: f.sector, industry: f.industry }]));
+    res.json(stocks.map(s => ({ ...s, sector: sectorMap.get(s.symbol)?.sector || null, industry: sectorMap.get(s.symbol)?.industry || null })));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch stock list' });
   }
