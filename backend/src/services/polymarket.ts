@@ -89,14 +89,14 @@ export async function fetchActiveEvents(
 
     // Filter for viable trading opportunities
     return markets
-      .filter((m: any) => m.volume24hr > minVolume && m.liquidity > minLiquidity)
+      .filter((m: any) => Number(m.volume24hr) > minVolume && Number(m.liquidity) > minLiquidity)
       .map((m: any) => ({
         id: m.id,
         title: m.question || m.title,
         description: m.description || '',
         resolutionDate: m.end_date_iso,
-        volume24h: m.volume24hr || 0,
-        liquidity: m.liquidity || 0,
+        volume24h: Number(m.volume24hr) || 0,
+        liquidity: Number(m.liquidity) || 0,
         category: m.category || 'general',
         markets: [{
           id: m.id,
@@ -104,8 +104,8 @@ export async function fetchActiveEvents(
           conditionId: m.condition_id,
           yesPrice: parseFloat(m.best_ask || m.last_trade_price || '0.5'),
           noPrice: 1 - parseFloat(m.best_ask || m.last_trade_price || '0.5'),
-          volume: m.volume24hr || 0,
-          liquidity: m.liquidity || 0,
+          volume: Number(m.volume24hr) || 0,
+          liquidity: Number(m.liquidity) || 0,
           endDate: m.end_date_iso,
         }]
       }));

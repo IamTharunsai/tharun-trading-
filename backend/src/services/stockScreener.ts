@@ -37,28 +37,9 @@ export async function runDailyScreen(): Promise<ScreenedStock[]> {
   try {
     logger.info('🔍 Running daily stock screen...');
 
-    const [gainers, actives] = await Promise.allSettled([
-      fetchTopGainers(),
-      fetchMostActive(),
-    ]);
+    const candidates = await fetchGroupedDailyCandidates();
 
-    const gainerList = gainers.status === 'fulfilled' ? gainers.value : [];
-    const activeList = actives.status === 'fulfilled' ? actives.value : [];
-
-    // Merge and deduplicate
-    const symbolMap = new Map<string, ScreenedStock>();
-    for (const s of [...gainerList, ...activeList]) {
-      if (!symbolMap.has(s.symbol)) {
-        symbolMap.set(s.symbol, s);
-      } else {
-        // Boost score if appears in multiple screens
-        const existing = symbolMap.get(s.symbol)!;
-        existing.screenScore = Math.min(100, existing.screenScore + 15);
-        existing.screenReasons.push('Appears in multiple screens');
-      }
-    }
-
-    const candidates = Array.from(symbolMap.values())
+    const filtered = candidates
       .filter(s => s.screenScore >= 40)
       .filter(s => s.price >= 5)                  // no penny stocks
       .filter(s => s.volume >= 200000)             // meaningful liquidity
@@ -66,8 +47,8 @@ export async function runDailyScreen(): Promise<ScreenedStock[]> {
       .sort((a, b) => b.screenScore - a.screenScore)
       .slice(0, 150);
 
-    logger.info(`✅ Screen complete: ${candidates.length} candidates from ${symbolMap.size} stocks`);
-    return candidates;
+    logger.info(`✅ Screen complete: ${filtered.length} candidates from ${candidates.length} stocks`);
+    return filtered;
 
   } catch (err) {
     logger.error('Stock screen failed', { err });
@@ -75,85 +56,74 @@ export async function runDailyScreen(): Promise<ScreenedStock[]> {
   }
 }
 
-// ── POLYGON: TOP GAINERS/LOSERS ───────────────────────────────────────────────
-async function fetchTopGainers(): Promise<ScreenedStock[]> {
-  try {
-    const res = await axios.get('https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers', {
-      params: { apiKey: POLY_KEY, include_otc: false },
-      timeout: 10000
-    });
-
-    return (res.data?.tickers || []).slice(0, 50).map((t: any) => {
-      const score = calculateScreenScore(t);
-      return {
-        symbol: t.ticker,
-        price: t.day?.c || t.lastTrade?.p || 0,
-        changePercent: t.todaysChangePerc || 0,
-        volume: t.day?.v || 0,
-        avgVolume: t.prevDay?.v || 1,
-        volumeRatio: t.day?.v / Math.max(t.prevDay?.v || 1, 1),
-        marketCap: 0,
-        sector: '',
-        screenScore: score,
-        screenReasons: buildReasons(t),
-        screenFlags: buildFlags(t),
-        isNearHigh: false,
-        hasVolumeSpike: (t.day?.v / Math.max(t.prevDay?.v || 1, 1)) > 1.5,
-        isTrending: t.day?.c > (t.prevDay?.c || 0),
-      };
-    });
-  } catch {
-    return [];
+// Most recent N weekdays (YYYY-MM-DD), most recent first, starting from yesterday —
+// "today"'s grouped-daily bar isn't finalized until after market close.
+function recentTradingDates(n: number): string[] {
+  const dates: string[] = [];
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  while (dates.length < n) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) dates.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() - 1);
   }
+  return dates;
 }
 
-// ── POLYGON: MOST ACTIVE ─────────────────────────────────────────────────────
-async function fetchMostActive(): Promise<ScreenedStock[]> {
-  try {
-    const res = await axios.get('https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers', {
-      params: {
-        apiKey: POLY_KEY,
-        include_otc: false,
-        sort: 'volume',
-        order: 'desc',
-        limit: 50,
-      },
-      timeout: 10000
-    });
+// ── POLYGON: GROUPED DAILY (free-tier eligible — snapshot/gainers & tickers are not) ──
+// Computes gainers + most-active ourselves from two days of full-market EOD bars.
+async function fetchGroupedDailyCandidates(): Promise<ScreenedStock[]> {
+  const [latestDate, prevDate] = recentTradingDates(2);
+  const [latestRes, prevRes] = await Promise.allSettled([
+    axios.get(`https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${latestDate}`, {
+      params: { apiKey: POLY_KEY, adjusted: true }, timeout: 15000
+    }),
+    axios.get(`https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${prevDate}`, {
+      params: { apiKey: POLY_KEY, adjusted: true }, timeout: 15000
+    }),
+  ]);
 
-    return (res.data?.tickers || []).slice(0, 50).map((t: any) => {
-      const score = calculateScreenScore(t);
-      return {
-        symbol: t.ticker,
-        price: t.day?.c || 0,
-        changePercent: t.todaysChangePerc || 0,
-        volume: t.day?.v || 0,
-        avgVolume: t.prevDay?.v || 1,
-        volumeRatio: t.day?.v / Math.max(t.prevDay?.v || 1, 1),
-        marketCap: 0,
-        sector: '',
-        screenScore: score,
-        screenReasons: buildReasons(t),
-        screenFlags: buildFlags(t),
-        isNearHigh: false,
-        hasVolumeSpike: (t.day?.v / Math.max(t.prevDay?.v || 1, 1)) > 1.5,
-        isTrending: t.day?.c > (t.prevDay?.c || 0),
-      };
-    });
-  } catch {
+  if (latestRes.status !== 'fulfilled') {
+    logger.warn('Grouped-daily screen fetch failed', { error: (latestRes as PromiseRejectedResult).reason?.message });
     return [];
   }
+
+  const prevBySymbol = new Map<string, number>();
+  if (prevRes.status === 'fulfilled') {
+    for (const bar of prevRes.value.data?.results || []) prevBySymbol.set(bar.T, bar.v);
+  }
+
+  return (latestRes.value.data?.results || []).map((bar: any) => {
+    const prevVolume = prevBySymbol.get(bar.T) || bar.v;
+    const changePercent = bar.o > 0 ? ((bar.c - bar.o) / bar.o) * 100 : 0;
+    const volumeRatio = bar.v / Math.max(prevVolume, 1);
+    const norm = { price: bar.c, changePercent, volume: bar.v, volumeRatio };
+    return {
+      symbol: bar.T,
+      price: bar.c,
+      changePercent,
+      volume: bar.v,
+      avgVolume: prevVolume,
+      volumeRatio,
+      marketCap: 0,
+      sector: '',
+      screenScore: calculateScreenScore(norm),
+      screenReasons: buildReasons(norm),
+      screenFlags: buildFlags(norm),
+      isNearHigh: false,
+      hasVolumeSpike: volumeRatio > 1.5,
+      isTrending: bar.c > bar.o,
+    };
+  });
 }
 
 // ── SCORE CALCULATOR (CANSLIM + Minervini inspired) ──────────────────────────
-function calculateScreenScore(t: any): number {
+interface NormalizedBar { price: number; changePercent: number; volume: number; volumeRatio: number; }
+
+function calculateScreenScore(t: NormalizedBar): number {
   let score = 30; // base score
 
-  const changePercent = t.todaysChangePerc || 0;
-  const price = t.day?.c || 0;
-  const volume = t.day?.v || 0;
-  const prevVolume = t.prevDay?.v || 1;
-  const volumeRatio = volume / prevVolume;
+  const { changePercent, price, volume, volumeRatio } = t;
 
   // Price momentum (O'Neil: buy stocks making new highs)
   if (changePercent > 5) score += 20;
@@ -179,23 +149,18 @@ function calculateScreenScore(t: any): number {
   return Math.min(100, Math.max(0, score));
 }
 
-function buildReasons(t: any): string[] {
+function buildReasons(t: NormalizedBar): string[] {
   const reasons: string[] = [];
-  const change = t.todaysChangePerc || 0;
-  const volRatio = (t.day?.v || 0) / Math.max(t.prevDay?.v || 1, 1);
-
-  if (change > 5) reasons.push(`Strong momentum: +${change.toFixed(1)}% today`);
-  if (volRatio > 2) reasons.push(`Volume spike: ${volRatio.toFixed(1)}x average`);
-  if (change > 0 && volRatio > 1.5) reasons.push('Price + volume confirmation (O\'Neil criteria)');
+  if (t.changePercent > 5) reasons.push(`Strong momentum: +${t.changePercent.toFixed(1)}% today`);
+  if (t.volumeRatio > 2) reasons.push(`Volume spike: ${t.volumeRatio.toFixed(1)}x average`);
+  if (t.changePercent > 0 && t.volumeRatio > 1.5) reasons.push('Price + volume confirmation (O\'Neil criteria)');
   return reasons;
 }
 
-function buildFlags(t: any): string[] {
+function buildFlags(t: NormalizedBar): string[] {
   const flags: string[] = [];
-  const price = t.day?.c || 0;
-  const change = t.todaysChangePerc || 0;
-  if (price < 5) flags.push('Low price stock — higher risk');
-  if (Math.abs(change) > 15) flags.push('Extreme move — possible news catalyst, verify before trade');
+  if (t.price < 5) flags.push('Low price stock — higher risk');
+  if (Math.abs(t.changePercent) > 15) flags.push('Extreme move — possible news catalyst, verify before trade');
   return flags;
 }
 

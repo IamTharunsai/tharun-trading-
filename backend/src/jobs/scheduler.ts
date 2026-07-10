@@ -106,38 +106,55 @@ export function initScheduler() {
   // previously this used two hardcoded UTC crons (13:35 + 14:35) that both
   // fired every single day year-round, double-running (and double-billing)
   // the market-open scan regardless of season.
-  const TOP_CRYPTO = ['BTC', 'ETH', 'SOL'];
+  // Most liquid 10 of the 30 tracked coins — was hardcoded to just BTC/ETH/SOL before.
+  const CRYPTO_SCAN_LIST = CRYPTO_ASSETS.slice(0, 10);
   const ET_ZONE = 'America/New_York';
+  // Cap on debates per scan window — keeps API cost bounded while still giving
+  // the screen room to move past the first batch when everything HOLDs.
+  const MAX_STOCKS_PER_SCAN = 20;
 
-  const marketOpenScan = async () => {
+  // Keeps pulling the next batch from the screened list — instead of stopping after
+  // a fixed 5 — until something actually trades or the per-window cap is hit.
+  const scanStocksUntilTrade = async (label: string, startSkip: number) => {
     if (isKillSwitchActive()) return;
-    const symbols = await pickDynamicSymbols(5);
-    logger.info(`🔔 MARKET OPEN — screened top ${symbols.length} opportunities: ${symbols.join(', ')}`);
-    for (const symbol of symbols) {
-      await runDebateForAsset(symbol, 'stocks').catch(err => logger.error('Market-open debate failed', { err, symbol }));
-      await new Promise(r => setTimeout(r, 5000));
+    let skip = startSkip;
+    let tried = 0;
+    let symbols = await pickDynamicSymbols(5, skip);
+    logger.info(`${label} — screened top ${symbols.length} opportunities: ${symbols.join(', ')}`);
+    while (symbols.length > 0 && tried < MAX_STOCKS_PER_SCAN) {
+      for (const symbol of symbols) {
+        if (tried >= MAX_STOCKS_PER_SCAN) break;
+        const transcript = await runDebateForAsset(symbol, 'stocks').catch(err => {
+          logger.error(`${label} debate failed`, { err, symbol });
+          return null;
+        });
+        tried++;
+        await new Promise(r => setTimeout(r, 5000));
+        if (transcript?.executionApproved) {
+          logger.info(`${label} — trade found on ${symbol}, stopping scan`);
+          return;
+        }
+      }
+      skip += 5;
+      symbols = await pickDynamicSymbols(5, skip);
     }
   };
-  cron.schedule('35 9 * * 1-5', marketOpenScan, { timezone: ET_ZONE });
+  cron.schedule('35 9 * * 1-5', () => scanStocksUntilTrade('🔔 MARKET OPEN', 0), { timezone: ET_ZONE });
 
-  // ── MID-DAY 1:00 PM ET — re-screen, take the next batch ──────────────────
-  cron.schedule('0 13 * * 1-5', async () => {
-    if (isKillSwitchActive()) return;
-    const symbols = await pickDynamicSymbols(5, 5);
-    logger.info(`☀️ MID-DAY SCAN — screened ${symbols.length} opportunities: ${symbols.join(', ')}`);
-    for (const symbol of symbols) {
-      await runDebateForAsset(symbol, 'stocks').catch(() => {});
-      await new Promise(r => setTimeout(r, 5000));
-    }
-  }, { timezone: ET_ZONE });
+  // ── MID-DAY 1:00 PM ET — continue past where the market-open scan left off ──
+  cron.schedule('0 13 * * 1-5', () => scanStocksUntilTrade('☀️ MID-DAY SCAN', MAX_STOCKS_PER_SCAN), { timezone: ET_ZONE });
 
-  // ── CRYPTO: once per day at 8 AM ET ──────────────────────────────────────
+  // ── CRYPTO: once per day at 8 AM ET — stop early once one trades ─────────
   cron.schedule('0 8 * * *', async () => {
     if (isKillSwitchActive()) return;
     logger.info('🪙 DAILY CRYPTO SCAN...');
-    for (const coin of TOP_CRYPTO) {
-      await runDebateForAsset(coin, 'crypto').catch(() => {});
+    for (const coin of CRYPTO_SCAN_LIST) {
+      const transcript = await runDebateForAsset(coin, 'crypto').catch(() => null);
       await new Promise(r => setTimeout(r, 5000));
+      if (transcript?.executionApproved) {
+        logger.info(`🪙 Trade found on ${coin}, stopping crypto scan`);
+        break;
+      }
     }
   }, { timezone: ET_ZONE });
 
