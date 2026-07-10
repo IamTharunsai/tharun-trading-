@@ -708,8 +708,14 @@ export async function runInvestmentCommitteeDebate(
     }
   }
 
-  const stopLossPct = snapshot.market === 'crypto' ? 0.03 : 0.02;
-  const takeProfitPct = 0.06;
+  // Volatility-based risk distance (ATR) instead of a flat percentage — a quiet
+  // stock and a wild one shouldn't get the same stop distance. Floors/ceilings
+  // guard against degenerate ATR readings (near-zero or spiking).
+  const floorPct = snapshot.market === 'crypto' ? 0.02 : 0.01;
+  const ceilingPct = snapshot.market === 'crypto' ? 0.10 : 0.07;
+  const atrPct = snapshot.indicators.atr14 / snapshot.price;
+  const stopLossPct = Math.min(Math.max(atrPct * 1.5, floorPct), ceilingPct);
+  const takeProfitPct = Math.min(Math.max(atrPct * 3, floorPct * 2), ceilingPct * 2);
   const direction = masterDecision.finalDecision;
   const stopLoss = direction === 'BUY' ? snapshot.price * (1 - stopLossPct) : snapshot.price * (1 + stopLossPct);
   const takeProfit = direction === 'BUY' ? snapshot.price * (1 + takeProfitPct) : snapshot.price * (1 - takeProfitPct);
