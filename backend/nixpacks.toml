@@ -2,7 +2,12 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install"]
+# --include=dev forces devDependencies (typescript, prisma, etc.) to install
+# even when NODE_ENV=production is set in the build environment — without
+# this, npm intermittently skips them depending on cache state, which is why
+# `tsc` was "not found" 3 times tonight under 3 different invocation styles
+# (npx, bare, direct-path) — the invocation was never the problem.
+cmds = ["npm install --include=dev"]
 
 [phases.build]
 cmds = [
