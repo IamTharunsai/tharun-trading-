@@ -166,6 +166,59 @@ A separate, previously-deferred piece of scope, now folded in:
   trading doesn't require this today, but retrofitting it after the fact (rather
   than before real money connects) is the wrong order.
 
+## Component 7 — Gap remediation (found via independent code audit, not the 6 repos)
+
+A prior architecture audit (re-derived directly from source, not from stale docs)
+surfaced real, verified gaps unrelated to the repo integrations above. One
+(unauthenticated backtest routes) was already fixed immediately as a same-day
+security patch (`backend/src/routes/backtest.ts` now applies `requireAuth`, matching
+every other router). The rest are folded in here:
+
+- **Manual position-close control**: new `POST /api/trades/:id/close` endpoint
+  (closes at current market price, records realized P&L like any other exit) plus a
+  plain close button added to the *current* Portfolio page now — not deferred to the
+  frontend redesign, since a user watching a bad paper trade with no way to exit it
+  is a real safety gap today. Superseded by a proper control once the redesign lands.
+- **9 dead DB models reconciled**: `AgentLesson`, `LearningResource`,
+  `GeopoliticalEvent`, `MacroIndicator`, `AgentPerformance`, `AgentLearningState`,
+  `GeoRiskAssessment`, `AgentConversation`, `NewsItem` currently sit unused while
+  their real data gets funneled into untyped `SystemLog.metadata` instead. Migrate
+  `selfLearning.ts`, `agentResourceLearning.ts`, and `geopoliticalIntelligence.ts` to
+  write into the typed tables that already exist for exactly this data. This directly
+  benefits Component 2's regime+symbol-matched lessons query — querying a proper
+  `AgentLesson` table is cleaner and faster than parsing JSON blobs out of a generic
+  log table.
+- **Run `backtestingEngine.ts` for real** against real historical data and evaluate
+  the existing go-live criteria (Sharpe >1.5, win rate >55%, max drawdown <20%,
+  profit factor >1.8) — it's been reachable via the API but never actually executed.
+  Given this spec adds a new voting agent, new debate logic, and an entirely new
+  day-trading pipeline, having a real backtest baseline before those ship (and
+  re-running it after) is the only way to know whether any of this is a genuine
+  improvement rather than an assumption.
+- **Fix fake MACD/Stochastic**: MACD's signal line is currently a fixed 0.2 scalar of
+  the MACD value (not a real 9-EMA smoothing) and Stochastic %D is `%K × 0.9` (not a
+  real 3-period SMA of %K) — both structurally cannot show genuine crossovers or
+  divergence even though agent prompts describe reading them that way. Implement the
+  real formulas.
+- **Fix `GET /intelligence/risk/macro`**: computes a real risk assessment internally,
+  then discards it and returns hardcoded zeros. Return the already-computed result.
+- **Reconcile the daily-loss-limit default**: `riskManager.ts` defaults to 5%, the
+  debate execution gate separately defaults to 3% for the same conceptual limit —
+  pick one canonical default and use it in both places.
+- **Wire in `weeklyDrawdownLimit`** as a real middle-tier circuit breaker between the
+  existing daily (3-5%) and all-time (20%) limits — currently declared and read but
+  never checked in any conditional.
+- **Polymarket position resolution**: nothing currently polls whether a Polymarket
+  market has resolved in the real world; resolved positions never close and their
+  P&L stays frozen indefinitely. Add resolution polling that closes matching trades
+  when Polymarket reports a market as resolved.
+
+**Explicitly not folded in now** (low-severity, cosmetic — noted, not silently
+dropped): Agent Chat only wiring 10 of 13 personas into its UI, ~30 stale
+status-report markdown files at the repo root, and a couple of minor copy
+inconsistencies ("13 SPECIALISTS" vs "X/15 agents voted"). Revisit during the
+frontend redesign or a future cleanup pass.
+
 ## Testing / verification
 
 - Kronos service: standalone health check + a manual forecast call against a known
@@ -188,6 +241,12 @@ A separate, previously-deferred piece of scope, now folded in:
 - Day-trading pipeline: confirm it runs independently of the swing engine (kill one,
   the other keeps running); confirm the PDT counter blocks a 4th day-trade within a
   rolling 5-business-day window in a test scenario.
+- Gap remediation: query the real production DB to confirm `AgentLesson`/etc. rows
+  are actually being written post-migration, not just that the code compiles; run
+  the backtest and confirm the response's Sharpe/win-rate/drawdown/profit-factor are
+  non-placeholder numbers; confirm a resolved Polymarket market actually closes its
+  matching trade in a test case; confirm the close-position endpoint moves a real
+  paper position from OPEN to CLOSED with a recorded realized P&L.
 
 ## Out of scope, noted explicitly (not silently dropped)
 
