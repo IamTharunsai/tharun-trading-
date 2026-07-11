@@ -7,8 +7,10 @@ import { Router, Request, Response } from 'express';
 import { runBacktest, evaluateBacktestResults, BacktestConfig } from '../trading/backtestingEngine';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
+router.use(requireAuth);
 
 /**
  * POST /api/backtest/run
