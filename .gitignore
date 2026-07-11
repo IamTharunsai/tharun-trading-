@@ -46,3 +46,5 @@ prisma/migrations/.prisma
 out/
 .vercel
 .env*
+
+.superpowers/
