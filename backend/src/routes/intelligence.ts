@@ -10,6 +10,7 @@ import { logger } from '../utils/logger';
 import agentActivityLogger from '../services/agentActivityLogger';
 import agentResourceLearning from '../services/agentResourceLearning';
 import geopoliticalIntelligence from '../services/geopoliticalIntelligence';
+import { intermarketService } from '../services/intermarketService';
 
 const router = Router();
 
@@ -272,15 +273,15 @@ router.get('/risk/events', requireAuth, async (req: Request, res: Response) => {
  */
 router.get('/risk/macro', requireAuth, async (req: Request, res: Response) => {
   try {
-    const assessment = await geopoliticalIntelligence.buildGeoRiskAssessment();
+    const analysis = await intermarketService.getIntermarketAnalysis();
 
-    // Extract macro data from assessment
     const macroData = {
-      fedRate: 0,
-      inflation: 0,
-      unemployment: 0,
-      vixLevel: 0,
-      usdEurRate: 0,
+      fedRate: null,
+      inflation: null,
+      unemployment: null,
+      vixLevel: analysis.assets.vix,
+      usdEurRate: null,
+      note: 'fedRate/inflation/unemployment/usdEurRate pending FRED integration (Macro Intelligence panel plan) — vixLevel is real, derived from the VIXY ETF proxy',
       timestamp: new Date()
     };
 
