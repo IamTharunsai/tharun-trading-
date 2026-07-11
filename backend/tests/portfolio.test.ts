@@ -88,4 +88,21 @@ describe('getPortfolioState — P&L math', () => {
     // just today's realized trades (there are none here).
     expect(state.pnlDay).toBeCloseTo(state.totalValue - 99000);
   });
+
+  it("computes pnlDayPct against the start-of-day baseline value, not current totalValue", async () => {
+    // 100k -> 50k drop (a $500,000 unrealized loss: 1000 shares, $1000 -> $500).
+    // Baseline-denominator (correct, matches pnlWeekPct): -50000 / 100000 = -50%.
+    // Current-value-denominator (the bug this test guards against): -50000 / 50000 = -100%.
+    (prisma.position.findMany as jest.Mock).mockResolvedValue([
+      mockPosition({ entryPrice: 1000, quantity: 100, currentPrice: 1000 }),
+    ]);
+    (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 500 });
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue({ totalValue: 100000 });
+
+    const state = await getPortfolioState();
+
+    expect(state.totalValue).toBeCloseTo(50000);
+    expect(state.pnlDayPct).toBeCloseTo(-50);
+  });
 });

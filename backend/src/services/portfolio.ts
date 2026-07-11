@@ -76,7 +76,15 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const pnlDay = startOfDaySnapshot
     ? totalValue - startOfDaySnapshot.totalValue
     : realizedPnlTotal + unrealizedPnlTotal;
-  const pnlDayPct = (pnlDay / totalValue) * 100;
+  // % denominator must be the baseline (start-of-day) value, matching
+  // pnlWeekPct's convention below — dividing by current totalValue instead
+  // inflates the magnitude after a loss (100k->50k reads as -100% instead of
+  // -50%), which desyncs DAILY_LOSS_LIMIT_PCT from WEEKLY_DRAWDOWN_LIMIT_PCT
+  // for an identical dollar swing. No baseline yet (first day) -> fall back
+  // to current totalValue, guarded against a zero denominator.
+  const pnlDayPct = startOfDaySnapshot
+    ? (pnlDay / startOfDaySnapshot.totalValue) * 100
+    : (totalValue > 0 ? (pnlDay / totalValue) * 100 : 0);
 
   // Weekly P&L = same start-of-window snapshot pattern as Today's P&L above,
   // just a 7-day window instead of a same-day one — backs the
