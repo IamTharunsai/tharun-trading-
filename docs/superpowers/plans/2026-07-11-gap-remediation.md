@@ -189,8 +189,9 @@ drawdown checks."
 describe('daily loss limit default consistency', () => {
   it('debateEngine.ts and riskManager.ts use the same fallback default', () => {
     const fs = require('fs');
-    const debateSrc = fs.readFileSync(require.path.join(__dirname, '../src/agents/debateEngine.ts'), 'utf-8');
-    const riskSrc = fs.readFileSync(require.path.join(__dirname, '../src/trading/riskManager.ts'), 'utf-8');
+    const path = require('path');
+    const debateSrc = fs.readFileSync(path.join(__dirname, '../src/agents/debateEngine.ts'), 'utf-8');
+    const riskSrc = fs.readFileSync(path.join(__dirname, '../src/trading/riskManager.ts'), 'utf-8');
 
     const debateMatch = debateSrc.match(/DAILY_LOSS_LIMIT_PCT["']?\s*\|\|\s*["'](\d+)["']/);
     const riskMatch = riskSrc.match(/DAILY_LOSS_LIMIT_PCT["']?\s*\|\|\s*["'](\d+)["']/);
@@ -288,12 +289,7 @@ Update the two call sites inside `checkStopLosses` (`await triggerStopLoss(posit
 
 - [ ] **Step 2: Write the failing route test**
 
-```ts
-// apex-trader/backend/tests/tradesRoute.close.test.ts
-import request from 'supertest';
-```
-
-Since this repo has no `supertest` dependency and no existing HTTP-layer tests (confirmed: only unit tests against imported functions), test `closePosition` directly instead of through the HTTP layer, matching the existing test style:
+This repo has no `supertest` dependency and no existing HTTP-layer tests (confirmed: only unit tests against imported functions) — test `closePosition` directly instead of through the HTTP layer, matching the existing test style:
 
 ```ts
 // apex-trader/backend/tests/tradesRoute.close.test.ts
