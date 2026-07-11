@@ -78,6 +78,18 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     : realizedPnlTotal + unrealizedPnlTotal;
   const pnlDayPct = (pnlDay / totalValue) * 100;
 
+  // Weekly P&L = same start-of-window snapshot pattern as Today's P&L above,
+  // just a 7-day window instead of a same-day one — backs the
+  // WEEKLY_DRAWDOWN_LIMIT_PCT circuit breaker in riskManager.ts.
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const weekStartSnapshot = await prisma.portfolioSnapshot.findFirst({
+    where: { timestamp: { gte: sevenDaysAgo } },
+    orderBy: { timestamp: 'asc' }
+  });
+  const pnlWeekPct = weekStartSnapshot
+    ? ((totalValue - weekStartSnapshot.totalValue) / weekStartSnapshot.totalValue) * 100
+    : 0;
+
   // Get portfolio peak
   const peakSnapshot = await prisma.portfolioSnapshot.findFirst({ orderBy: { totalValue: 'desc' } });
   const peakValue = peakSnapshot?.totalValue || totalValue;
@@ -89,6 +101,7 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     invested,
     pnlDay,
     pnlDayPct,
+    pnlWeekPct,
     pnlTotal,
     positions: openPositions,
     dailyLossToday: pnlDay < 0 ? Math.abs(pnlDay) : 0,

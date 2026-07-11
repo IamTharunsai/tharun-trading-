@@ -25,6 +25,16 @@ export async function validateTradeSignal(
     return { approved: false, reason: `Daily loss limit: ${portfolio.pnlDayPct.toFixed(2)}%` };
   }
 
+  // Weekly drawdown limit — middle tier between the daily and all-time
+  // drawdown checks. pnlWeekPct is computed against a start-of-window
+  // PortfolioSnapshot baseline the same way pnlDayPct is (see portfolio.ts),
+  // just with a 7-day window instead of a same-day one.
+  if (portfolio.pnlWeekPct <= -weeklyDrawdownLimit) {
+    logger.warn(`🛑 Weekly drawdown limit hit: ${portfolio.pnlWeekPct.toFixed(2)}%`);
+    getIO()?.emit('guardrail:triggered', { rule: 'WEEKLY_DRAWDOWN_LIMIT', value: portfolio.pnlWeekPct });
+    return { approved: false, reason: `Weekly drawdown limit hit: ${portfolio.pnlWeekPct.toFixed(2)}% (limit ${weeklyDrawdownLimit}%)` };
+  }
+
   // Max drawdown
   if (portfolio.drawdownFromPeak >= maxDrawdown) {
     logger.error(`🚨 MAX DRAWDOWN HIT: ${portfolio.drawdownFromPeak.toFixed(2)}% — ACTIVATING KILL SWITCH`);
