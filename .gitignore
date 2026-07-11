@@ -46,3 +46,4 @@ prisma/migrations/.prisma
 out/
 .vercel
 .env*
+.claude/
