@@ -421,7 +421,10 @@ export function calculateStochastic(candles: Candle[], period: number): { k: num
   for (let i = Math.max(period - 1, candles.length - 3); i < candles.length; i++) {
     kValues.push(computeK(i));
   }
-  const d = kValues.reduce((s, v) => s + v, 0) / kValues.length;
+  // Not enough candles for even one full %K window (e.g. thin Polygon results
+  // below the period) — fall back to the degenerate k===d case, same spirit
+  // as computeK's own "not enough data" 50 fallback for a single bar.
+  const d = kValues.length === 0 ? k : calculateSMA(kValues, kValues.length);
   return { k, d };
 }
 

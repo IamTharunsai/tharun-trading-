@@ -28,4 +28,13 @@ describe('calculateStochastic — real %D', () => {
     const { k, d } = calculateStochastic(candles as any, 14);
     expect(d).not.toBeCloseTo(k * 0.9, 5);
   });
+
+  it('does not produce NaN when candles.length < period (e.g. thin Polygon results)', () => {
+    const candles = Array.from({ length: 8 }, (_, i) => ({
+      high: 105 + i, low: 95 + i, close: 100 + i, open: 100 + i, volume: 1000,
+      timestamp: Date.now() - (8 - i) * 60000,
+    }));
+    const { d } = calculateStochastic(candles as any, 14);
+    expect(Number.isNaN(d)).toBe(false);
+  });
 });
