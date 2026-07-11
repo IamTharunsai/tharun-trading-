@@ -11,6 +11,8 @@ import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '..
 import backtestRoutes from './backtest';
 import { chatRouter } from './chat';
 import intelligenceRouter from './intelligence';
+import { closePosition } from '../trading/riskManager';
+import { getCurrentPrices } from '../services/marketData';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 export const authRouter = Router();
@@ -101,6 +103,20 @@ tradesRouter.get('/stats', async (_req: Request, res: Response) => {
     worstTrade: all.sort((a, b) => (a.pnl || 0) - (b.pnl || 0))[0],
     profitFactor: Math.abs(avgLoss) > 0 ? (avgWin / Math.abs(avgLoss)).toFixed(2) : '∞'
   });
+});
+
+tradesRouter.post('/:id/close', async (req: Request, res: Response) => {
+  const trade = await prisma.trade.findUnique({ where: { id: req.params.id } });
+  if (!trade || trade.status !== 'OPEN') {
+    return res.status(404).json({ error: 'Open trade not found' });
+  }
+  const position = await prisma.position.findFirst({ where: { asset: trade.asset, status: 'OPEN' } });
+  if (!position) {
+    return res.status(404).json({ error: 'No open position for this trade\'s asset' });
+  }
+  const exitPrice = req.body.price ?? getCurrentPrices()[trade.asset] ?? trade.entryPrice;
+  const result = await closePosition(position, exitPrice, 'manual_close');
+  res.json({ closed: true, pnl: result.pnl, pnlPct: result.pnlPct });
 });
 
 // ── /api/portfolio ────────────────────────────────────────────────────────────

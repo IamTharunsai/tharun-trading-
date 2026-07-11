@@ -112,10 +112,10 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
 
       if (stopHit) {
         logger.warn(`🛑 STOP LOSS TRIGGERED for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
-        await triggerStopLoss(position, currentPrice, 'stop_loss');
+        await closePosition(position, currentPrice, 'stop_loss');
       } else if (tpHit) {
         logger.info(`🎯 TAKE PROFIT HIT for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
-        await triggerStopLoss(position, currentPrice, 'take_profit');
+        await closePosition(position, currentPrice, 'take_profit');
       }
     }
   } catch (error) {
@@ -123,7 +123,7 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
   }
 }
 
-async function triggerStopLoss(position: any, exitPrice: number, reason: string) {
+export async function closePosition(position: any, exitPrice: number, reason: string) {
   const isShort = position.side === 'SELL';
   const pnl = isShort
     ? (position.entryPrice - exitPrice) * position.quantity
@@ -151,4 +151,5 @@ async function triggerStopLoss(position: any, exitPrice: number, reason: string)
 
   getIO()?.emit('position:closed', { asset: position.asset, exitPrice, pnl, pnlPct, reason });
   logger.info(`Position closed: ${position.asset} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) | Reason: ${reason}`);
+  return { pnl, pnlPct };
 }
