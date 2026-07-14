@@ -2,7 +2,11 @@
 nixPkgs = ["python311"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+# Bare `pip`/`python` aren't reliably on PATH at this build stage (nixpacks'
+# venv PATH export happens in a later phase) -- `python3 -m pip` invokes pip
+# as a module, sidestepping PATH resolution entirely. Same class of fix as
+# this project's backend tsc-not-found build failures (see project history).
+cmds = ["python3 -m pip install -r requirements.txt"]
 
 [start]
-cmd = "python app.py"
+cmd = "python3 app.py"
