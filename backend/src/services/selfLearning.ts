@@ -89,7 +89,10 @@ export async function runPostTradeAnalysis(tradeId: string): Promise<void> {
       await saveAgentLesson(lesson);
     }
 
-    await updateAgentMetrics(validLessons);
+    const uniqueAgentIds = [...new Set(validLessons.map(l => String(l.agentId)))];
+    for (const agentId of uniqueAgentIds) {
+      await updateAgentMetrics(agentId);
+    }
     await checkAndSuspendUnderperformers();
 
     // Update stock-level memory
@@ -193,14 +196,29 @@ Respond in JSON:
   }
 }
 
+export async function __test__saveAgentLesson(lesson: AgentLesson): Promise<void> {
+  return saveAgentLesson(lesson);
+}
+
 async function saveAgentLesson(lesson: AgentLesson): Promise<void> {
   try {
-    await prisma.systemLog.create({
+    const correct =
+      (lesson.tradeOutcome === 'WIN' && lesson.originalVote !== 'HOLD') ||
+      (lesson.tradeOutcome === 'LOSS' && lesson.originalVote === 'HOLD');
+    await prisma.agentLesson.create({
       data: {
-        level: 'INFO',
-        service: `agent-learning-${lesson.agentId}`,
-        message: `Lesson: ${lesson.lesson}`,
-        metadata: lesson as any
+        agentId: String(lesson.agentId),
+        agentName: lesson.agentName,
+        asset: lesson.asset,
+        setupType: lesson.setupType,
+        prediction: lesson.originalVote,
+        outcome: lesson.tradeOutcome,
+        correct,
+        reasoning: lesson.lesson,
+        confidenceScore: lesson.originalConfidence,
+        newWeighting: lesson.confidenceAdjustment,
+        tradeId: lesson.tradeId,
+        performanceImpact: lesson.pnlPct,
       }
     });
   } catch (err) {
@@ -208,77 +226,67 @@ async function saveAgentLesson(lesson: AgentLesson): Promise<void> {
   }
 }
 
-async function updateAgentMetrics(lessons: AgentLesson[]): Promise<void> {
-  const byAgent = new Map<number, AgentLesson[]>();
-  for (const lesson of lessons) {
-    if (!byAgent.has(lesson.agentId)) byAgent.set(lesson.agentId, []);
-    byAgent.get(lesson.agentId)!.push(lesson);
-  }
+export async function updateAgentMetrics(agentId: string): Promise<void> {
+  try {
+    const agentLessons = await prisma.agentLesson.findMany({
+      where: { agentId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    if (agentLessons.length === 0) return;
 
-  for (const [agentId, agentLessons] of byAgent.entries()) {
-    try {
-      const historicalLogs = await prisma.systemLog.findMany({
-        where: { service: `agent-learning-${agentId}` },
-        orderBy: { timestamp: 'desc' },
-        take: 100
-      });
+    const last20 = agentLessons.slice(0, 20);
+    const correctLast20 = last20.filter(l => l.correct).length;
+    const last20Accuracy = last20.length > 0 ? (correctLast20 / last20.length) * 100 : 50;
 
-      const allLessons = historicalLogs.map(l => l.metadata as any).filter(Boolean);
-      const last20 = allLessons.slice(0, 20);
-      const wasRight = (l: any) =>
-        (l.tradeOutcome === 'WIN' && l.originalVote !== 'HOLD') ||
-        (l.tradeOutcome === 'LOSS' && l.originalVote === 'HOLD');
-      const correctLast20 = last20.filter(wasRight).length;
-      const last20Accuracy = last20.length > 0 ? (correctLast20 / last20.length) * 100 : 50;
+    // Brier score: mean squared error between stated confidence (as a
+    // probability) and the binary outcome — the standard calibration metric
+    // (same one used in weather forecasting). 0 = perfectly calibrated,
+    // 0.25 = no better than always guessing 50/50, 1 = maximally overconfident
+    // and wrong. Converted to a 0-100 score where higher is better calibrated.
+    const brierScore = last20.length > 0
+      ? last20.reduce((sum, l) => {
+          const statedProb = (l.confidenceScore || 50) / 100;
+          return sum + Math.pow(statedProb - (l.correct ? 1 : 0), 2);
+        }, 0) / last20.length
+      : 0.25;
+    const calibrationScore = Math.round((1 - brierScore) * 100);
 
-      // Brier score: mean squared error between stated confidence (as a
-      // probability) and the binary outcome — the standard calibration metric
-      // (same one used in weather forecasting). 0 = perfectly calibrated,
-      // 0.25 = no better than always guessing 50/50, 1 = maximally overconfident
-      // and wrong. Converted to a 0-100 score where higher is better calibrated.
-      const brierScore = last20.length > 0
-        ? last20.reduce((sum: number, l: any) => {
-            const statedProb = (l.originalConfidence || 50) / 100;
-            return sum + Math.pow(statedProb - (wasRight(l) ? 1 : 0), 2);
-          }, 0) / last20.length
-        : 0.25;
-      const calibrationScore = Math.round((1 - brierScore) * 100);
+    logger.info(`  📊 ${agentLessons[0].agentName}: ${last20Accuracy.toFixed(1)}% accuracy | ${calibrationScore}/100 calibration (last 20)`);
 
-      logger.info(`  📊 ${agentLessons[0].agentName}: ${last20Accuracy.toFixed(1)}% accuracy | ${calibrationScore}/100 calibration (last 20)`);
-
-      await prisma.marketEvent.create({
-        data: {
-          asset: 'SYSTEM',
-          eventType: `AGENT_ACCURACY_${agentId}`,
-          data: {
-            agentId,
-            agentName: agentLessons[0].agentName,
-            last20Accuracy,
-            calibrationScore,
-            totalLessons: allLessons.length,
-            suspended: last20Accuracy < 45 && last20.length >= 10
-          } as any
-        }
-      });
-
-    } catch (err) {
-      logger.error(`Metrics update failed for agent ${agentId}`, { err });
-    }
+    const suspended = last20Accuracy < 45 && last20.length >= 10;
+    await prisma.agentPerformance.upsert({
+      where: { agentId },
+      create: {
+        agentId,
+        agentName: agentLessons[0].agentName,
+        totalTrades: agentLessons.length,
+        accuracy: last20Accuracy,
+        winRate: last20Accuracy,
+        status: suspended ? 'SUSPENDED' : 'ACTIVE',
+        suspendedAt: suspended ? new Date() : null,
+        weeklyReport: { calibrationScore },
+      },
+      update: {
+        agentName: agentLessons[0].agentName,
+        totalTrades: agentLessons.length,
+        accuracy: last20Accuracy,
+        winRate: last20Accuracy,
+        status: suspended ? 'SUSPENDED' : 'ACTIVE',
+        suspendedAt: suspended ? new Date() : undefined,
+        weeklyReport: { calibrationScore },
+      },
+    });
+  } catch (err) {
+    logger.error(`Metrics update failed for agent ${agentId}`, { err });
   }
 }
 
 async function checkAndSuspendUnderperformers(): Promise<void> {
   try {
-    const recentMetrics = await prisma.marketEvent.findMany({
-      where: { eventType: { startsWith: 'AGENT_ACCURACY_' } },
-      orderBy: { timestamp: 'desc' },
-      take: 20
-    });
-
-    for (const metric of recentMetrics) {
-      const data = metric.data as any;
-      if (data.last20Accuracy < 45 && data.totalLessons >= 10 && !data.suspended) {
-        logger.warn(`⚠️ SUSPENDED: ${data.agentName} — ${data.last20Accuracy.toFixed(1)}%`);
+    for (const row of await getLatestAgentMetrics()) {
+      if (row.status === 'SUSPENDED') {
+        logger.warn(`⚠️ SUSPENDED: ${row.agentName} — ${row.accuracy.toFixed(1)}%`);
       }
     }
   } catch (err) {
@@ -286,52 +294,44 @@ async function checkAndSuspendUnderperformers(): Promise<void> {
   }
 }
 
-// Both suspension weights and calibration scores read the latest-per-agent
-// record off the same AGENT_ACCURACY_* events — fetched together in every
-// debate's round-3 vote tally (always called as a pair, see debateEngine.ts),
-// so one shared query replaces what were two identical round-trips.
-async function getLatestAgentMetrics(): Promise<Map<number, any>> {
-  const latest = new Map<number, any>();
+// Both suspension weights and calibration scores read the same latest-per-agent
+// AgentPerformance rows — fetched together in every debate's round-3 vote tally
+// (always called as a pair, see debateEngine.ts), so one shared query replaces
+// what were two identical round-trips.
+export async function getLatestAgentMetrics() {
   try {
-    const recentMetrics = await prisma.marketEvent.findMany({
-      where: { eventType: { startsWith: 'AGENT_ACCURACY_' } },
-      orderBy: { timestamp: 'desc' },
-      take: 40,
-    });
-    for (const metric of recentMetrics) {
-      const data = metric.data as any;
-      const agentId = data?.agentId;
-      if (!agentId || latest.has(agentId)) continue;
-      latest.set(agentId, data);
-    }
+    return await prisma.agentPerformance.findMany({ orderBy: { lastUpdated: 'desc' } });
   } catch (err) {
     logger.warn('Failed to load agent metrics', { err });
+    return [];
   }
-  return latest;
 }
 
 // Per-agent vote weight derived from suspension status — 1.0 for a healthy
 // agent, SUSPENDED_AGENT_WEIGHT for one whose last-20 accuracy dropped below
 // 45%. Read by the debate engine to weight the confidence average and Kelly
-// sizing, closing the loop that checkAndSuspendUnderperformers previously
-// only logged.
+// sizing. AgentPerformance.agentId is stored as a string (Prisma), but the
+// debate engine's roster IDs are numeric — converted at this boundary so
+// debateEngine.ts's Record<number, number> keying stays unchanged.
 export async function getAgentSuspensionWeights(): Promise<Record<number, number>> {
   const weights: Record<number, number> = {};
-  for (const [agentId, data] of await getLatestAgentMetrics()) {
-    weights[agentId] = data?.suspended ? SUSPENDED_AGENT_WEIGHT : 1;
+  for (const row of await getLatestAgentMetrics()) {
+    const id = Number(row.agentId);
+    if (!Number.isNaN(id)) weights[id] = row.status === 'SUSPENDED' ? SUSPENDED_AGENT_WEIGHT : 1;
   }
   return weights;
 }
 
-// Per-agent calibration score (0-100, see calculateAgentMetrics's Brier-score
-// comment) — defaults to 75 (the "no evidence of miscalibration" baseline,
-// equivalent to Brier=0.25/always-guessing-50%) for agents with no lesson
-// history yet, so a brand-new agent isn't penalized for lack of data.
+// Per-agent calibration score (0-100, see updateAgentMetrics's Brier-score
+// comment), stored in AgentPerformance.weeklyReport.calibrationScore since
+// there's no dedicated column. Agents with no lesson history yet are simply
+// absent (caller in debateEngine.ts already defaults to 75 for missing IDs).
 export async function getAgentCalibrationScores(): Promise<Record<number, number>> {
   const scores: Record<number, number> = {};
-  for (const [agentId, data] of await getLatestAgentMetrics()) {
-    if (data?.calibrationScore === undefined) continue;
-    scores[agentId] = data.calibrationScore;
+  for (const row of await getLatestAgentMetrics()) {
+    const id = Number(row.agentId);
+    const calibrationScore = (row.weeklyReport as any)?.calibrationScore;
+    if (!Number.isNaN(id) && typeof calibrationScore === 'number') scores[id] = calibrationScore;
   }
   return scores;
 }

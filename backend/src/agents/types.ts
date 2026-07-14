@@ -111,6 +111,7 @@ export interface PortfolioState {
   invested: number;
   pnlDay: number;
   pnlDayPct: number;
+  pnlWeekPct: number;
   pnlTotal: number;
   positions: any[];
   dailyLossToday: number;

@@ -355,7 +355,7 @@ function calculateRSI(closes: number[], period: number): number {
   return 100 - (100 / (1 + rs));
 }
 
-function calculateEMA(closes: number[], period: number): number {
+export function calculateEMA(closes: number[], period: number): number {
   if (closes.length < period) return closes[closes.length - 1] || 0;
   const k = 2 / (period + 1);
   let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
@@ -363,16 +363,22 @@ function calculateEMA(closes: number[], period: number): number {
   return ema;
 }
 
-function calculateSMA(values: number[], period: number): number {
+export function calculateSMA(values: number[], period: number): number {
   if (values.length < period) return values.reduce((a, b) => a + b, 0) / values.length;
   return values.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-function calculateMACD(closes: number[]): { value: number; signal: number; histogram: number } {
-  const ema12 = calculateEMA(closes, 12);
-  const ema26 = calculateEMA(closes, 26);
-  const value = ema12 - ema26;
-  const signal = value * 0.2; // simplified
+export function calculateMACD(closes: number[]): { value: number; signal: number; histogram: number } {
+  // Build the MACD-value series (one MACD value per bar, using a trailing window
+  // for each) so the signal line can be a real 9-EMA of MACD history, not just a
+  // scalar fraction of the single current-bar value.
+  const macdSeries: number[] = [];
+  for (let i = 26; i <= closes.length; i++) {
+    const window = closes.slice(0, i);
+    macdSeries.push(calculateEMA(window, 12) - calculateEMA(window, 26));
+  }
+  const value = macdSeries[macdSeries.length - 1] ?? 0;
+  const signal = macdSeries.length >= 9 ? calculateEMA(macdSeries, 9) : value;
   return { value, signal, histogram: value - signal };
 }
 
@@ -400,13 +406,26 @@ function calculateOBV(closes: number[], volumes: number[]): number {
   }, 0);
 }
 
-function calculateStochastic(candles: Candle[], period: number): { k: number; d: number } {
-  const slice = candles.slice(-period);
-  const highestHigh = Math.max(...slice.map(c => c.high));
-  const lowestLow = Math.min(...slice.map(c => c.low));
-  const currentClose = slice[slice.length - 1].close;
-  const k = highestHigh !== lowestLow ? ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100 : 50;
-  return { k, d: k * 0.9 };
+export function calculateStochastic(candles: Candle[], period: number): { k: number; d: number } {
+  const computeK = (upToIndex: number): number => {
+    const slice = candles.slice(Math.max(0, upToIndex - period + 1), upToIndex + 1);
+    const highestHigh = Math.max(...slice.map(c => c.high));
+    const lowestLow = Math.min(...slice.map(c => c.low));
+    const currentClose = slice[slice.length - 1].close;
+    return highestHigh !== lowestLow ? ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100 : 50;
+  };
+
+  const k = computeK(candles.length - 1);
+  // Real %D is a 3-period SMA of %K, so compute %K for the last 3 bars.
+  const kValues: number[] = [];
+  for (let i = Math.max(period - 1, candles.length - 3); i < candles.length; i++) {
+    kValues.push(computeK(i));
+  }
+  // Not enough candles for even one full %K window (e.g. thin Polygon results
+  // below the period) — fall back to the degenerate k===d case, same spirit
+  // as computeK's own "not enough data" 50 fallback for a single bar.
+  const d = kValues.length === 0 ? k : calculateSMA(kValues, kValues.length);
+  return { k, d };
 }
 
 function generateMockCandles(basePrice: number, count: number): Candle[] {

@@ -540,3 +540,4 @@ class IntermarketService {
 }
 
 export const intermarketService = new IntermarketService();
+export type { IntermarketData };

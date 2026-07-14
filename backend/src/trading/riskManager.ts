@@ -25,6 +25,16 @@ export async function validateTradeSignal(
     return { approved: false, reason: `Daily loss limit: ${portfolio.pnlDayPct.toFixed(2)}%` };
   }
 
+  // Weekly drawdown limit — middle tier between the daily and all-time
+  // drawdown checks. pnlWeekPct is computed against a start-of-window
+  // PortfolioSnapshot baseline the same way pnlDayPct is (see portfolio.ts),
+  // just with a 7-day window instead of a same-day one.
+  if (portfolio.pnlWeekPct <= -weeklyDrawdownLimit) {
+    logger.warn(`🛑 Weekly drawdown limit hit: ${portfolio.pnlWeekPct.toFixed(2)}%`);
+    getIO()?.emit('guardrail:triggered', { rule: 'WEEKLY_DRAWDOWN_LIMIT', value: portfolio.pnlWeekPct });
+    return { approved: false, reason: `Weekly drawdown limit hit: ${portfolio.pnlWeekPct.toFixed(2)}% (limit ${weeklyDrawdownLimit}%)` };
+  }
+
   // Max drawdown
   if (portfolio.drawdownFromPeak >= maxDrawdown) {
     logger.error(`🚨 MAX DRAWDOWN HIT: ${portfolio.drawdownFromPeak.toFixed(2)}% — ACTIVATING KILL SWITCH`);
@@ -102,10 +112,10 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
 
       if (stopHit) {
         logger.warn(`🛑 STOP LOSS TRIGGERED for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
-        await triggerStopLoss(position, currentPrice, 'stop_loss');
+        await closePosition(position, currentPrice, 'stop_loss');
       } else if (tpHit) {
         logger.info(`🎯 TAKE PROFIT HIT for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
-        await triggerStopLoss(position, currentPrice, 'take_profit');
+        await closePosition(position, currentPrice, 'take_profit');
       }
     }
   } catch (error) {
@@ -113,7 +123,7 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
   }
 }
 
-async function triggerStopLoss(position: any, exitPrice: number, reason: string) {
+export async function closePosition(position: any, exitPrice: number, reason: string) {
   const isShort = position.side === 'SELL';
   const pnl = isShort
     ? (position.entryPrice - exitPrice) * position.quantity
@@ -141,4 +151,5 @@ async function triggerStopLoss(position: any, exitPrice: number, reason: string)
 
   getIO()?.emit('position:closed', { asset: position.asset, exitPrice, pnl, pnlPct, reason });
   logger.info(`Position closed: ${position.asset} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) | Reason: ${reason}`);
+  return { pnl, pnlPct };
 }

@@ -14,7 +14,7 @@ import { generateDailyJournal } from '../services/journalGenerator';
 import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { TradeSignal } from '../agents/types';
-import { scanPolymarketOpportunities, placePolymarketBet } from '../services/polymarket';
+import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions } from '../services/polymarket';
 
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
@@ -291,9 +291,14 @@ export function initScheduler() {
       const portfolio = await getPortfolioState();
       const opportunities = await scanPolymarketOpportunities(portfolio.totalValue);
       for (const opp of opportunities.slice(0, slotsAvailable)) {
-        await placePolymarketBet(opp, opp.question, true); // paper mode
+        await placePolymarketBet(opp, opp.conditionId, true); // paper mode
       }
     } catch (err: any) { logger.warn(`Polymarket scan skipped: ${err?.message || err?.code || 'network error'}`); }
+  });
+
+  // ── EVERY 30 MINUTES: Polymarket Resolution Check ────────────────────────
+  cron.schedule('*/30 * * * *', async () => {
+    await pollPolymarketResolutions().catch(err => logger.error('Polymarket resolution poll failed', { err }));
   });
 
   // ── POST-TRADE LEARNING: Watch for newly closed trades ───────────────────

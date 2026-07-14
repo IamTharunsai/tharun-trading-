@@ -124,6 +124,7 @@ export async function fetchActiveEvents(
 
 export interface ProbabilityAnalysis {
   question: string;
+  conditionId: string;
   marketImpliedProbability: number;  // What market says
   ourEstimatedProbability: number;   // What we calculate
   edge: number;                      // Difference (our edge)
@@ -222,6 +223,7 @@ Respond ONLY in valid JSON:
 
     const analysis: ProbabilityAnalysis = {
       question: market.question,
+      conditionId: market.conditionId,
       marketImpliedProbability,
       ourEstimatedProbability: parsed.ourProbabilityYes,
       edge: parsed.edge || edge,
@@ -247,6 +249,7 @@ Respond ONLY in valid JSON:
     logger.error('Probability analysis failed', { err });
     return {
       question: market.question,
+      conditionId: market.conditionId,
       marketImpliedProbability,
       ourEstimatedProbability: marketImpliedProbability,
       edge: 0,
@@ -336,6 +339,7 @@ export async function placePolymarketBet(
         status: 'OPEN',
         stopLossPrice: 0.01, // 1 cent = minimum
         takeProfitPrice: analysis.recommendedSide === 'YES' ? 0.99 : 0.01,
+        brokerOrderId: analysis.conditionId,
       }
     }).catch(() => {});
     return { success: true, message: `Paper bet placed: ${analysis.recommendedSide} $${analysis.betSizeUSD}` };
@@ -356,6 +360,56 @@ export async function placePolymarketBet(
   } catch (err: any) {
     logger.error('Polymarket bet failed', { err });
     return { success: false, message: `Bet failed: ${err.message}` };
+  }
+}
+
+// ── RESOLUTION POLLING ────────────────────────────────────────────────────────
+// Nothing previously checked whether a Polymarket market had resolved in the
+// real world, so OPEN Polymarket trades sat forever with no P&L (see project
+// memory: 16+ positions accumulated this way). conditionId (now flowing from
+// analyzePolymarketEvent through placePolymarketBet into Trade.brokerOrderId)
+// is the lookup key back to the market.
+
+export async function pollPolymarketResolutions(): Promise<void> {
+  const openTrades = await prisma.trade.findMany({
+    where: { asset: 'POLYMARKET', status: 'OPEN', brokerOrderId: { not: null } },
+  });
+  if (openTrades.length === 0) return;
+
+  const conditionIds = openTrades.map(t => t.brokerOrderId).join(',');
+  let markets: any[] = [];
+  try {
+    const response = await axios.get(`${POLYMARKET_GAMMA_API}/markets`, {
+      params: { condition_ids: conditionIds },
+      timeout: 10000,
+    });
+    markets = response.data || [];
+  } catch (error) {
+    logger.error('Failed to poll Polymarket resolutions', { error });
+    return;
+  }
+
+  for (const trade of openTrades) {
+    const market = markets.find((m: any) => m.condition_id === trade.brokerOrderId);
+    if (!market || !market.closed) continue;
+
+    const outcomePrices: number[] = JSON.parse(market.outcomePrices || '["0","0"]').map(Number);
+    const yesResolvedTrue = outcomePrices[0] >= 0.99;
+    // Trade.type BUY == bet YES, SELL == bet NO (matches placePolymarketBet's mapping)
+    const won = trade.type === 'BUY' ? yesResolvedTrue : !yesResolvedTrue;
+    const exitPrice = won ? 1 : 0;
+    const pnl = won
+      ? (1 - trade.entryPrice) * trade.quantity
+      : -trade.entryPrice * trade.quantity;
+    const pnlPct = won
+      ? ((1 - trade.entryPrice) / trade.entryPrice) * 100
+      : -100;
+
+    await prisma.trade.update({
+      where: { id: trade.id },
+      data: { exitPrice, pnl, pnlPct, status: 'CLOSED', closedAt: new Date(), exitReason: 'market_resolved' },
+    });
+    logger.info(`🎯 Polymarket position resolved: ${trade.id} | Won: ${won} | PnL: $${pnl.toFixed(2)}`);
   }
 }
 

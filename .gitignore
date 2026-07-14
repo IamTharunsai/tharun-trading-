@@ -47,3 +47,4 @@ out/
 .vercel
 .env*
 .claude/
+.superpowers/

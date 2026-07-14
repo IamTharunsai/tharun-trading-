@@ -1,6 +1,12 @@
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import { redis } from '../utils/redis';
+import { prisma } from '../utils/prisma';
+
+// Severity has no numeric grade locally (fetchActivGeopoliticalEvents always
+// emits 'HIGH') — this bucket mapping is the only place severity becomes a
+// number, reused for both GeopoliticalEvent.severity and .geoRiskScore.
+const SEVERITY_SCORE: Record<GeopoliticalEvent['severity'], number> = { CRITICAL: 10, HIGH: 7, MEDIUM: 5, LOW: 3 };
 
 const FH_KEY = process.env.FINNHUB_API_KEY;
 
@@ -153,6 +159,7 @@ class GeopoliticalDataService {
     try {
       const news = await this.fetchFinnhubNews('crypto', 'crypto');
       this.newsCache = [...this.newsCache, ...news].slice(-50);
+      await Promise.all(news.map(n => this.persistNewsItem(n)));
     } catch (err) {
       logger.warn('Failed to fetch crypto news', { error: String(err) });
     }
@@ -165,9 +172,53 @@ class GeopoliticalDataService {
         if (n.category === 'GEOPOLITICS') n.tags.push('geopolitics');
       }
       this.newsCache = [...this.newsCache, ...news].slice(-50);
+      await Promise.all(news.map(n => this.persistNewsItem(n)));
     } catch (err) {
       logger.warn('Failed to fetch market news', { error: String(err) });
     }
+  }
+
+  // In-memory cache stays the source of truth for the live request path
+  // (getRecentNews/getActiveGeopoliticalEvents below) — this is a best-effort,
+  // non-blocking side write so history survives a restart, per project
+  // memory: this service was pure in-memory and went empty on every deploy.
+  // ponytail: no dedup — fetchActivGeopoliticalEvents can re-derive the same
+  // event (same id) across multiple 2-minute polls while its source headline
+  // stays in the 50-item news window, so repeated inserts are expected;
+  // upgrade to an upsert if a unique constraint on GeopoliticalEvent is ever
+  // added.
+  async persistGeopoliticalEvent(event: GeopoliticalEvent, sourceNews?: NewsItem) {
+    return prisma.geopoliticalEvent.create({
+      data: {
+        title: event.event,
+        description: `${event.event} — Region: ${event.region}`,
+        eventType: 'geopolitical',
+        severity: SEVERITY_SCORE[event.severity],
+        countries: [],
+        affectedAssets: event.affectedAssets,
+        geoRiskScore: SEVERITY_SCORE[event.severity] * 10,
+        impactDuration: 'unknown',
+        marketImpact: sourceNews ? sourceNews.sentiment.toLowerCase() : 'neutral',
+        source: event.source,
+        timestamp: new Date(event.timestamp),
+      }
+    }).catch((err) => logger.error('Failed to persist GeopoliticalEvent', { err }));
+  }
+
+  async persistNewsItem(item: NewsItem) {
+    const sentimentScore = item.sentiment === 'POSITIVE' ? 1 : item.sentiment === 'NEGATIVE' ? -1 : 0;
+    return prisma.newsItem.create({
+      data: {
+        headline: item.title,
+        source: item.source,
+        url: item.url,
+        sentimentScore,
+        sentimentLabel: item.sentiment,
+        assetsMentioned: item.sectorsAffected,
+        summary: item.summary,
+        publishedAt: new Date(item.timestamp),
+      }
+    }).catch((err) => logger.error('Failed to persist NewsItem', { err }));
   }
 
   /**
@@ -197,19 +248,16 @@ class GeopoliticalDataService {
       .filter(n => n.category === 'GEOPOLITICS' && n.impact === 'HIGH')
       .slice(0, 10);
 
-    return geoNews.map(n => {
+    const events = geoNews.map(n => {
       const lower = n.title.toLowerCase();
       const region = GeopoliticalDataService.REGION_KEYWORDS.find(([, kws]) => kws.some(k => lower.includes(k)))?.[0] || 'Global';
       return {
-        id: n.id,
-        region,
-        event: n.title,
-        severity: 'HIGH' as const,
-        affectedAssets: n.sectorsAffected,
-        timestamp: n.timestamp,
-        source: n.source,
+        event: { id: n.id, region, event: n.title, severity: 'HIGH' as const, affectedAssets: n.sectorsAffected, timestamp: n.timestamp, source: n.source },
+        sourceNews: n,
       };
     });
+    await Promise.all(events.map(({ event, sourceNews }) => this.persistGeopoliticalEvent(event, sourceNews)));
+    return events.map(({ event }) => event);
   }
 
   /**
