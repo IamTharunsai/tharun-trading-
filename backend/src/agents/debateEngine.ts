@@ -142,6 +142,11 @@ export interface DebateTranscript {
   finalDecision: 'BUY' | 'SELL' | 'HOLD';
   finalConfidence: number;
   executionApproved: boolean;
+  // Set by scheduler.ts after this transcript is returned — true only once
+  // executeTradeSignal() actually places a broker-confirmed trade, not just
+  // when the committee/debate wants one (executionApproved can be true while
+  // risk validation, Top Trader Rules, or the broker itself still reject it).
+  tradeExecuted?: boolean;
   blockReason?: string;
   positionSizePct: number;
   stopLossPrice: number;

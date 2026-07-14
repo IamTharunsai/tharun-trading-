@@ -61,8 +61,13 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       };
       const riskCheck = await validateTradeSignal(signal, portfolio);
       if (riskCheck.approved) {
-        await executeTradeSignal(signal, portfolio);
-        logger.info(`✅ Trade executed: ${transcript.finalDecision} ${asset} @ $${snapshot.price}`);
+        const executed = await executeTradeSignal(signal, portfolio);
+        transcript.tradeExecuted = executed;
+        if (executed) {
+          logger.info(`✅ Trade executed: ${transcript.finalDecision} ${asset} @ $${snapshot.price}`);
+        } else {
+          logger.warn(`🚫 Trade approved by risk check but execution failed/blocked for ${asset} (see execution logs above — Top Trader Rules, viability, or broker rejection)`);
+        }
       } else {
         logger.info(`🚫 Trade blocked by Risk Validator: ${riskCheck.reason}`);
       }
@@ -136,7 +141,7 @@ export function initScheduler() {
       });
       tried++;
       await new Promise(r => setTimeout(r, 5000));
-      if (transcript?.executionApproved) {
+      if (transcript?.tradeExecuted) {
         logger.info(`${label} — trade found on ${symbol}, stopping scan`);
         return tried;
       }
@@ -162,7 +167,7 @@ export function initScheduler() {
     for (const coin of CRYPTO_SCAN_LIST) {
       const transcript = await runDebateForAsset(coin, 'crypto').catch(() => null);
       await new Promise(r => setTimeout(r, 5000));
-      if (transcript?.executionApproved) {
+      if (transcript?.tradeExecuted) {
         logger.info(`🪙 Trade found on ${coin}, stopping crypto scan`);
         break;
       }
