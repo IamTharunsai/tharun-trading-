@@ -12,6 +12,7 @@ import { getAgentSuspensionWeights, getAgentCalibrationScores } from '../service
 import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
 import { optionsFlowService } from '../services/optionsFlowService';
+import { getForecast } from '../services/kronosService';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -152,7 +153,7 @@ export interface DebateTranscript {
 
 // ── THE 10 SPECIALIST AGENTS WITH FULL EXPERT KNOWLEDGE ──────────────────────
 
-const AGENT_ROSTER = [
+export const AGENT_ROSTER = [
   {
     id: 1, name: 'The Technician', icon: '📊',
     systemPrompt: `You are THE TECHNICIAN — a master technical analyst with 25 years experience at Goldman Sachs and Renaissance Technologies. You have analyzed over 100,000 charts. You are known for your precise, unemotional analysis.
@@ -420,7 +421,13 @@ Be decisive — smart money flow is a strong signal. Vote BUY or SELL when flow 
 SIGNALS: If price is >2 std deviations from its 20-day mean = mean reversion likely. Futures premium/discount vs spot = carry trade signal. ETF vs NAV divergence = arbitrage opportunity. Correlation breakdown between related assets = one is mispriced. Sector rotation: money flowing from one sector to another = buy laggard, sell leader.
 PAIRS: When two correlated stocks diverge by >3%, the laggard usually catches up.
 If current price is significantly below fair value AND trend supports recovery = strong BUY. Above fair value with weak momentum = SELL.`
-  }
+  },
+  {
+    id: 14,
+    name: 'Quant Forecaster',
+    icon: '🔮',
+    systemPrompt: `You are the Quant Forecaster, reading output from a machine-learning price forecasting model (Kronos), not classical technical indicators. Focus your argument on the QUANT FORECAST section of the market context: the model's predicted close, its confidence band width (a wide band = high model uncertainty, argue for caution and lower confidence; a narrow band = high model conviction), and the expected return direction/magnitude. If no QUANT FORECAST section is present, say so explicitly and vote HOLD with low confidence — do not fabricate a forecast opinion from other agents' data.`,
+  },
 ];
 
 // ── MASTER COORDINATOR ────────────────────────────────────────────────────────
@@ -494,11 +501,12 @@ export async function runInvestmentCommitteeDebate(
   // previously a separate `await` after this block (not in the Promise.all),
   // silently turning 4-way parallel fetch into 3-parallel-then-1-sequential
   // and adding the full Alpaca options latency to every stock debate.
-  const [deepAnalysis, stockMemory, intermarket, optionsFlow] = await Promise.all([
+  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast] = await Promise.all([
     snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
     intermarketService.getIntermarketAnalysis().catch(() => null),
     snapshot.market === 'stocks' ? optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null) : Promise.resolve(null),
+    getForecast(asset, snapshot.candles, 5).catch(() => null),
   ]);
 
   const fundamentalsSummary = deepAnalysis
@@ -527,13 +535,19 @@ export async function runInvestmentCommitteeDebate(
       ' (volume-based real data; open interest is proxied from volume, no real IV feed available)'
     : '';
 
+  const forecastSummary = kronosForecast && kronosForecast.predictedClose.length > 0
+    ? `Predicted close (${kronosForecast.predictedClose.length}-bar): $${kronosForecast.predictedClose[kronosForecast.predictedClose.length - 1].toFixed(2)} ` +
+      `(band $${kronosForecast.lowerBand[kronosForecast.lowerBand.length - 1].toFixed(2)}-$${kronosForecast.upperBand[kronosForecast.upperBand.length - 1].toFixed(2)}) | ` +
+      `Expected return: ${kronosForecast.meanReturn >= 0 ? '+' : ''}${(kronosForecast.meanReturn * 100).toFixed(2)}%`
+    : '';
+
   await recordDebate(asset, 'PENDING');
 
   logger.info('📢 ROUND 1: OPENING ARGUMENTS');
   io?.emit('debate:round', { round: 1, debateId, asset });
 
   const newsSummary = await buildNewsSummary(asset);
-  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary);
+  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary, forecastSummary);
   const round1Results: any[] = [];
 
   // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
@@ -908,7 +922,7 @@ export async function runInvestmentCommitteeDebate(
 
 // ── HELPERS ──────────────────────────────────────────────────────────
 
-function buildMarketContext(
+export function buildMarketContext(
   snapshot: MarketSnapshot,
   portfolio: PortfolioState,
   regime: string,
@@ -916,7 +930,8 @@ function buildMarketContext(
   stockMemory = '',
   newsSummary = '',
   macroSummary = '',
-  optionsSummary = ''
+  optionsSummary = '',
+  forecastSummary = ''
 ): string {
   const ind = snapshot.indicators;
   const lines = [
@@ -952,8 +967,13 @@ function buildMarketContext(
   if (optionsSummary) {
     lines.push(`── OPTIONS FLOW (real Alpaca volume data) ──`, optionsSummary);
   }
+  if (forecastSummary) {
+    lines.push(`── QUANT FORECAST (Kronos ML model) ──`, forecastSummary);
+  }
   return lines.join('\n');
 }
+
+export const __test__buildMarketContext = buildMarketContext;
 
 async function buildNewsSummary(asset: string): Promise<string> {
   const highImpact = geopoliticalDataService.getHighImpactNews(120);
