@@ -7,7 +7,7 @@ export interface Agent {
   veto?: boolean;
 }
 
-// Canonical 13-agent roster — mirrors backend/src/agents/debateEngine.ts AGENTS list.
+// Canonical 14-agent roster — mirrors backend/src/agents/debateEngine.ts AGENTS list.
 // Single source of truth: every page (Agents, DebateRoom, AgentMonitor, AgentChat)
 // imports this instead of maintaining its own copy.
 export const AGENTS: Agent[] = [
@@ -24,6 +24,7 @@ export const AGENTS: Agent[] = [
   { id: 11, name: 'Elliott Wave',         icon: '🌊', role: 'Wave Structure',    color: '#4A90D9' },
   { id: 12, name: 'Options Flow',         icon: '📉', role: 'Smart Money Flow',  color: '#5B6472' },
   { id: 13, name: 'Arbitrageur',          icon: '⚖️', role: 'Mispricing Detector', color: '#C9A24B' },
+  { id: 14, name: 'Quant Forecaster',     icon: '🎯', role: 'ML Price Forecast', color: '#4A90D9' },
 ];
 
 export const AGENTS_BY_ID: Record<number, Agent> = Object.fromEntries(AGENTS.map(a => [a.id, a]));

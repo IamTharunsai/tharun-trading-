@@ -33,8 +33,8 @@ export function connectSocket() {
   socket.on('debate:start', (data: any) => {
     store.resetCouncil();
     store.setCurrentAnalysis(data.asset);
-    // Mark all 13 agents as analyzing
-    for (let i = 1; i <= 13; i++) {
+    // Mark all 14 agents as analyzing
+    for (let i = 1; i <= 14; i++) {
       store.updateAgentStatus(i, 'analyzing', undefined, data.asset);
     }
   });
@@ -81,7 +81,7 @@ export function connectSocket() {
   socket.on('council:start', (data: any) => {
     store.resetCouncil();
     store.setCurrentAnalysis(data.asset);
-    for (let i = 1; i <= 13; i++) {
+    for (let i = 1; i <= 14; i++) {
       store.updateAgentStatus(i, 'analyzing', undefined, data.asset);
     }
   });

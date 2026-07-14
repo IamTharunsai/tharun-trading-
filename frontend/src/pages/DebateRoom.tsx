@@ -245,10 +245,10 @@ export default function DebateRoomPage() {
         </div>
       )}
 
-      {/* 15 Agent Cards */}
+      {/* 14 Agent Cards */}
       <div style={{ background: 'var(--apex-card)', border: '1px solid var(--apex-border)', borderRadius: 12, padding: 16 }}>
         <div style={{ fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 12 }}>
-          AGENT COUNCIL — 13 SPECIALISTS
+          AGENT COUNCIL — 14 SPECIALISTS
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
           {AGENTS.map(agent => {
