@@ -259,14 +259,31 @@ export async function buildAgentLearningState(
     };
 
     // Store learning state for agent to reference
-    await prisma.systemLog.create({
-      data: {
-        level: 'INFO',
-        service: `agent-learning-${agentId}`,
-        message: 'Learning state built',
-        metadata: state as any
-      }
-    }).catch(() => {});
+    await prisma.agentLearningState.upsert({
+      where: { agentId_assetId: { agentId: String(agentId), assetId: asset } },
+      create: {
+        agentId: String(agentId),
+        assetId: asset,
+        fundamentalScore: state.fundamentalScore,
+        technicalScore: state.technicalScore,
+        sentimentScore: state.sentimentScore,
+        riskScore: state.riskScore,
+        confidenceAdjustment: state.confidenceAdjustment,
+        overallScore: state.overallScore,
+        learningSources: state.recentLearnings as any,
+        recommendations: 'HOLD',
+      },
+      update: {
+        fundamentalScore: state.fundamentalScore,
+        technicalScore: state.technicalScore,
+        sentimentScore: state.sentimentScore,
+        riskScore: state.riskScore,
+        confidenceAdjustment: state.confidenceAdjustment,
+        overallScore: state.overallScore,
+        learningSources: state.recentLearnings as any,
+        recommendations: 'HOLD',
+      },
+    }).catch((err) => logger.error('Failed to persist AgentLearningState', { err }));
 
     return state;
   } catch (err) {
