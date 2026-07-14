@@ -452,6 +452,7 @@ settingsRouter.get('/', async (_req: Request, res: Response) => {
     minAgentConfidence: process.env.MIN_AGENT_CONFIDENCE || '65',
     minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '7',
     cacheStatus: redis.status === 'ready' ? 'Redis (connected)' : 'None — running without cache',
+    kronosServiceConfigured: !!process.env.KRONOS_SERVICE_URL,
   });
 });
 
