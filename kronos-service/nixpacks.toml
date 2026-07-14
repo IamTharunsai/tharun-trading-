@@ -1,12 +1,17 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip"]
+nixPkgs = ["python311"]
 
 [phases.install]
-# Bare `pip`/`python` aren't reliably on PATH at this build stage (nixpacks'
-# venv PATH export happens in a later phase) -- `python3 -m pip` invokes pip
-# as a module, sidestepping PATH resolution entirely. Same class of fix as
-# this project's backend tsc-not-found build failures (see project history).
-cmds = ["python3 -m pip install -r requirements.txt"]
+# nixpkgs' python311 doesn't bundle pip, and python311Packages.pip (added as
+# a separate top-level nixPkgs entry) doesn't link into this same
+# interpreter's site-packages -- a nix package-composition issue, not a PATH
+# issue. Bootstrapping pip via Python's own built-in ensurepip module sidesteps
+# nix package composition entirely and is guaranteed available on any stock
+# CPython build.
+cmds = [
+  "python3 -m ensurepip --upgrade",
+  "python3 -m pip install -r requirements.txt"
+]
 
 [start]
 cmd = "python3 app.py"
