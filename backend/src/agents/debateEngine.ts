@@ -425,7 +425,7 @@ If current price is significantly below fair value AND trend supports recovery =
   {
     id: 14,
     name: 'Quant Forecaster',
-    icon: '🔮',
+    icon: '🎯',
     systemPrompt: `You are the Quant Forecaster, reading output from a machine-learning price forecasting model (Kronos), not classical technical indicators. Focus your argument on the QUANT FORECAST section of the market context: the model's predicted close, its confidence band width (a wide band = high model uncertainty, argue for caution and lower confidence; a narrow band = high model conviction), and the expected return direction/magnitude. If no QUANT FORECAST section is present, say so explicitly and vote HOLD with low confidence — do not fabricate a forecast opinion from other agents' data.`,
   },
 ];

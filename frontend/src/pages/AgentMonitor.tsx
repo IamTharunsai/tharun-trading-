@@ -28,6 +28,7 @@ const AGENTS: Record<number, { name: string; icon: string }> = {
   11: { name: 'Elliott Wave',     icon: '🌊' },
   12: { name: 'Options Flow',     icon: '📉' },
   13: { name: 'Arbitrageur',      icon: '⚖️' },
+  14: { name: 'Quant Forecaster', icon: '🎯' },
 };
 
 const TYPE_COLOR: Record<string, string> = {
@@ -161,7 +162,7 @@ export default function AgentMonitorPage() {
           🔍 Agent Activity Monitor
         </h1>
         <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)' }}>
-          Real-time feed of all 13 agents — votes, analysis, trades
+          Real-time feed of all 14 agents — votes, analysis, trades
         </p>
       </div>
 
