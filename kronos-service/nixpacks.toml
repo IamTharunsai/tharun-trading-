@@ -2,16 +2,13 @@
 nixPkgs = ["python311"]
 
 [phases.install]
-# nixpkgs' python311 doesn't bundle pip, and python311Packages.pip (added as
-# a separate top-level nixPkgs entry) doesn't link into this same
-# interpreter's site-packages -- a nix package-composition issue, not a PATH
-# issue. Bootstrapping pip via Python's own built-in ensurepip module sidesteps
-# nix package composition entirely and is guaranteed available on any stock
-# CPython build.
+# nix's system Python is PEP 668 "externally-managed" -- pip (even via
+# ensurepip) refuses to install directly into it. A venv is never externally
+# managed, so create one explicitly and use its pip/python from here on.
 cmds = [
-  "python3 -m ensurepip --upgrade",
-  "python3 -m pip install -r requirements.txt"
+  "python3 -m venv /opt/venv",
+  "/opt/venv/bin/pip install -r requirements.txt"
 ]
 
 [start]
-cmd = "python3 app.py"
+cmd = "/opt/venv/bin/python app.py"
