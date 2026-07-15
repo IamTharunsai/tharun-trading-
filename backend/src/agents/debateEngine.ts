@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { getIO } from '../websocket/server';
 import { MarketSnapshot, PortfolioState } from './types';
 import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualReports } from '../services/fundamentalsService';
-import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
+import { getStockMemorySummary, recordDebate, getRegimeMatchedLessons } from '../services/stockMemoryService';
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService, classifySectors } from '../services/geopoliticalDataService';
@@ -512,12 +512,13 @@ export async function runInvestmentCommitteeDebate(
   // previously a separate `await` after this block (not in the Promise.all),
   // silently turning 4-way parallel fetch into 3-parallel-then-1-sequential
   // and adding the full Alpaca options latency to every stock debate.
-  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast] = await Promise.all([
+  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast, regimeLessons] = await Promise.all([
     snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
     intermarketService.getIntermarketAnalysis().catch(() => null),
     snapshot.market === 'stocks' ? optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null) : Promise.resolve(null),
     getForecast(asset, snapshot.candles, 5).catch(() => null),
+    getRegimeMatchedLessons(asset, marketRegime).catch(() => ''),
   ]);
 
   const fundamentalsSummary = deepAnalysis
@@ -563,7 +564,7 @@ export async function runInvestmentCommitteeDebate(
     io?.emit('debate:round', { round: 1, debateId, asset });
 
     const newsSummary = await buildNewsSummary(asset);
-    const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary, forecastSummary);
+    const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary, forecastSummary, regimeLessons);
     round1Results = [];
 
     // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
@@ -952,7 +953,8 @@ export function buildMarketContext(
   newsSummary = '',
   macroSummary = '',
   optionsSummary = '',
-  forecastSummary = ''
+  forecastSummary = '',
+  regimeLessons = ''
 ): string {
   const ind = snapshot.indicators;
   const lines = [
@@ -990,6 +992,9 @@ export function buildMarketContext(
   }
   if (forecastSummary) {
     lines.push(`── QUANT FORECAST (Kronos ML model) ──`, forecastSummary);
+  }
+  if (regimeLessons) {
+    lines.push(`── REGIME HISTORY (same symbol, same market regime) ──`, regimeLessons);
   }
   return lines.join('\n');
 }
