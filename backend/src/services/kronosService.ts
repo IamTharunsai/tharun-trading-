@@ -32,7 +32,12 @@ export async function getForecast(symbol: string, candles: Candle[], predLen: nu
       const response = await axios.post(
         `${baseUrl}/forecast`,
         { symbol, ohlcv, predLen },
-        { timeout: 10000 },
+        // Railway's private network resolves kronos-service.railway.internal
+        // to both an IPv6 and an IPv4 address, but the IPv6 route gets
+        // ECONNREFUSED (confirmed live via curl -v) while IPv4 works —
+        // axios/Node's http client doesn't retry the other family on its own
+        // the way curl's Happy Eyeballs fallback does, so force IPv4 directly.
+        { timeout: 10000, family: 4 },
       );
       if (response.status === 200) {
         return response.data as KronosForecast;

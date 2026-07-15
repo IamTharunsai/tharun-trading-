@@ -25,7 +25,7 @@ describe('kronosService.getForecast', () => {
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'http://kronos-service.railway.internal:8000/forecast',
       expect.objectContaining({ symbol: 'AAPL', predLen: 1 }),
-      expect.any(Object),
+      expect.objectContaining({ family: 4 }),
     );
   });
 
