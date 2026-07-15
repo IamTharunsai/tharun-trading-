@@ -980,6 +980,55 @@ export function buildMarketContext(
 
 export const __test__buildMarketContext = buildMarketContext;
 
+export async function saveDebateCheckpoint(
+  asset: string,
+  status: 'ROUND1_DONE' | 'ROUND2_DONE',
+  round1Results: any[],
+  round2Exchange: CrossExam | null,
+  marketRegime: string
+): Promise<void> {
+  try {
+    await prisma.debateCheckpoint.upsert({
+      where: { asset },
+      create: { asset, status, round1Results, round2Exchange: round2Exchange as any, marketRegime },
+      update: { status, round1Results, round2Exchange: round2Exchange as any, marketRegime },
+    });
+  } catch (err) {
+    logger.error('Failed to save debate checkpoint', { asset, err });
+  }
+}
+
+const CHECKPOINT_STALE_MS = 30 * 60 * 1000;
+
+export async function loadDebateCheckpoint(
+  asset: string
+): Promise<{ status: string; round1Results: any[]; round2Exchange: CrossExam | null } | null> {
+  try {
+    const checkpoint = await prisma.debateCheckpoint.findUnique({ where: { asset } });
+    if (!checkpoint) return null;
+    if (Date.now() - checkpoint.updatedAt.getTime() > CHECKPOINT_STALE_MS) {
+      await prisma.debateCheckpoint.delete({ where: { asset } }).catch(() => {});
+      return null;
+    }
+    return {
+      status: checkpoint.status,
+      round1Results: checkpoint.round1Results as any[],
+      round2Exchange: checkpoint.round2Exchange as CrossExam | null,
+    };
+  } catch (err) {
+    logger.warn('Failed to load debate checkpoint', { asset, err });
+    return null;
+  }
+}
+
+export async function clearDebateCheckpoint(asset: string): Promise<void> {
+  try {
+    await prisma.debateCheckpoint.deleteMany({ where: { asset } });
+  } catch (err) {
+    logger.warn('Failed to clear debate checkpoint', { asset, err });
+  }
+}
+
 async function buildNewsSummary(asset: string): Promise<string> {
   const highImpact = geopoliticalDataService.getHighImpactNews(120);
   // Headlines say "Amazon", not "AMZN" — matching on the raw ticker alone
