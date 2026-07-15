@@ -100,3 +100,30 @@ export async function recordDebate(symbol: string, vote: string): Promise<void> 
     });
   } catch { /* silent */ }
 }
+
+// ── REGIME-MATCHED PAST-DEBATE LESSONS ────────────────────────────────────────
+// getStockMemorySummary above is a flat, symbol-only rolling aggregate (ignores
+// what market regime each past trade happened in). This is narrower and more
+// specific: "the last few times we debated this exact symbol in this exact
+// regime, here's what the committee decided" — ported from tradingagents'
+// memory-injection pattern (see project history), scoped to symbol+regime per
+// this component's design spec rather than a global rolling summary.
+export async function getRegimeMatchedLessons(symbol: string, regime: string): Promise<string> {
+  try {
+    const pastDecisions = await prisma.agentDecision.findMany({
+      where: { asset: symbol, regime },
+      orderBy: { timestamp: 'desc' },
+      take: 3,
+    });
+    if (pastDecisions.length === 0) return '';
+
+    const lines = pastDecisions.map(d => {
+      const date = d.timestamp.toISOString().split('T')[0];
+      return `${date}: ${d.finalVote} (${d.avgConfidence.toFixed(0)}% confidence)${d.executed ? ', executed' : ', not executed'}`;
+    });
+    return `Past debates on ${symbol} in ${regime} regime:\n${lines.join('\n')}`;
+  } catch (err) {
+    logger.warn(`Regime-matched lessons lookup failed for ${symbol}`, { err });
+    return '';
+  }
+}

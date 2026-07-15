@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { getIO } from '../websocket/server';
 import { MarketSnapshot, PortfolioState } from './types';
 import { getFundamentalsSummary, fetchAndStoreFundamentals, fetchAndStoreAnnualReports } from '../services/fundamentalsService';
-import { getStockMemorySummary, recordDebate } from '../services/stockMemoryService';
+import { getStockMemorySummary, recordDebate, getRegimeMatchedLessons } from '../services/stockMemoryService';
 import { fetchDeepAnalysis, formatDeepAnalysisForAgents } from '../services/deepAnalysisService';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService, classifySectors } from '../services/geopoliticalDataService';
@@ -177,6 +177,8 @@ EMA SYSTEM: EMA 9/21 cross = short-term momentum. EMA 50 = medium-term trend. EM
 YOUR FAILURE MODES (know your weaknesses): Indicators lag — price moves first. All signals fail in news-driven moves. Choppy markets produce false signals. Crypto volume data is manipulated — use with caution.
 
 DECISION FRAMEWORK: Only vote BUY when 3+ indicators align AND volume confirms. HOLD when signals are mixed or conflicting. SELL when bearish pattern + volume + trend confirmation align.
+
+GROUNDING: Treat the indicator values and price levels given to you in this prompt as the source of truth — do not claim historical validation, support/resistance bounces, or exact percentage moves unless directly supported by the numbers actually provided to you. If you don't have a specific data point, say so rather than inventing a plausible-sounding one.
 
 When responding, always reference SPECIFIC indicator levels and EXACT price levels. Never be vague.`
   },
@@ -472,6 +474,10 @@ export async function runInvestmentCommitteeDebate(
   const io = getIO();
   const debateId = `debate_${Date.now()}`;
   const asset = snapshot.asset;
+  const checkpoint = await loadDebateCheckpoint(asset);
+  if (checkpoint) {
+    logger.info(`♻️  Resuming debate for ${asset} from checkpoint (${checkpoint.status})`);
+  }
 
   logger.info(`\n${'═'.repeat(60)}`);
   logger.info(`🏛️  INVESTMENT COMMITTEE CONVENING — ${asset} @ $${snapshot.price}`);
@@ -506,12 +512,13 @@ export async function runInvestmentCommitteeDebate(
   // previously a separate `await` after this block (not in the Promise.all),
   // silently turning 4-way parallel fetch into 3-parallel-then-1-sequential
   // and adding the full Alpaca options latency to every stock debate.
-  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast] = await Promise.all([
+  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast, regimeLessons] = await Promise.all([
     snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
     intermarketService.getIntermarketAnalysis().catch(() => null),
     snapshot.market === 'stocks' ? optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null) : Promise.resolve(null),
     getForecast(asset, snapshot.candles, 5).catch(() => null),
+    getRegimeMatchedLessons(asset, marketRegime).catch(() => ''),
   ]);
 
   const fundamentalsSummary = deepAnalysis
@@ -548,156 +555,172 @@ export async function runInvestmentCommitteeDebate(
 
   await recordDebate(asset, 'PENDING');
 
-  logger.info('📢 ROUND 1: OPENING ARGUMENTS');
-  io?.emit('debate:round', { round: 1, debateId, asset });
+  let round1Results: any[];
+  if (checkpoint) {
+    round1Results = checkpoint.round1Results;
+    transcript.round1 = round1Results.map(r => ({ agentId: r.agentId, agentName: r.agentName, vote: r.vote, argument: r.openingArgument }));
+  } else {
+    logger.info('📢 ROUND 1: OPENING ARGUMENTS');
+    io?.emit('debate:round', { round: 1, debateId, asset });
 
-  const newsSummary = await buildNewsSummary(asset);
-  const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary, forecastSummary);
-  const round1Results: any[] = [];
+    const newsSummary = await buildNewsSummary(asset);
+    const round1Prompt = buildMarketContext(snapshot, portfolio, marketRegime, fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary, forecastSummary, regimeLessons);
+    round1Results = [];
 
-  // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
-  // contextual call below that sees every other agent's round-1 argument, so
-  // including it in this generic loop too was a duplicate paid API call that
-  // also produced two conflicting round1 entries for the same agent.
-  const round1Roster = AGENT_ROSTER.filter(a => a.id !== 10);
-  const round1AgentResults = await runAgentsSequentially(round1Roster, async (agent) => {
-    try {
-      io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
+    // Devil's Advocate (id 10) intentionally excluded here — it gets a separate
+    // contextual call below that sees every other agent's round-1 argument, so
+    // including it in this generic loop too was a duplicate paid API call that
+    // also produced two conflicting round1 entries for the same agent.
+    const round1Roster = AGENT_ROSTER.filter(a => a.id !== 10);
+    const round1AgentResults = await runAgentsSequentially(round1Roster, async (agent) => {
+      try {
+        io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
-      // Prompt caching only hits when the content BEFORE a cache_control
-      // breakpoint is byte-identical across calls. Previously agent.systemPrompt
-      // (unique per agent) sat in front of both cache points, so the cumulative
-      // prefix differed for every one of the 9 agents and neither breakpoint
-      // ever matched — cacheRead was 0 on every single call, every debate,
-      // all night. Moved the shared instructions to `system` (identical across
-      // every agent and every debate) and round1Prompt to the front of the
-      // user message (identical across the 9 agents within this one debate);
-      // each agent's distinct persona now comes after both cache points.
-      const response = await callWithRetry({
-        model: 'claude-haiku-4-5-20251001',
-        temperature: 0.7,
-        max_tokens: 1536,
-        system: [{
-          type: 'text',
-          text: `${COMPACT_KNOWLEDGE}\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
-          cache_control: { type: 'ephemeral' }
-        }],
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: `COMMITTEE — ${asset}\n\n${round1Prompt}`, cache_control: { type: 'ephemeral' } },
-            { type: 'text', text: `YOUR ROLE:\n${agent.systemPrompt}\n\nState your position with specific numbers.` }
-          ]
-        }]
-      });
-
-      const content = response.content[0];
-      if (content.type !== 'text') throw new Error('Bad response');
-      const parsed = extractJSON(content.text);
-
-      const result = {
-        agentId: agent.id, agentName: agent.name, agentIcon: agent.icon,
-        vote: parsed.vote as 'BUY' | 'SELL' | 'HOLD',
-        confidence: Math.min(100, Math.max(0, parsed.confidence)),
-        openingArgument: parsed.openingArgument,
-        keyFactors: parsed.keyFactors || [],
-        riskWarnings: parsed.riskWarnings || [],
-        weaknessOfMyOwnView: parsed.weaknessOfMyOwnView || ''
-      };
-      logger.info(`  ${agent.icon} ${agent.name}: ${result.vote} (${result.confidence}%)`);
-      io?.emit('debate:agent-voted', { ...result, round: 1, debateId });
-      agentActivityMonitor.logVote(agent.id, agent.name, asset, result.vote, result.openingArgument, result.confidence / 100, 1).catch(() => {});
-      return result;
-    } catch (err) {
-      logger.error(`Agent ${agent.id} Round 1 failed`, { err: (err as Error)?.message || err });
-      const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
-      io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
-      return fallback;
-    }
-  }, 4000); // 4 second gap between agents
-  transcript.round1 = round1AgentResults.map(r => ({ agentId: r.agentId, agentName: r.agentName, vote: r.vote, argument: r.openingArgument }));
-  round1Results.push(...round1AgentResults);
-
-  const devilAgent = AGENT_ROSTER[9];
-  await new Promise(r => setTimeout(r, 4000)); // gap after last agent
-  io?.emit('debate:agent-speaking', { agentId: 10, agentName: devilAgent.name, round: 1, debateId });
-  try {
-    const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
-    const devilResponse = await callWithRetry({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1536,
-      system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
-      messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
-    });
-    const dc = devilResponse.content[0];
-    if (dc.type === 'text') {
-      const dp = extractJSON(dc.text);
-      const devilResult = {
-        agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon,
-        vote: dp.vote as 'BUY' | 'SELL' | 'HOLD',
-        confidence: Math.min(100, Math.max(0, dp.confidence)),
-        openingArgument: dp.openingArgument,
-        keyFactors: dp.keyFactors || [],
-        riskWarnings: dp.riskWarnings || [],
-        weaknessOfMyOwnView: dp.weaknessOfMyOwnView || ''
-      };
-      round1Results.push(devilResult);
-      transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: devilResult.vote, argument: devilResult.openingArgument });
-      logger.info(`  ${devilAgent.icon} ${devilAgent.name}: ${devilResult.vote} (${devilResult.confidence}%)`);
-      io?.emit('debate:agent-voted', { ...devilResult, round: 1, debateId });
-    }
-  } catch (err) {
-    logger.error('Devil\'s Advocate Round 1 failed', { err: (err as Error)?.message || err });
-    const fallback = { agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
-    round1Results.push(fallback);
-    transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: 'HOLD', argument: 'Analysis unavailable' });
-    io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
-  }
-
-  logger.info('\n⚔️  ROUND 2: CROSS-EXAMINATION');
-  io?.emit('debate:round', { round: 2, debateId, asset });
-
-  const dominantView = getDominantView(round1Results);
-
-  // The strongest dissenting voice directly challenges the dominant view's
-  // actual argument, and its lead agent has to respond to that specific
-  // challenge — 2 calls, not 13, but real adversarial engagement instead of
-  // a no-op (this used to just emit a UI event and populate nothing, so
-  // Round 3 below only ever saw a bare vote tally).
-  let round2Exchange: CrossExam | null = null;
-  const dissenters = round1Results.filter(r => r.vote !== dominantView.direction && r.agentId !== dominantView.leadAgent?.agentId);
-  const challenger = dissenters.sort((a, b) => b.confidence - a.confidence)[0];
-
-  if (challenger && dominantView.leadAgent) {
-    try {
-      const challengeResponse = await callWithRetry({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 300,
-        system: `You are ${challenger.agentName}. You voted ${challenger.vote} (${challenger.confidence}%) on ${asset}. The committee is leaning ${dominantView.direction}, led by ${dominantView.leadAgent.agentName}'s argument: "${dominantView.leadAgent.openingArgument}"\n\nIssue ONE sharp, specific challenge to that argument, under 30 words. Respond with ONLY {"challenge":"<text>"}`,
-        messages: [{ role: 'user', content: 'What is your strongest specific challenge to their argument?' }]
-      });
-      const cc = challengeResponse.content[0];
-      const challengeText = cc.type === 'text' ? extractJSON(cc.text).challenge : null;
-
-      if (challengeText) {
-        const rebuttalResponse = await callWithRetry({
+        // Prompt caching only hits when the content BEFORE a cache_control
+        // breakpoint is byte-identical across calls. Previously agent.systemPrompt
+        // (unique per agent) sat in front of both cache points, so the cumulative
+        // prefix differed for every one of the 9 agents and neither breakpoint
+        // ever matched — cacheRead was 0 on every single call, every debate,
+        // all night. Moved the shared instructions to `system` (identical across
+        // every agent and every debate) and round1Prompt to the front of the
+        // user message (identical across the 9 agents within this one debate);
+        // each agent's distinct persona now comes after both cache points.
+        const response = await callWithRetry({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 300,
-          system: `You are ${dominantView.leadAgent.agentName}. You voted ${dominantView.leadAgent.vote} (${dominantView.leadAgent.confidence}%) on ${asset}, arguing: "${dominantView.leadAgent.openingArgument}"\n\n${challenger.agentName} just challenged you: "${challengeText}"\n\nRespond directly to their specific point, under 30 words. Respond with ONLY {"rebuttal":"<text>"}`,
-          messages: [{ role: 'user', content: 'Defend your position against this specific challenge.' }]
+          temperature: 0.7,
+          max_tokens: 1536,
+          system: [{
+            type: 'text',
+            text: `${COMPACT_KNOWLEDGE}\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words: {"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<cite numbers>","keyFactors":["<f1>","<f2>","<f3>"],"riskWarnings":["<w1>","<w2>"],"priceTarget":"<price>","stopLevel":"<price>","riskReward":"<ratio>"}`,
+            cache_control: { type: 'ephemeral' }
+          }],
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: `COMMITTEE — ${asset}\n\n${round1Prompt}`, cache_control: { type: 'ephemeral' } },
+              { type: 'text', text: `YOUR ROLE:\n${agent.systemPrompt}\n\nState your position with specific numbers.` }
+            ]
+          }]
         });
-        const rc = rebuttalResponse.content[0];
-        const rebuttalText = (rc.type === 'text' ? extractJSON(rc.text).rebuttal : null) || 'No response';
 
-        round2Exchange = { challenger: challenger.agentName, target: dominantView.leadAgent.agentName, challenge: challengeText, rebuttal: rebuttalText };
-        transcript.round2.push(round2Exchange);
-        io?.emit('debate:cross-examination', { ...round2Exchange, debateId });
-        logger.info(`  ⚔️ ${challenger.agentName} → ${dominantView.leadAgent.agentName}: "${challengeText}"`);
-        logger.info(`  🛡️ ${dominantView.leadAgent.agentName}: "${rebuttalText}"`);
+        const content = response.content[0];
+        if (content.type !== 'text') throw new Error('Bad response');
+        const parsed = extractJSON(content.text);
+
+        const result = {
+          agentId: agent.id, agentName: agent.name, agentIcon: agent.icon,
+          vote: parsed.vote as 'BUY' | 'SELL' | 'HOLD',
+          confidence: Math.min(100, Math.max(0, parsed.confidence)),
+          openingArgument: parsed.openingArgument,
+          keyFactors: parsed.keyFactors || [],
+          riskWarnings: parsed.riskWarnings || [],
+          weaknessOfMyOwnView: parsed.weaknessOfMyOwnView || ''
+        };
+        logger.info(`  ${agent.icon} ${agent.name}: ${result.vote} (${result.confidence}%)`);
+        io?.emit('debate:agent-voted', { ...result, round: 1, debateId });
+        agentActivityMonitor.logVote(agent.id, agent.name, asset, result.vote, result.openingArgument, result.confidence / 100, 1).catch(() => {});
+        return result;
+      } catch (err) {
+        logger.error(`Agent ${agent.id} Round 1 failed`, { err: (err as Error)?.message || err });
+        const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
+        io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
+        return fallback;
+      }
+    }, 4000); // 4 second gap between agents
+    transcript.round1 = round1AgentResults.map(r => ({ agentId: r.agentId, agentName: r.agentName, vote: r.vote, argument: r.openingArgument }));
+    round1Results.push(...round1AgentResults);
+
+    const devilAgent = AGENT_ROSTER[9];
+    await new Promise(r => setTimeout(r, 4000)); // gap after last agent
+    io?.emit('debate:agent-speaking', { agentId: 10, agentName: devilAgent.name, round: 1, debateId });
+    try {
+      const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
+      const devilResponse = await callWithRetry({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1536,
+        system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
+        messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
+      });
+      const dc = devilResponse.content[0];
+      if (dc.type === 'text') {
+        const dp = extractJSON(dc.text);
+        const devilResult = {
+          agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon,
+          vote: dp.vote as 'BUY' | 'SELL' | 'HOLD',
+          confidence: Math.min(100, Math.max(0, dp.confidence)),
+          openingArgument: dp.openingArgument,
+          keyFactors: dp.keyFactors || [],
+          riskWarnings: dp.riskWarnings || [],
+          weaknessOfMyOwnView: dp.weaknessOfMyOwnView || ''
+        };
+        round1Results.push(devilResult);
+        transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: devilResult.vote, argument: devilResult.openingArgument });
+        logger.info(`  ${devilAgent.icon} ${devilAgent.name}: ${devilResult.vote} (${devilResult.confidence}%)`);
+        io?.emit('debate:agent-voted', { ...devilResult, round: 1, debateId });
       }
     } catch (err) {
-      logger.error('Round 2 cross-examination failed', { err: (err as Error)?.message || err });
+      logger.error('Devil\'s Advocate Round 1 failed', { err: (err as Error)?.message || err });
+      const fallback = { agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
+      round1Results.push(fallback);
+      transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: 'HOLD', argument: 'Analysis unavailable' });
+      io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
     }
+
+    await saveDebateCheckpoint(asset, 'ROUND1_DONE', round1Results, null, marketRegime);
+  }
+
+  let round2Exchange: CrossExam | null;
+  if (checkpoint && checkpoint.status === 'ROUND2_DONE') {
+    round2Exchange = checkpoint.round2Exchange;
+    if (round2Exchange) transcript.round2.push(round2Exchange);
+  } else {
+    logger.info('\n⚔️  ROUND 2: CROSS-EXAMINATION');
+    io?.emit('debate:round', { round: 2, debateId, asset });
+
+    const dominantView = getDominantView(round1Results);
+
+    // The strongest dissenting voice directly challenges the dominant view's
+    // actual argument, and its lead agent has to respond to that specific
+    // challenge — 2 calls, not 13, but real adversarial engagement instead of
+    // a no-op (this used to just emit a UI event and populate nothing, so
+    // Round 3 below only ever saw a bare vote tally).
+    round2Exchange = null;
+    const dissenters = round1Results.filter(r => r.vote !== dominantView.direction && r.agentId !== dominantView.leadAgent?.agentId);
+    const challenger = dissenters.sort((a, b) => b.confidence - a.confidence)[0];
+
+    if (challenger && dominantView.leadAgent) {
+      try {
+        const challengeResponse = await callWithRetry({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 300,
+          system: `You are ${challenger.agentName}. You voted ${challenger.vote} (${challenger.confidence}%) on ${asset}. The committee is leaning ${dominantView.direction}, led by ${dominantView.leadAgent.agentName}'s argument: "${dominantView.leadAgent.openingArgument}"\n\nIssue ONE sharp, specific challenge to that argument, under 30 words. Respond with ONLY {"challenge":"<text>"}`,
+          messages: [{ role: 'user', content: 'What is your strongest specific challenge to their argument?' }]
+        });
+        const cc = challengeResponse.content[0];
+        const challengeText = cc.type === 'text' ? extractJSON(cc.text).challenge : null;
+
+        if (challengeText) {
+          const rebuttalResponse = await callWithRetry({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 300,
+            system: `You are ${dominantView.leadAgent.agentName}. You voted ${dominantView.leadAgent.vote} (${dominantView.leadAgent.confidence}%) on ${asset}, arguing: "${dominantView.leadAgent.openingArgument}"\n\n${challenger.agentName} just challenged you: "${challengeText}"\n\nRespond directly to their specific point, under 30 words. Respond with ONLY {"rebuttal":"<text>"}`,
+            messages: [{ role: 'user', content: 'Defend your position against this specific challenge.' }]
+          });
+          const rc = rebuttalResponse.content[0];
+          const rebuttalText = (rc.type === 'text' ? extractJSON(rc.text).rebuttal : null) || 'No response';
+
+          round2Exchange = { challenger: challenger.agentName, target: dominantView.leadAgent.agentName, challenge: challengeText, rebuttal: rebuttalText };
+          transcript.round2.push(round2Exchange);
+          io?.emit('debate:cross-examination', { ...round2Exchange, debateId });
+          logger.info(`  ⚔️ ${challenger.agentName} → ${dominantView.leadAgent.agentName}: "${challengeText}"`);
+          logger.info(`  🛡️ ${dominantView.leadAgent.agentName}: "${rebuttalText}"`);
+        }
+      } catch (err) {
+        logger.error('Round 2 cross-examination failed', { err: (err as Error)?.message || err });
+      }
+    }
+
+    await saveDebateCheckpoint(asset, 'ROUND2_DONE', round1Results, round2Exchange, marketRegime);
   }
 
   logger.info('\n🗳️  ROUND 3: FINAL VERDICT');
@@ -904,23 +927,17 @@ export async function runInvestmentCommitteeDebate(
 
   try {
     await prisma.agentDecision.create({
-      data: {
-        asset,
-        signal: transcript.finalDecision,
-        finalVote: transcript.finalDecision,
-        totalVotes: 10,
-        goVotes: Math.max(buyCount, sellCount),
-        noGoVotes: holdCount,
-        avgConfidence: transcript.finalConfidence,
-        executed: false,
-        executionReason: blockReason,
-        agentVotes: transcript.agentArguments as any,
-        marketSnapshot: { asset, price: snapshot.price } as any,
-      }
+      data: __test__buildAgentDecisionData({
+        asset, finalDecision: transcript.finalDecision, finalConfidence: transcript.finalConfidence,
+        blockReason, agentArguments: transcript.agentArguments, snapshot, marketRegime,
+        buyCount, sellCount, holdCount,
+      }) as any,
     });
   } catch (dbErr) {
     logger.error('Failed to save debate', { dbErr });
   }
+
+  await clearDebateCheckpoint(asset);
 
   return transcript;
 }
@@ -936,7 +953,8 @@ export function buildMarketContext(
   newsSummary = '',
   macroSummary = '',
   optionsSummary = '',
-  forecastSummary = ''
+  forecastSummary = '',
+  regimeLessons = ''
 ): string {
   const ind = snapshot.indicators;
   const lines = [
@@ -975,10 +993,91 @@ export function buildMarketContext(
   if (forecastSummary) {
     lines.push(`── QUANT FORECAST (Kronos ML model) ──`, forecastSummary);
   }
+  if (regimeLessons) {
+    lines.push(`── REGIME HISTORY (same symbol, same market regime) ──`, regimeLessons);
+  }
   return lines.join('\n');
 }
 
 export const __test__buildMarketContext = buildMarketContext;
+
+export async function saveDebateCheckpoint(
+  asset: string,
+  status: 'ROUND1_DONE' | 'ROUND2_DONE',
+  round1Results: any[],
+  round2Exchange: CrossExam | null,
+  marketRegime: string
+): Promise<void> {
+  try {
+    await prisma.debateCheckpoint.upsert({
+      where: { asset },
+      create: { asset, status, round1Results, round2Exchange: round2Exchange as any, marketRegime },
+      update: { status, round1Results, round2Exchange: round2Exchange as any, marketRegime },
+    });
+  } catch (err) {
+    logger.error('Failed to save debate checkpoint', { asset, err });
+  }
+}
+
+const CHECKPOINT_STALE_MS = 30 * 60 * 1000;
+
+export async function loadDebateCheckpoint(
+  asset: string
+): Promise<{ status: string; round1Results: any[]; round2Exchange: CrossExam | null } | null> {
+  try {
+    const checkpoint = await prisma.debateCheckpoint.findUnique({ where: { asset } });
+    if (!checkpoint) return null;
+    if (Date.now() - checkpoint.updatedAt.getTime() > CHECKPOINT_STALE_MS) {
+      await prisma.debateCheckpoint.delete({ where: { asset } }).catch(() => {});
+      return null;
+    }
+    return {
+      status: checkpoint.status,
+      round1Results: checkpoint.round1Results as any[],
+      round2Exchange: checkpoint.round2Exchange as CrossExam | null,
+    };
+  } catch (err) {
+    logger.warn('Failed to load debate checkpoint', { asset, err });
+    return null;
+  }
+}
+
+export async function clearDebateCheckpoint(asset: string): Promise<void> {
+  try {
+    await prisma.debateCheckpoint.deleteMany({ where: { asset } });
+  } catch (err) {
+    logger.warn('Failed to clear debate checkpoint', { asset, err });
+  }
+}
+
+export function __test__buildAgentDecisionData(args: {
+  asset: string;
+  finalDecision: string;
+  finalConfidence: number;
+  blockReason?: string | null;
+  agentArguments: any[];
+  snapshot: any;
+  marketRegime: string;
+  buyCount: number;
+  sellCount: number;
+  holdCount: number;
+}) {
+  const { asset, finalDecision, finalConfidence, blockReason, agentArguments, snapshot, marketRegime, buyCount, sellCount, holdCount } = args;
+  return {
+    asset,
+    signal: finalDecision,
+    finalVote: finalDecision,
+    totalVotes: agentArguments.length,
+    goVotes: Math.max(buyCount, sellCount),
+    noGoVotes: holdCount,
+    avgConfidence: finalConfidence,
+    executed: false,
+    executionReason: blockReason,
+    agentVotes: agentArguments,
+    marketSnapshot: snapshot,
+    regime: marketRegime,
+  };
+}
 
 async function buildNewsSummary(asset: string): Promise<string> {
   const highImpact = geopoliticalDataService.getHighImpactNews(120);

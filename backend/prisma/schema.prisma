@@ -80,11 +80,30 @@ model AgentDecision {
   executionReason String?
   agentVotes      Json
   marketSnapshot  Json
+  regime          String?
   timestamp       DateTime @default(now())
   trades          Trade[]
 
   @@index([asset])
   @@index([timestamp])
+  @@index([asset, regime])
+}
+
+// Persists round1/round2 debate outputs as they complete, so a crash or
+// redeploy mid-debate (e.g. Railway landing a deploy mid-run) can resume
+// from the last completed round instead of re-running (and re-billing)
+// earlier rounds. One row per asset (a second debate on the same asset
+// can't start while one is in flight - see debateLocks in scheduler.ts),
+// deleted once the debate finishes successfully.
+model DebateCheckpoint {
+  id             String   @id @default(cuid())
+  asset          String   @unique
+  status         String   // 'ROUND1_DONE' | 'ROUND2_DONE'
+  round1Results  Json
+  round2Exchange Json?
+  marketRegime   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 // OPEN POSITIONS
