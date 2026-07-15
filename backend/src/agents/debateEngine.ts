@@ -178,6 +178,8 @@ YOUR FAILURE MODES (know your weaknesses): Indicators lag — price moves first.
 
 DECISION FRAMEWORK: Only vote BUY when 3+ indicators align AND volume confirms. HOLD when signals are mixed or conflicting. SELL when bearish pattern + volume + trend confirmation align.
 
+GROUNDING: Treat the indicator values and price levels given to you in this prompt as the source of truth — do not claim historical validation, support/resistance bounces, or exact percentage moves unless directly supported by the numbers actually provided to you. If you don't have a specific data point, say so rather than inventing a plausible-sounding one.
+
 When responding, always reference SPECIFIC indicator levels and EXACT price levels. Never be vague.`
   },
   {
