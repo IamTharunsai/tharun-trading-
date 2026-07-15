@@ -2,7 +2,9 @@
 // Run: npx prisma migrate dev --name init
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local dev (Windows); linux targets cover CI sandbox + Railway (Debian/OpenSSL 3.0) staging deploys.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -489,7 +491,7 @@ model GeoRiskAssessment {
   tradingMode       String   // 'aggressive', 'balanced', 'conservative', 'hibernation'
   recommendations   String   // Trading advice based on risk
   criticalEvents    Json?    // Array of events triggering high risk
-  metadata          Json?
+  metadata          Json?    // Additional structured context for the assessment
   createdAt         DateTime @default(now())
 
   @@index([timestamp])
