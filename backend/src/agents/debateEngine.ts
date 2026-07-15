@@ -924,19 +924,11 @@ export async function runInvestmentCommitteeDebate(
 
   try {
     await prisma.agentDecision.create({
-      data: {
-        asset,
-        signal: transcript.finalDecision,
-        finalVote: transcript.finalDecision,
-        totalVotes: 10,
-        goVotes: Math.max(buyCount, sellCount),
-        noGoVotes: holdCount,
-        avgConfidence: transcript.finalConfidence,
-        executed: false,
-        executionReason: blockReason,
-        agentVotes: transcript.agentArguments as any,
-        marketSnapshot: { asset, price: snapshot.price } as any,
-      }
+      data: __test__buildAgentDecisionData({
+        asset, finalDecision: transcript.finalDecision, finalConfidence: transcript.finalConfidence,
+        blockReason, agentArguments: transcript.agentArguments, snapshot, marketRegime,
+        buyCount, sellCount, holdCount,
+      }) as any,
     });
   } catch (dbErr) {
     logger.error('Failed to save debate', { dbErr });
@@ -1049,6 +1041,35 @@ export async function clearDebateCheckpoint(asset: string): Promise<void> {
   } catch (err) {
     logger.warn('Failed to clear debate checkpoint', { asset, err });
   }
+}
+
+export function __test__buildAgentDecisionData(args: {
+  asset: string;
+  finalDecision: string;
+  finalConfidence: number;
+  blockReason?: string | null;
+  agentArguments: any[];
+  snapshot: any;
+  marketRegime: string;
+  buyCount: number;
+  sellCount: number;
+  holdCount: number;
+}) {
+  const { asset, finalDecision, finalConfidence, blockReason, agentArguments, snapshot, marketRegime, buyCount, sellCount, holdCount } = args;
+  return {
+    asset,
+    signal: finalDecision,
+    finalVote: finalDecision,
+    totalVotes: agentArguments.length,
+    goVotes: Math.max(buyCount, sellCount),
+    noGoVotes: holdCount,
+    avgConfidence: finalConfidence,
+    executed: false,
+    executionReason: blockReason,
+    agentVotes: agentArguments,
+    marketSnapshot: snapshot,
+    regime: marketRegime,
+  };
 }
 
 async function buildNewsSummary(asset: string): Promise<string> {
