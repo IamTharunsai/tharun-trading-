@@ -119,7 +119,7 @@ export async function executeTradeSignal(
   }
 
   // ── CALCULATE POSITION SIZE (micro-account optimized) ─────────────────────
-  const accountMode = getAccountMode(portfolioState.drawdownFromPeak, portfolioState.pnlDayPct);
+  const accountMode = getAccountMode(portfolioState.drawdownFromPeak, portfolioState.pnlDayPct, portfolioState.totalValue);
   const microPos = calculateMicroPosition(
     portfolioState.totalValue,
     signal.entryPrice,

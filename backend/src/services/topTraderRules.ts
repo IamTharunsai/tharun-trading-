@@ -80,7 +80,7 @@ export async function validateWithTopTraderRules(
   }
 
   // ── LAW 5: ACCOUNT MODE CHECK ──────────────────────────────────────────────
-  const mode = getAccountMode(portfolio.drawdownFromPeak, portfolio.pnlDayPct);
+  const mode = getAccountMode(portfolio.drawdownFromPeak, portfolio.pnlDayPct, portfolio.totalValue);
 
   if (mode.mode === 'DEFEND') {
     violations.push(`LAW 5 VIOLATED: Account in DEFEND mode. No new trades until portfolio recovers.`);

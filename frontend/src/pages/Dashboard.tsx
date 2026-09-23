@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getPortfolio, getTradeStats, getPositions } from '../services/api';
+import { getPortfolio, getTradeStats, getPositions, getApexStatus } from '../services/api';
 import { useStore } from '../store';
 import StatCard from '../components/common/StatCard';
 import AgentCouncilPanel from '../components/agents/AgentCouncilPanel';
@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const { data: portfolio, isLoading: loadingPortfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats, refetchInterval: 30000 });
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
+  const { data: apex } = useQuery({ queryKey: ['apex-status'], queryFn: getApexStatus, refetchInterval: 10000 });
   const { killSwitchActive, currentAnalysis } = useStore();
 
   const pnlDayPos   = (portfolio?.pnlDayPct || 0) >= 0;
@@ -87,6 +88,34 @@ export default function DashboardPage() {
           value={positions?.length || 0}
           sub={`Trades Today: ${portfolio?.tradesExecutedToday || 0}`}
           icon={<BarChart2 size={16} />}
+          mono
+        />
+      </div>
+
+      {/* APEX-3 capital + cost + EV stack */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Capital Mode"
+          value={apex?.survival?.capitalTier || portfolio?.survival?.capitalTier || '—'}
+          sub={`Drawdown: ${apex?.survival?.drawdownMode || portfolio?.survival?.drawdownMode || '—'}`}
+          mono
+        />
+        <StatCard
+          label="API Spend Today"
+          value={`$${(apex?.apiSpendToday ?? portfolio?.apiSpendToday ?? 0).toFixed(2)}`}
+          sub={`Budget $${(apex?.apiBudgetToday ?? portfolio?.apiBudgetToday ?? 2).toFixed(2)}`}
+          mono
+        />
+        <StatCard
+          label="Win Rate"
+          value={`${stats?.winRate || 0}%`}
+          sub={`PF ${stats?.profitFactor ?? '—'} · Sharpe ${stats?.sharpe ?? '—'}`}
+          mono
+        />
+        <StatCard
+          label="Online ML Trades"
+          value={apex?.mlTrades ?? 0}
+          sub={apex?.survival?.strategy ? String(apex.survival.strategy).slice(0, 48) : 'SGD + agent weights'}
           mono
         />
       </div>

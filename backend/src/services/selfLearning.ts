@@ -110,6 +110,24 @@ export async function runPostTradeAnalysis(tradeId: string): Promise<void> {
       trade.type
     );
 
+    try {
+      const { extractFeatures } = await import('../ml/featureExtractor');
+      const { getApexLearner } = await import('../ml/apexLearner');
+      const { updateAgentWeight } = await import('../ml/agentWeights');
+      if (marketSnapshot?.indicators && marketSnapshot?.price) {
+        const feat = extractFeatures(marketSnapshot);
+        getApexLearner().learnFromTrade(feat, outcome === 'WIN' ? 1 : 0);
+      }
+      for (const v of agentVotes) {
+        const wasCorrect =
+          (outcome === 'WIN' && v.vote === trade.type) ||
+          (outcome === 'LOSS' && v.vote !== trade.type);
+        await updateAgentWeight(v.agentName || String(v.agentId), wasCorrect);
+      }
+    } catch (mlErr) {
+      logger.warn('Online ML update skipped', { mlErr });
+    }
+
     logger.info(`✅ Post-trade learning complete: ${validLessons.length} lessons`);
 
   } catch (error) {

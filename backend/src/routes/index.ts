@@ -7,6 +7,8 @@ import { prisma } from '../utils/prisma';
 import { redis } from '../utils/redis';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { getPortfolioState } from '../services/portfolio';
+import { resolveSurvivalPolicy } from '../services/survivalEngine';
+import { getApiSpendToday, dailyApiBudgetUsd } from '../services/apiCostTracker';
 import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '../agents/orchestrator';
 import backtestRoutes from './backtest';
 import { chatRouter } from './chat';
@@ -125,7 +127,19 @@ portfolioRouter.use(requireAuth);
 
 portfolioRouter.get('/', async (_req: Request, res: Response) => {
   const state = await getPortfolioState();
-  res.json(state);
+  const survival = resolveSurvivalPolicy({
+    bankroll: state.totalValue,
+    drawdownFromPeakPct: state.drawdownFromPeak,
+    dailyLossPct: state.pnlDayPct,
+    openPositions: state.positions?.length || 0,
+  });
+  const apiSpendToday = await getApiSpendToday().catch(() => 0);
+  res.json({
+    ...state,
+    survival,
+    apiSpendToday,
+    apiBudgetToday: dailyApiBudgetUsd(state.totalValue),
+  });
 });
 
 portfolioRouter.get('/snapshots', async (req: Request, res: Response) => {

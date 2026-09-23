@@ -53,6 +53,8 @@ export const getStockCandles = (symbol: string, market = 'stocks') =>
 export const getRegimes = (assets: string[]) =>
   api.get('/market/regimes', { params: { assets: assets.join(',') } }).then(r => r.data);
 
+export const getApexStatus = () => api.get('/intelligence/apex-status').then(r => r.data);
+
 // ── JOURNAL ───────────────────────────────────────────────────────────────────
 export const getJournals = () => api.get('/journal').then(r => r.data);
 export const getJournal = (date: string) => api.get(`/journal/${date}`).then(r => r.data);

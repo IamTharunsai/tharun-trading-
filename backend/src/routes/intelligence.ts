@@ -11,6 +11,12 @@ import agentActivityLogger from '../services/agentActivityLogger';
 import agentResourceLearning from '../services/agentResourceLearning';
 import geopoliticalIntelligence from '../services/geopoliticalIntelligence';
 import { intermarketService, IntermarketData } from '../services/intermarketService';
+import { getPortfolioState } from '../services/portfolio';
+import { resolveSurvivalPolicy } from '../services/survivalEngine';
+import { getApiSpendToday, dailyApiBudgetUsd } from '../services/apiCostTracker';
+import { getApexLearner } from '../ml/apexLearner';
+import { APEX_INFINITY_AGENTS } from '../services/apexInfinityRegistry';
+import { getResearchSnapshot } from '../services/deepResearchLayer';
 
 const router = Router();
 
@@ -396,6 +402,35 @@ router.post('/learning/log-activity', requireAuth, async (req: Request, res: Res
       success: false,
       error: 'Failed to log activity'
     });
+  }
+});
+
+/**
+ * GET /api/intelligence/apex-status
+ * APEX-3 capital mode, AI cost budget, online learner stats
+ */
+router.get('/apex-status', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const state = await getPortfolioState();
+    const survival = resolveSurvivalPolicy({
+      bankroll: state.totalValue,
+      drawdownFromPeakPct: state.drawdownFromPeak,
+      dailyLossPct: state.pnlDayPct,
+      openPositions: state.positions?.length || 0,
+    });
+    const apiSpendToday = await getApiSpendToday();
+    res.json({
+      success: true,
+      survival,
+      apiSpendToday,
+      apiBudgetToday: dailyApiBudgetUsd(state.totalValue),
+      mlTrades: getApexLearner().nTrades,
+      agents: APEX_INFINITY_AGENTS,
+      research: getResearchSnapshot(),
+    });
+  } catch (err) {
+    logger.error('apex-status error', { err });
+    res.status(500).json({ success: false, error: 'Failed to load APEX status' });
   }
 });
 

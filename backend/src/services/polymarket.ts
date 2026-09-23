@@ -3,6 +3,9 @@ import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
 import { getIO } from '../websocket/server';
+import { computePApex } from './polymarketProbability';
+import { canCallClaude } from './apiCostTracker';
+import { fetchYesBookImbalance, parseResolutionCriteria, isSportsCategory } from './polymarketClob';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THARUN AUTO TRADING PLATFORM
@@ -143,11 +146,75 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function analyzePolymarketEvent(
   market: PolymarketMarket,
-  portfolioValue: number
+  portfolioValue: number,
+  minEdge = 0.08
 ): Promise<ProbabilityAnalysis> {
 
   const marketImpliedProbability = market.yesPrice; // e.g. 0.42 = 42% chance YES
   const daysToResolution = Math.max(1, Math.ceil((new Date(market.endDate).getTime() - Date.now()) / 86400000));
+
+  if (isSportsCategory((market as any).category || '', market.question || '')) {
+    return {
+      question: market.question,
+      conditionId: market.conditionId,
+      marketImpliedProbability,
+      ourEstimatedProbability: marketImpliedProbability,
+      edge: 0,
+      confidence: 0,
+      recommendedSide: 'SKIP',
+      betSizeUSD: 0,
+      expectedProfitUSD: 0,
+      reasoning: 'Sports markets have zero informational edge — skip',
+      riskFactors: ['sports'],
+      resolutionDate: market.endDate,
+      daysToResolution
+    };
+  }
+
+  const [book, resolutionRisk] = await Promise.all([
+    fetchYesBookImbalance((market as any).tokenId || (market as any).clobTokenIds?.[0]),
+    parseResolutionCriteria(market.question || ''),
+  ]);
+
+  const formula = computePApex({
+    marketYesPrice: market.yesPrice,
+    category: (market as any).category || 'general',
+    question: market.question,
+    newsSignal: 0,
+    daysToResolution,
+    bookDepthUsd: book.depthUsd || market.liquidity || 0,
+    orderBookImbalance: book.imbalance,
+    resolutionRisk,
+  });
+
+  const skipClaude = !(await canCallClaude(portfolioValue));
+  if (skipClaude || formula.side === 'SKIP') {
+    const payout = formula.side === 'YES'
+      ? (1 / Math.max(marketImpliedProbability, 0.01)) - 1
+      : (1 / Math.max(1 - marketImpliedProbability, 0.01)) - 1;
+    const ourP = formula.side === 'YES' ? formula.pApex : 1 - formula.pApex;
+    const kelly = Math.max(0, (payout * ourP - (1 - ourP)) / Math.max(payout, 1e-9));
+    let betSizeUSD = Math.min(portfolioValue * kelly * 0.5 * formula.sizeMultiplier, portfolioValue * 0.05);
+    if (portfolioValue < 300) betSizeUSD = Math.min(betSizeUSD, 2);
+    const absEdge = Math.abs(formula.edge);
+    let recommendation: 'YES' | 'NO' | 'SKIP' = formula.side;
+    if (absEdge < minEdge || betSizeUSD < 1) recommendation = 'SKIP';
+    return {
+      question: market.question,
+      conditionId: market.conditionId,
+      marketImpliedProbability,
+      ourEstimatedProbability: formula.pApex,
+      edge: formula.edge,
+      confidence: Math.round(Math.min(95, 50 + absEdge * 200)),
+      recommendedSide: recommendation,
+      betSizeUSD: Math.max(0, Math.round(betSizeUSD * 100) / 100),
+      expectedProfitUSD: betSizeUSD * payout * ourP - betSizeUSD * (1 - ourP),
+      reasoning: `P_apex formula (${formula.reasons.join(', ')})`,
+      riskFactors: formula.reasons,
+      resolutionDate: market.endDate,
+      daysToResolution
+    };
+  }
 
   // Ask our specialized probability agent to estimate the TRUE probability
   const prompt = `You are a world-class prediction market analyst. A Polymarket event needs probability assessment.
@@ -217,7 +284,7 @@ Respond ONLY in valid JSON:
 
     // Skip if edge too small, confidence too low, or bet size below minimum
     let recommendation: 'YES' | 'NO' | 'SKIP' = parsed.recommendedSide;
-    if (absEdge < 0.08 || parsed.confidence < 60 || betSizeUSD < 1) {
+    if (absEdge < minEdge || parsed.confidence < 60 || betSizeUSD < 1) {
       recommendation = 'SKIP';
     }
 
@@ -268,7 +335,8 @@ Respond ONLY in valid JSON:
 // ── SCAN ALL EVENTS FOR BEST OPPORTUNITIES ────────────────────────────────────
 
 export async function scanPolymarketOpportunities(
-  portfolioValue: number
+  portfolioValue: number,
+  minEdge = 0.08
 ): Promise<ProbabilityAnalysis[]> {
 
   logger.info('\n🔍 SCANNING POLYMARKET FOR OPPORTUNITIES...');
@@ -283,7 +351,7 @@ export async function scanPolymarketOpportunities(
   const toAnalyze = events.slice(0, 20);
   for (const event of toAnalyze) {
     for (const market of event.markets) {
-      const analysis = await analyzePolymarketEvent(market, portfolioValue);
+      const analysis = await analyzePolymarketEvent(market, portfolioValue, minEdge);
       if (analysis.recommendedSide !== 'SKIP' && analysis.betSizeUSD >= 1) {
         analyses.push(analysis);
       }

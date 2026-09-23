@@ -7,6 +7,7 @@
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { getIO } from '../websocket/server';
+import { resolveSurvivalPolicy } from './survivalEngine';
 
 // ── EXCHANGE FEE TABLE ────────────────────────────────────────────────────────
 // These fees eat your account alive at $100 if ignored
@@ -104,9 +105,9 @@ export function checkTradeViability(
   } else if (netProfit < minimumProfitRequired) {
     viable = false;
     reason = `Net profit after fees ($${netProfit.toFixed(4)}) is below minimum $${minimumProfitRequired}. Fees eat the entire profit.`;
-  } else if (feeAsPercentOfProfit > 25 && exchange !== 'polymarket' && exchange !== 'alpaca_stocks') {
+  } else if (feeAsPercentOfProfit > 20 && exchange !== 'polymarket' && exchange !== 'alpaca_stocks') {
     viable = false;
-    reason = `Fees are ${feeAsPercentOfProfit.toFixed(1)}% of expected profit. Maximum allowed is 25%. Use a smaller stop loss or larger target.`;
+    reason = `Fees are ${feeAsPercentOfProfit.toFixed(1)}% of expected profit. Maximum allowed is 20%. Use a smaller stop loss or larger target.`;
   }
 
   if (viable) {
@@ -368,56 +369,25 @@ export type AccountMode = 'NORMAL' | 'CAUTION' | 'RECOVERY' | 'DEFEND';
 
 export function getAccountMode(
   drawdownFromPeak: number,
-  dailyLossPct: number
+  dailyLossPct: number,
+  bankroll = 100
 ): { mode: AccountMode; riskMultiplier: number; rules: string[] } {
-
-  if (drawdownFromPeak >= 20 || dailyLossPct <= -5) {
-    return {
-      mode: 'DEFEND',
-      riskMultiplier: 0.2, // Trade at 20% of normal size
-      rules: [
-        'DEFEND MODE: Portfolio down 20%+ from peak',
-        'Only highest conviction setups (90%+ confidence)',
-        'Risk reduced to 0.1% per trade',
-        'Only Polymarket trades allowed (zero fees)',
-        'No crypto or stock trading until portfolio recovers',
-        'Goal: stop bleeding, do not risk more capital'
-      ]
-    };
-  }
-
-  if (drawdownFromPeak >= 12 || dailyLossPct <= -3) {
-    return {
-      mode: 'RECOVERY',
-      riskMultiplier: 0.4,
-      rules: [
-        'RECOVERY MODE: Portfolio down 12-20%',
-        'Risk reduced to 0.2% per trade',
-        'Minimum 80% agent confidence required',
-        'Prefer zero-fee platforms (Polymarket, Alpaca)',
-        'No aggressive day trading — swing trades only',
-        'One trade at a time maximum'
-      ]
-    };
-  }
-
-  if (drawdownFromPeak >= 6 || dailyLossPct <= -1.5) {
-    return {
-      mode: 'CAUTION',
-      riskMultiplier: 0.6,
-      rules: [
-        'CAUTION MODE: Portfolio down 6-12%',
-        'Risk reduced to 0.3% per trade',
-        'Minimum 70% agent confidence required',
-        'Avoid scalping — swing trades only'
-      ]
-    };
-  }
-
+  const policy = resolveSurvivalPolicy({
+    bankroll,
+    drawdownFromPeakPct: drawdownFromPeak,
+    dailyLossPct,
+  });
+  const mode = policy.drawdownMode as AccountMode;
   return {
-    mode: 'NORMAL',
-    riskMultiplier: 1.0,
-    rules: ['NORMAL: Full operation. Standard 0.5% risk per trade.']
+    mode,
+    riskMultiplier: policy.riskMultiplier,
+    rules: [
+      `APEX-3 capital: ${policy.capitalTier}`,
+      `Drawdown: ${policy.drawdownMode}`,
+      policy.strategy,
+      `Max risk/trade ${policy.maxRiskPerTradePct}%`,
+      `AI max tier ${policy.aiMaxTier}`,
+    ],
   };
 }
 

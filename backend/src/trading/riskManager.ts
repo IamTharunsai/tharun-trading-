@@ -4,6 +4,7 @@ import { TradeSignal, PortfolioState } from '../agents/types';
 import { getIO } from '../websocket/server';
 import { activateKillSwitch } from '../agents/orchestrator';
 import { correlationService } from '../services/correlationService';
+import { resolveSurvivalPolicy, marketAllowed } from '../services/survivalEngine';
 
 // ── RISK MANAGER ──────────────────────────────────────────────────────────────
 export async function validateTradeSignal(
@@ -17,6 +18,33 @@ export async function validateTradeSignal(
   const cashReservePct = parseFloat(process.env.CASH_RESERVE_PCT || '30');
   const maxPositionPct = parseFloat(process.env.MAX_POSITION_SIZE_PCT || '10');
   const maxTradesPerDay = parseInt(process.env.MAX_TRADES_PER_DAY || '50');
+
+  const policy = resolveSurvivalPolicy({
+    bankroll: portfolio.totalValue,
+    drawdownFromPeakPct: portfolio.drawdownFromPeak,
+    dailyLossPct: portfolio.pnlDayPct,
+    openPositions: portfolio.positions?.length || 0,
+  });
+
+  if (policy.drawdownMode === 'DEFEND' || policy.riskMultiplier === 0) {
+    return { approved: false, reason: `DEFEND/REBIRTH protection: no new trades (${policy.capitalTier})` };
+  }
+
+  if (!marketAllowed(policy, signal.market === 'forex' ? 'forex' : signal.market)) {
+    return { approved: false, reason: `${policy.capitalTier} mode does not allow ${signal.market}` };
+  }
+
+  if ((portfolio.positions?.length || 0) >= policy.maxOpenPositions) {
+    return { approved: false, reason: `Position cap ${policy.maxOpenPositions} in ${policy.capitalTier}` };
+  }
+
+  if (portfolio.tradesExecutedToday >= Math.min(maxTradesPerDay, policy.tradesPerDayCap)) {
+    return { approved: false, reason: `Daily trade cap for ${policy.capitalTier}` };
+  }
+
+  if (signal.confidence < policy.minConfidence) {
+    return { approved: false, reason: `Confidence ${signal.confidence}% below ${policy.minConfidence}% for ${policy.capitalTier}` };
+  }
 
   // Daily loss limit
   if (portfolio.pnlDayPct <= -dailyLossLimit) {
@@ -68,7 +96,7 @@ export async function validateTradeSignal(
   // always-true stub this used to be.
   const heldAssets = (portfolio.positions || []).map((p: any) => p.asset).filter((a: string) => a !== signal.asset);
   if (heldAssets.length > 0) {
-    const concentration = await correlationService.shouldAddAssetToPortfolio(signal.asset, heldAssets, 0.75).catch(() => null);
+    const concentration = await correlationService.shouldAddAssetToPortfolio(signal.asset, heldAssets, 0.7).catch(() => null);
     if (concentration && !concentration.shouldAdd) {
       logger.warn(`🛑 Concentration risk blocked: ${signal.asset}`, { reason: concentration.reason });
       return { approved: false, reason: concentration.reason };
