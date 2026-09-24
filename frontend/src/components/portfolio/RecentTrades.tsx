@@ -41,7 +41,7 @@ export default function RecentTrades() {
                         {t.type}
                       </span>
                     </td>
-                    <td className="py-2 font-mono text-xs text-apex-text">${t.entryPrice?.toFixed(2)}</td>
+                    <td className="py-2 font-mono text-xs text-apex-text">{t.status === 'PENDING' ? 'Awaiting fill' : `$${t.entryPrice?.toFixed(2)}`}</td>
                     <td className="py-2 font-mono text-xs text-apex-muted">{t.exitPrice ? `$${t.exitPrice.toFixed(2)}` : '—'}</td>
                     <td className="py-2">
                       {t.pnl != null ? (
@@ -49,7 +49,7 @@ export default function RecentTrades() {
                           {isPos ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
                           {isPos ? '+' : ''}${t.pnl.toFixed(2)}
                         </span>
-                      ) : <span className="text-apex-muted font-mono text-xs">open</span>}
+                      ) : <span className="text-apex-muted font-mono text-xs">—</span>}
                     </td>
                     <td className="py-2">
                       <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${t.status === 'OPEN' ? 'bg-apex-yellow/10 text-apex-yellow' : t.status === 'CLOSED' ? 'bg-apex-surface text-apex-muted' : 'bg-apex-red/10 text-apex-red'}`}>

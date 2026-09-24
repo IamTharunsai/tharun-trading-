@@ -141,7 +141,7 @@ describe('feature extractor + online learner', () => {
   });
 
   it('updates win probability after profitable trades', () => {
-    const learner = new ApexLearner();
+    const learner = new ApexLearner(null); // Synthetic test outcomes must never train the deployed model.
     const f = extractFeatures(snapshot);
     const before = learner.predictWinProbability(f);
     for (let i = 0; i < 12; i++) learner.learnFromTrade(f, 1);

@@ -6,6 +6,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../utils/logger';
+import { assertPaperTrading, PAPER_ALPACA_URL } from '../trading/paperConfig';
 
 interface AlpacaOrderRequest {
   symbol: string;
@@ -93,6 +94,13 @@ interface AlpacaAccount {
 }
 
 export class AlpacaBroker {
+  async getClock(): Promise<{ timestamp: string; is_open: boolean; next_close: string }> {
+    return (await this.client.get('/v2/clock')).data;
+  }
+
+  async getAsset(symbol: string): Promise<{ tradable: boolean; fractionable: boolean; shortable: boolean }> {
+    return (await this.client.get(`/v2/assets/${encodeURIComponent(symbol)}`)).data;
+  }
   private client: AxiosInstance;
   private apiKey: string;
   private apiSecret: string;
@@ -100,12 +108,12 @@ export class AlpacaBroker {
   private paperMode: boolean;
 
   constructor(apiKey: string, apiSecret: string, paperMode: boolean = true) {
+    assertPaperTrading();
+    if (!paperMode) throw new Error('Live brokerage is disabled in this paper deployment');
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
     this.paperMode = paperMode;
-    this.baseUrl = paperMode
-      ? 'https://paper-api.alpaca.markets'
-      : 'https://api.alpaca.markets';
+    this.baseUrl = PAPER_ALPACA_URL;
 
     this.client = axios.create({
       baseURL: this.baseUrl,
@@ -199,6 +207,19 @@ export class AlpacaBroker {
     } catch (error) {
       logger.error('Alpaca: Failed to get order', { orderId, error });
       return null;
+    }
+  }
+
+  /** Only a genuine 404 means the order does not exist; outages must not trigger a retry order. */
+  async getOrderByClientId(clientOrderId: string): Promise<AlpacaOrder | null> {
+    try {
+      const response = await this.client.get('/v2/orders:by_client_order_id', {
+        params: { client_order_id: clientOrderId },
+      });
+      return response.data;
+    } catch (error) {
+      if ((error as any).response?.status === 404) return null;
+      throw error;
     }
   }
 

@@ -18,6 +18,10 @@ api.interceptors.response.use(
 );
 
 // ── AUTH ─────────────────────────────────────────────────────────────────────
+export const getRuntimeHealth = () => axios.get(`${import.meta.env.VITE_API_URL || ''}/health`, { timeout: 5000 }).then(r => r.data as {
+  mode: string; backgroundJobsEnabled: boolean; killSwitchActive: boolean; timestamp: string;
+});
+
 export const login = (email: string, password: string, totpCode?: string) =>
   api.post('/auth/login', { email, password, totpCode }).then(r => r.data);
 

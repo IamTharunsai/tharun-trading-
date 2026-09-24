@@ -22,8 +22,12 @@ redis.on('error', (err) => {
 
 redis.on('connect', () => console.log('✅ Redis connected'));
 
-// Try to connect but don't fail if unavailable
-redis.connect().catch(() => {
-  console.warn('⚠️ Redis not available - running without cache');
-});
+// Connection is a server lifecycle action, not an import side effect.
+export async function initRedis(): Promise<void> {
+  try {
+    await redis.connect();
+  } catch {
+    console.warn('⚠️ Redis not available - running without cache');
+  }
+}
 

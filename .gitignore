@@ -34,6 +34,7 @@ yarn-error.log*
 Thumbs.db
 
 # Temporary
+.local-paper/
 tmp/
 temp/
 

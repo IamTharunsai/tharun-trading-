@@ -51,7 +51,7 @@ export function TradesPage() {
                     <span className={`font-mono text-xs px-2 py-0.5 rounded font-bold ${t.type === 'BUY' ? 'bg-apex-green/10 text-apex-green' : 'bg-apex-red/10 text-apex-red'}`}>{t.type}</span>
                   </td>
                   <td className="py-2.5 font-mono text-xs text-apex-text pr-4">{t.quantity?.toFixed(4)}</td>
-                  <td className="py-2.5 font-mono text-xs text-apex-text pr-4">${t.entryPrice?.toFixed(2)}</td>
+                  <td className="py-2.5 font-mono text-xs text-apex-text pr-4">{t.status === 'PENDING' ? 'Awaiting fill' : `$${t.entryPrice?.toFixed(2)}`}</td>
                   <td className="py-2.5 font-mono text-xs text-apex-muted pr-4">{t.exitPrice ? `$${t.exitPrice.toFixed(2)}` : '—'}</td>
                   <td className={`py-2.5 font-mono text-xs font-bold pr-4 ${t.pnl != null ? (isPos ? 'text-apex-green' : 'text-apex-red') : 'text-apex-muted'}`}>
                     {t.pnl != null ? `${isPos ? '+' : ''}$${t.pnl.toFixed(2)}` : '—'}

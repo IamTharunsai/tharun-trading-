@@ -19,24 +19,26 @@ export interface Tier1Result {
   takeProfit: number;
 }
 
-function bullishIndicators(s: MarketSnapshot): number {
+function indicatorVotes(s: MarketSnapshot): { bulls: number; bears: number } {
   const i = s.indicators;
-  let n = 0;
-  if (i.rsi14 < 70 && i.rsi14 > 50) n++;
-  if (i.macd.histogram > 0) n++;
-  if (s.price > i.bollingerBands.middle) n++;
-  if (s.price > i.ema9 && i.ema9 > i.ema21) n++;
-  if (s.price > i.sma50) n++;
-  if (s.price > i.vwap) n++;
-  if (i.stochasticK > 50) n++;
-  if (i.volumeRatio > 1) n++;
-  return n;
+  const checks = [
+    [i.rsi14 > 50 && i.rsi14 < 70, i.rsi14 < 50 && i.rsi14 > 30],
+    [i.macd.histogram > 0, i.macd.histogram < 0],
+    [s.price > i.bollingerBands.middle, s.price < i.bollingerBands.middle],
+    [s.price > i.ema9 && i.ema9 > i.ema21, s.price < i.ema9 && i.ema9 < i.ema21],
+    [s.price > i.sma50, s.price < i.sma50],
+    [s.price > i.vwap, s.price < i.vwap],
+    [i.stochasticK > 50, i.stochasticK < 50],
+    [i.volumeRatio > 1 && s.priceChangePct24h > 0, i.volumeRatio > 1 && s.priceChangePct24h < 0],
+  ];
+  return { bulls: checks.filter(([bull]) => bull).length, bears: checks.filter(([, bear]) => bear).length };
 }
 
 export function runTier1Agents(
   snapshot: MarketSnapshot,
   portfolio: PortfolioState,
-  policy: SurvivalPolicy
+  policy: SurvivalPolicy,
+  now: Date = new Date()
 ): Tier1Result {
   const raw = snapshot.indicators || ({} as MarketSnapshot['indicators']);
   const price = snapshot.price || 0;
@@ -56,21 +58,21 @@ export function runTier1Agents(
   snapshot = { ...snapshot, indicators: { ...raw, ...i } as any };
   const votes: Tier1Vote[] = [];
   const rejectionReasons: string[] = [];
-  const bulls = bullishIndicators(snapshot);
-  const bears = 8 - bulls;
+  const { bulls, bears } = indicatorVotes(snapshot);
 
   votes.push({
     agentName: 'Technical Analyst',
     vote: bulls >= 5 ? 'BUY' : bears >= 5 ? 'SELL' : 'HOLD',
     score: Math.round((Math.max(bulls, bears) / 8) * 100),
-    reason: `${bulls}/8 bullish indicators`,
+    reason: `${bulls}/8 bullish, ${bears}/8 bearish indicators`,
   });
 
-  const atrStop = snapshot.price - 2 * (i.atr14 || snapshot.price * 0.02);
-  const atrTp = snapshot.price + 4 * (i.atr14 || snapshot.price * 0.02);
+  const side = votes[0].vote === 'SELL' ? -1 : 1;
+  const atrStop = snapshot.price - side * 2 * (i.atr14 || snapshot.price * 0.02);
+  const atrTp = snapshot.price + side * 4 * (i.atr14 || snapshot.price * 0.02);
   const rr = Math.abs(atrTp - snapshot.price) / Math.max(Math.abs(snapshot.price - atrStop), 1e-9);
-  const maxLoss = 0.01 * portfolio.totalValue;
-  const riskOk = rr >= 2 && (snapshot.price - atrStop) * 1 <= maxLoss * 50;
+  const riskOk = Number.isFinite(rr) && rr >= 2 && atrStop > 0 && atrTp > 0
+    && Number.isFinite(portfolio.totalValue) && portfolio.totalValue > 0;
   votes.push({
     agentName: 'Risk Calculator',
     vote: riskOk ? votes[0].vote : 'HOLD',
@@ -80,7 +82,7 @@ export function runTier1Agents(
   });
   if (!riskOk) rejectionReasons.push('Risk calculator: R:R or max loss failed');
 
-  const hour = new Date().getUTCHours();
+  const hour = now.getUTCHours();
   const deadHours = hour >= 2 && hour < 7;
   const defend = policy.drawdownMode === 'DEFEND';
   const tooMany = (portfolio.positions?.length || 0) >= policy.maxOpenPositions;
@@ -162,9 +164,13 @@ export function runTier1Agents(
     reason: `vol ratio ${i.volumeRatio.toFixed(2)}`,
   });
 
-  const etHour = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
-  const h = parseInt(etHour, 10);
-  const stocksHours = snapshot.market !== 'stocks' || (h > 9 && h < 16 && !(h === 9));
+  const et = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const part = (type: string) => et.find(p => p.type === type)?.value || '';
+  const minutes = Number(part('hour')) * 60 + Number(part('minute'));
+  const weekday = !['Sat', 'Sun'].includes(part('weekday'));
+  // Session window only; exchange holidays/early closes also require broker-calendar validation.
+  const stocksHours = snapshot.market !== 'stocks' || (weekday && minutes >= 9 * 60 + 45 && minutes < 15 * 60 + 45);
+  if (!stocksHours) rejectionReasons.push('Outside 09:45–15:45 ET weekday entry window');
   votes.push({
     agentName: 'Market Hours',
     vote: stocksHours ? votes[0].vote : 'HOLD',

@@ -78,13 +78,22 @@ tradesRouter.get('/', async (req: Request, res: Response) => {
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
   const where: any = {};
   if (asset) where.asset = asset;
-  if (status) where.status = status;
+  if (status === 'PENDING') {
+    where.status = 'OPEN';
+    where.brokerConfirmed = false;
+    where.market = 'stocks';
+  } else if (status) {
+    where.status = status;
+    if (status === 'OPEN') where.OR = [{ market: { not: 'stocks' } }, { brokerConfirmed: true }];
+  }
 
   const [trades, total] = await Promise.all([
     prisma.trade.findMany({ where, skip, take: parseInt(limit as string), orderBy: { openedAt: 'desc' }, include: { agentDecision: true } }),
     prisma.trade.count({ where })
   ]);
-  res.json({ trades, total, page: parseInt(page as string), pages: Math.ceil(total / parseInt(limit as string)) });
+  res.json({ trades: trades.map(t => ({ ...t,
+    status: t.market === 'stocks' && t.status === 'OPEN' && !t.brokerConfirmed ? 'PENDING' : t.status,
+  })), total, page: parseInt(page as string), pages: Math.ceil(total / parseInt(limit as string)) });
 });
 
 tradesRouter.get('/stats', async (_req: Request, res: Response) => {
@@ -107,7 +116,8 @@ tradesRouter.get('/stats', async (_req: Request, res: Response) => {
   });
 });
 
-tradesRouter.post('/:id/close', async (req: Request, res: Response) => {
+tradesRouter.post('/:id/close', async (req: Request, res: Response, next) => {
+  try {
   const trade = await prisma.trade.findUnique({ where: { id: req.params.id } });
   if (!trade || trade.status !== 'OPEN') {
     return res.status(404).json({ error: 'Open trade not found' });
@@ -116,9 +126,16 @@ tradesRouter.post('/:id/close', async (req: Request, res: Response) => {
   if (!position) {
     return res.status(404).json({ error: 'No open position for this trade\'s asset' });
   }
-  const exitPrice = req.body.price ?? getCurrentPrices()[trade.asset] ?? trade.entryPrice;
+  // Stock exits use broker fills; simulated exits must use the server's quote.
+  const exitPrice = getCurrentPrices()[trade.asset];
+  if (trade.market !== 'stocks' && (!Number.isFinite(exitPrice) || exitPrice <= 0)) {
+    return res.status(409).json({ error: 'No current market price available; position remains open' });
+  }
   const result = await closePosition(position, exitPrice, 'manual_close');
   res.json({ closed: true, pnl: result.pnl, pnlPct: result.pnlPct });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // ── /api/portfolio ────────────────────────────────────────────────────────────
@@ -224,6 +241,7 @@ agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
     if (!risk.approved) return res.status(400).json({ error: `Risk check failed: ${risk.reason}` });
 
     const trade = await executeTradeSignal(signal, portfolio);
+    if (!trade) return res.status(409).json({ success: false, trade: false, error: 'Paper trade was blocked or not confirmed; inspect the execution log' });
     res.json({ success: true, trade, message: `✅ Paper trade executed: ${direction} ${asset} @ $${price.toFixed(2)}` });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Execution failed' });

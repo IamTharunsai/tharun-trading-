@@ -17,6 +17,7 @@ import { TradeSignal } from '../agents/types';
 import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions } from '../services/polymarket';
 import { resolveSurvivalPolicy, marketAllowed } from '../services/survivalEngine';
 import { runDeepResearchTick } from '../services/deepResearchLayer';
+import { reconcilePendingPaperEntries } from '../trading/paperOrderLifecycle';
 
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
@@ -201,6 +202,7 @@ export function initScheduler() {
 
   // ── EVERY 10 SECONDS: Stop Loss Monitor ──────────────────────────────────
   cron.schedule('*/10 * * * * *', async () => {
+    await reconcilePendingPaperEntries().catch(err => logger.error('Paper entry reconciliation failed', { error: (err as Error).message }));
     const prices = getCurrentPrices();
     await checkStopLosses(prices).catch(err => logger.error('Stop loss check failed', { err }));
   });

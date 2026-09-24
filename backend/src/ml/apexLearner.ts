@@ -32,14 +32,14 @@ export class ApexLearner {
   private state: ModelState;
   learningRate = 0.01;
 
-  constructor() {
+  constructor(private readonly modelPath: string | null = MODEL_PATH) {
     this.state = this.load();
   }
 
   private load(): ModelState {
     try {
-      if (fs.existsSync(MODEL_PATH)) {
-        return JSON.parse(fs.readFileSync(MODEL_PATH, 'utf-8'));
+      if (this.modelPath && fs.existsSync(this.modelPath)) {
+        return JSON.parse(fs.readFileSync(this.modelPath, 'utf-8'));
       }
     } catch (err) {
       logger.warn('ApexLearner: could not load model, starting fresh', { err });
@@ -48,9 +48,10 @@ export class ApexLearner {
   }
 
   save(): void {
+    if (!this.modelPath) return;
     try {
-      fs.mkdirSync(MODEL_DIR, { recursive: true });
-      fs.writeFileSync(MODEL_PATH, JSON.stringify(this.state));
+      fs.mkdirSync(path.dirname(this.modelPath), { recursive: true });
+      fs.writeFileSync(this.modelPath, JSON.stringify(this.state));
     } catch (err) {
       logger.warn('ApexLearner: save failed', { err });
     }

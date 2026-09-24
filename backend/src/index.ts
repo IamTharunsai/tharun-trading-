@@ -11,6 +11,10 @@ import { initMarketData } from './services/marketData';
 import { geopoliticalDataService } from './services/geopoliticalDataService';
 import { logger } from './utils/logger';
 import { prisma } from './utils/prisma';
+import { assertPaperTrading } from './trading/paperConfig';
+import { initRedis } from './utils/redis';
+import { reconcilePendingPaperEntries } from './trading/paperOrderLifecycle';
+import { isKillSwitchActive } from './agents/orchestrator';
 
 // Routes
 import authRoutes from './routes/auth';
@@ -28,6 +32,7 @@ import intelligenceRoutes from './routes/intelligence';
 
 const app = express();
 const server = http.createServer(app);
+const backgroundJobsEnabled = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
 
 // ── MIDDLEWARE ────────────────────────────────────────────────────────────────
 app.use(helmet());
@@ -80,6 +85,8 @@ app.get('/health', (_, res) => {
   res.json({
     status: 'OPERATIONAL',
     mode: process.env.TRADING_MODE || 'paper',
+    backgroundJobsEnabled,
+    killSwitchActive: isKillSwitchActive(),
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -96,6 +103,8 @@ const PORT = parseInt(process.env.PORT || '4000');
 
 async function boot() {
   try {
+    assertPaperTrading();
+    if (backgroundJobsEnabled) void initRedis();
     // Test DB connection
     await prisma.$connect();
     logger.info('✅ Database connected');
@@ -103,6 +112,8 @@ async function boot() {
     // Init WebSocket
     initWebSocket(server);
     logger.info('✅ WebSocket server initialized');
+    if (backgroundJobsEnabled) {
+    await reconcilePendingPaperEntries();
 
     // Init market data feeds (optional)
     try {
@@ -128,7 +139,9 @@ async function boot() {
       logger.warn('⚠️ Geopolitical service failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
-    server.listen(PORT, () => {
+    } else logger.info('Background jobs disabled: no scheduled trading or feed workers started');
+
+    server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
       logger.info(`🚀 THARUN TRADING BOT backend running on port ${PORT}`);
       logger.info(`📊 Trading mode: ${process.env.TRADING_MODE?.toUpperCase() || 'PAPER'}`);
     });
