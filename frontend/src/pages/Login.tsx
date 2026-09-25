@@ -192,6 +192,55 @@ export default function LoginPage() {
                 <><Zap size={15} /> ACCESS SYSTEM</>
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/auth/demo');
+                  const data = await res.json();
+                  if (data.token) {
+                    setAuth(data.token, data.user);
+                    toast.success('Welcome back, Tharun Sai (Owner)');
+                    navigate('/');
+                    return;
+                  }
+                } catch {}
+                navigate('/');
+              }}
+              style={{
+                padding: '12px 16px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: `1.5px solid #10B981`,
+                borderRadius: 8,
+                fontFamily: 'Space Mono', fontWeight: 700, fontSize: 12,
+                color: '#10B981',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)'
+              }}
+            >
+              🚀 ONE-CLICK OWNER ACCESS (PREVIEW ENTRY)
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('tharunsai2081@gmail.com');
+                setPassword('Tharunsai@2081as');
+              }}
+              style={{
+                padding: '8px 16px',
+                background: 'transparent',
+                border: `1px dashed ${C.border}`,
+                borderRadius: 8,
+                fontFamily: 'Space Mono', fontSize: 11,
+                color: C.accent,
+                cursor: 'pointer',
+              }}
+            >
+              ⚡ Fill Demo Credentials
+            </button>
           </form>
         </div>
 

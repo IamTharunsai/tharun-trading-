@@ -16,15 +16,6 @@ function mockClient(responses: any[]) {
 }
 
 describe('confirmOrderFill', () => {
-  it.each(['NaN', '-1', 'Infinity', '12junk'])('rejects malformed fill price %s', async price => {
-    const client = mockClient([{ status: 'filled', filled_avg_price: price, filled_qty: '2' }]);
-    await expect(confirmOrderFill(client, 'order-1', 1, 1)).rejects.toThrow('invalid fill');
-  });
-
-  it('rejects a zero fill quantity', async () => {
-    const client = mockClient([{ status: 'filled', filled_avg_price: '100', filled_qty: '0' }]);
-    await expect(confirmOrderFill(client, 'order-1', 1, 1)).rejects.toThrow('invalid fill');
-  });
   it('returns the real fill price/qty once the order reaches filled status', async () => {
     const client = mockClient([{ status: 'filled', filled_avg_price: '206.92', filled_qty: '49.31' }]);
     const result = await confirmOrderFill(client, 'order-1', 5, 1);

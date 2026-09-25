@@ -1,47 +1,72 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import { activateKillSwitch, deactivateKillSwitch } from '../../services/api';
+import { activateKillSwitch, deactivateKillSwitch, getTrades, getPortfolio } from '../../services/api';
 import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
   TrendingUp, BookOpen, Newspaper, Settings, LogOut,
-  Power, Zap, Eye, MessageSquare, Users, Globe2
+  Power, Zap, Eye, MessageSquare, Users, Globe2,
+  FileSpreadsheet, ShieldAlert, Cpu, Radio
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 
-const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/stocks', label: 'Stock Universe', icon: Globe2 },
-  { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
-  { path: '/trades', label: 'Trades', icon: ArrowLeftRight },
-  { path: '/agents', label: 'Agent Council', icon: Bot },
-  { path: '/agents/debate-room', label: 'Debate Room', icon: Users },
-  { path: '/agents/chat', label: 'Agent Chat', icon: MessageSquare },
-  { path: '/agents/monitor', label: 'Agent Monitor', icon: Eye },
-  { path: '/charts', label: 'Charts', icon: BarChart2 },
-  { path: '/analytics', label: 'Analytics', icon: TrendingUp },
-  { path: '/journal', label: 'Journal', icon: BookOpen },
-  { path: '/news', label: 'News', icon: Newspaper },
-  { path: '/investment', label: 'Investment Plan', icon: Briefcase },
-  { path: '/settings', label: 'Settings', icon: Settings },
+const NAV_GROUPS = [
+  {
+    group: 'TERMINAL COCKPIT',
+    items: [
+      { path: '/', label: 'Overview Cockpit', icon: LayoutDashboard },
+      { path: '/polymarket', label: 'Polymarket Alpha', icon: Zap },
+      { path: '/charts', label: 'Live Charts Lab', icon: BarChart2 },
+      { path: '/stocks', label: 'Stock Universe', icon: Globe2 },
+    ]
+  },
+  {
+    group: 'AUTONOMOUS BRAIN',
+    items: [
+      { path: '/agents', label: 'Agent Council', icon: Bot },
+      { path: '/agents/debate-room', label: 'Live Debate Room', icon: Users },
+      { path: '/agents/monitor', label: 'Agent Monitor', icon: Eye },
+      { path: '/agents/chat', label: 'Instant Bloomberg (IB)', icon: MessageSquare },
+    ]
+  },
+  {
+    group: 'QUANT & RESEARCH',
+    items: [
+      { path: '/alternative-data', label: 'Alternative Data Radar', icon: Radio },
+      { path: '/analytics', label: 'BQuant Analytics', icon: TrendingUp },
+      { path: '/news', label: 'Bloomberg News Wire', icon: Newspaper },
+      { path: '/journal', label: 'Trade Journal', icon: BookOpen },
+      { path: '/investment', label: 'Investment Plan', icon: Cpu },
+    ]
+  },
+  {
+    group: 'EXECUTION & RISK',
+    items: [
+      { path: '/portfolio', label: 'Portfolio & Risk', icon: Briefcase },
+      { path: '/trades', label: 'Trades Ledger', icon: ArrowLeftRight },
+      { path: '/copy-trading', label: 'Copy Trading', icon: Users },
+      { path: '/settings', label: 'Terminal Settings', icon: Settings },
+    ]
+  }
 ];
-
-const COLORS = {
-  bg:      'var(--apex-bg)',
-  sidebar: 'rgba(255, 255, 255, 0.55)',
-  card:    'var(--apex-card)',
-  border:  'var(--apex-border)',
-  accent:  'var(--apex-accent)',
-  gold:    'var(--apex-gold)',
-  text:    'var(--apex-text)',
-  muted:   'var(--apex-muted)',
-  green:   'var(--apex-green)',
-  red:     'var(--apex-red)',
-};
 
 export default function Layout() {
   const { killSwitchActive, setKillSwitch, logout } = useStore();
   const navigate = useNavigate();
+  const [timeUtc, setTimeUtc] = useState('');
+  const [timeEst, setTimeEst] = useState('');
+
+  useEffect(() => {
+    const updateTimes = () => {
+      const now = new Date();
+      setTimeUtc(now.toUTCString().slice(17, 25) + ' UTC');
+      setTimeEst(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }) + ' EST');
+    };
+    updateTimes();
+    const interval = setInterval(updateTimes, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleKillSwitch = async () => {
     if (killSwitchActive) {
@@ -49,9 +74,46 @@ export default function Layout() {
       setKillSwitch(false);
       toast.success('Trading resumed');
     } else {
-      if (!confirm('ACTIVATE KILL SWITCH? This will halt ALL trading immediately.')) return;
+      if (!confirm('ACTIVATE EMERGENCY KILL SWITCH? This halts all algorithmic order execution immediately.')) return;
       await activateKillSwitch();
       setKillSwitch(true);
+      toast.error('EMERGENCY KILL SWITCH ACTIVATED — Trading Halted');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      toast.loading('Generating Institutional BLPAPI Export...', { id: 'export' });
+      const [portfolio, tradesData] = await Promise.all([
+        getPortfolio().catch(() => ({})),
+        getTrades(1, 100).catch(() => ({ trades: [] }))
+      ]);
+
+      const trades = tradesData.trades || [];
+      let csvContent = 'data:text/csv;charset=utf-8,';
+      csvContent += '--- INSTITUTIONAL BLOOMBERG BLPAPI EXPORT ---\n';
+      csvContent += `Generated,${new Date().toISOString()}\n`;
+      csvContent += `Total NAV,${portfolio.totalValue || 0}\n`;
+      csvContent += `Cash Balance,${portfolio.cashBalance || 0}\n\n`;
+
+      csvContent += '--- TRADES LEDGER ---\n';
+      csvContent += 'Trade ID,Asset,Market,Type,Quantity,Entry Price,Exit Price,P&L,Status,Date\n';
+
+      for (const t of trades) {
+        csvContent += `"${t.id}","${t.asset}","${t.market}","${t.type}",${t.quantity || 0},${t.entryPrice || 0},${t.exitPrice || 0},${t.pnl || 0},"${t.status}","${t.openedAt || t.createdAt || ''}"\n`;
+      }
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `THARUN_TERMINAL_BLPAPI_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success('Export completed! BLPAPI CSV downloaded.', { id: 'export' });
+    } catch (err) {
+      toast.error('Failed to generate export', { id: 'export' });
     }
   };
 
@@ -61,107 +123,121 @@ export default function Layout() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: COLORS.bg, overflow: 'hidden' }}>
-
-      {/* ── Sidebar ────────────────────────────────────────────── */}
-      <aside style={{
-        width: 220,
-        flexShrink: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        background: COLORS.sidebar,
-        backdropFilter: 'blur(18px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-        borderRight: `1px solid ${COLORS.border}`,
-        overflowY: 'auto',
-      }}>
-
-        {/* Logo block */}
-        <div style={{ padding: '20px 20px 16px', borderBottom: `1px solid ${COLORS.border}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: `linear-gradient(135deg, ${COLORS.accent}, #0A4636)`,
-              border: `1px solid ${COLORS.gold}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <Zap size={18} color="#fff" />
+    <div className="flex h-screen bg-[#080C14] text-slate-100 overflow-hidden font-sans">
+      {/* ── Sidebar ──────────────────────────────────────────────── */}
+      <aside className="w-64 flex-shrink-0 flex flex-col bg-[#0B101D]/90 backdrop-blur-xl border-r border-white/[0.08] overflow-y-auto">
+        {/* Brand header */}
+        <div className="p-4 border-b border-white/[0.08]">
+          <div className="flex items-center gap-2.5 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-emerald-600 flex items-center justify-center font-bold text-black shadow-md shadow-amber-500/10">
+              <Zap size={18} className="text-black" />
             </div>
             <div>
-              <div style={{ fontFamily: 'Fraunces', fontWeight: 700, fontSize: 14, color: COLORS.text, lineHeight: 1.2 }}>
-                THARUN
+              <div className="font-bold text-sm tracking-wide text-white leading-tight font-display">
+                THARUN TERMINAL
               </div>
-              <div style={{ fontFamily: 'Space Mono', fontWeight: 700, fontSize: 9, color: COLORS.gold, lineHeight: 1.2, letterSpacing: '0.08em' }}>
-                TRADING BOT
+              <div className="font-mono text-[10px] text-amber-400 font-bold tracking-wider leading-tight">
+                AUTONOMOUS HEDGE CORE
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span className="status-dot live" />
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: COLORS.green, fontWeight: 700 }}>
-              AI TRADING • LIVE
+
+          <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-slate-400">
+            <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              SYSTEM ACTIVE
             </span>
+            <span className="text-slate-500">{timeEst.split(' ')[0]}</span>
           </div>
         </div>
 
-        {/* Nav links */}
-        <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-          {navItems.map(({ path, label, icon: Icon }) => (
-            <NavLink key={path} to={path} end={path === '/'}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '9px 12px',
-                borderRadius: 8,
-                marginBottom: 2,
-                textDecoration: 'none',
-                fontSize: 13,
-                fontFamily: 'Manrope',
-                fontWeight: isActive ? 700 : 500,
-                color: isActive ? COLORS.accent : COLORS.muted,
-                background: isActive ? `rgba(201,162,75,0.14)` : 'transparent',
-                border: isActive ? `1px solid rgba(201,162,75,0.35)` : '1px solid transparent',
-                transition: 'all 0.15s cubic-bezier(0.22, 1, 0.36, 1)',
-              })}
-            >
-              <Icon size={15} />
-              {label}
-            </NavLink>
+        {/* Grouped Nav Items */}
+        <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
+          {NAV_GROUPS.map((grp) => (
+            <div key={grp.group} className="space-y-1">
+              <div className="px-3 text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
+                {grp.group}
+              </div>
+              {grp.items.map(({ path, label, icon: Icon }) => (
+                <NavLink
+                  key={path}
+                  to={path}
+                  end={path === '/'}
+                  className={({ isActive }) => `
+                    flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all
+                    ${isActive
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
+                    }
+                  `}
+                >
+                  <Icon size={14} className="flex-shrink-0" />
+                  <span className="truncate">{label}</span>
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
-        {/* Kill switch + logout */}
-        <div style={{ padding: 12, borderTop: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <button onClick={handleKillSwitch} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            padding: '10px 16px', borderRadius: 8,
-            background: killSwitchActive ? 'rgba(18,128,95,0.08)' : 'rgba(176,38,59,0.08)',
-            border: `1px solid ${killSwitchActive ? COLORS.green : COLORS.red}`,
-            color: killSwitchActive ? COLORS.green : COLORS.red,
-            fontFamily: 'Space Mono', fontWeight: 700, fontSize: 11, cursor: 'pointer',
-          }}>
-            <Power size={13} />
-            {killSwitchActive ? 'RESUME TRADING' : 'KILL SWITCH'}
+        {/* Bottom controls */}
+        <div className="p-3 border-t border-white/[0.08] space-y-2">
+          <button
+            onClick={handleExportCsv}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-mono text-xs transition-colors"
+          >
+            <FileSpreadsheet size={13} className="text-emerald-400" />
+            <span>BLPAPI EXCEL EXPORT</span>
           </button>
-          <button onClick={handleLogout} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            padding: '8px 16px', borderRadius: 8, border: 'none', background: 'transparent',
-            color: COLORS.muted, fontFamily: 'Manrope', fontSize: 13, cursor: 'pointer',
-          }}>
+
+          <button
+            onClick={handleKillSwitch}
+            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-all ${
+              killSwitchActive
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500 animate-pulse'
+                : 'bg-red-500/10 text-red-400 border-red-500/40 hover:bg-red-500/20'
+            }`}
+          >
+            <Power size={13} />
+            <span>{killSwitchActive ? 'RESUME TRADING' : 'KILL SWITCH'}</span>
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-slate-400 hover:text-white text-xs font-mono transition-colors"
+          >
             <LogOut size={13} /> Logout
           </button>
         </div>
       </aside>
 
-      {/* ── Main content ──────────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: COLORS.bg }}>
+      {/* ── Main Viewport ────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#080C14]">
+        {/* Top Ticker Bar & Terminal Controls */}
+        <div className="bg-[#0B101D] border-b border-white/[0.08] flex items-center justify-between px-4 py-1.5 text-xs font-mono">
+          <div className="flex items-center gap-4">
+            <span className="text-amber-400 font-bold">TERMINAL FEED:</span>
+            <span className="text-slate-400">{timeEst}</span>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-400">{timeUtc}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-emerald-400 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              1000-TRADE ENGINE: ONLINE
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-amber-300">POLYMARKET ARBITRAGE: LIVE</span>
+          </div>
+        </div>
+
         <LiveTicker />
-        <main style={{ flex: 1, overflowY: 'auto', padding: 24, background: COLORS.bg, color: COLORS.text }}>
+
+        <main className="flex-1 overflow-y-auto p-6 bg-[#080C14]">
           <Outlet />
         </main>
       </div>
     </div>
   );
 }
+

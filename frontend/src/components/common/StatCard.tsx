@@ -11,33 +11,31 @@ interface StatCardProps {
 }
 
 export default function StatCard({ label, value, sub, icon, trend, accent, mono }: StatCardProps) {
-  const valueColor = trend === 'up' ? '#12805F' : trend === 'down' ? '#B0263B' : '#14171F';
+  const valueColorClass = trend === 'up'
+    ? 'text-emerald-400'
+    : trend === 'down'
+    ? 'text-red-400'
+    : accent
+    ? 'text-amber-400'
+    : 'text-white';
 
   return (
-    <div style={{
-      background: '#FFFFFF',
-      border: accent ? '1.5px solid #C9A24B' : '1px solid #DCDFE6',
-      borderRadius: 12,
-      padding: '16px 18px',
-      boxShadow: accent ? '0 0 18px rgba(201,162,75,0.12)' : '0 1px 4px rgba(91,100,114,0.06)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#5B6472', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+    <div className={`p-4 rounded-xl backdrop-blur-md transition-all ${
+      accent
+        ? 'bg-[#121B2E]/90 border border-amber-500/40 shadow-lg shadow-amber-500/5'
+        : 'bg-[#101728]/70 border border-white/[0.08] hover:border-white/[0.16]'
+    }`}>
+      <div className="flex items-start justify-between mb-2">
+        <span className="font-mono text-[10px] text-slate-400 uppercase tracking-wider">
           {label}
         </span>
-        {icon && <span style={{ color: '#C9A24B' }}>{icon}</span>}
+        {icon && <span className="text-amber-400/80">{icon}</span>}
       </div>
-      <div style={{
-        fontFamily: mono ? 'Space Mono, monospace' : 'Syne, sans-serif',
-        fontSize: 22,
-        fontWeight: 700,
-        color: valueColor,
-        lineHeight: 1.2,
-      }}>
+      <div className={`text-2xl font-bold leading-tight tabular-nums ${mono ? 'font-mono' : 'font-sans'} ${valueColorClass}`}>
         {value}
       </div>
       {sub && (
-        <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: '#5B6472', marginTop: 4 }}>
+        <div className="font-mono text-xs text-slate-400 mt-1.5 flex items-center gap-1.5">
           {sub}
         </div>
       )}

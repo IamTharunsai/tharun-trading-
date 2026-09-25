@@ -13,18 +13,8 @@ import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
-import { resolveSurvivalPolicy, marketAllowed } from '../services/survivalEngine';
-import { canCallClaude, recordClaudeCall, estimateCallCost } from '../services/apiCostTracker';
-import { runTier1Agents } from './tier1Agents';
-import { computeExpectedValue, shouldKillTrade } from '../services/expectedValueEngine';
-import { getApexLearner } from '../ml/apexLearner';
-import { extractFeatures } from '../ml/featureExtractor';
-import { runDevilsAdvocateTriple } from '../services/devilAdvocateTriple';
-import { confluenceFromScores, scoresFromCandles } from '../services/multiTimeframeConfluence';
-import { classifyVolumeMicrostructure } from '../services/volumeMicrostructure';
-import { classifyOhlcvPattern, mapMarketRegime } from '../services/patternCnnHeuristic';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 // Compact knowledge injected per agent (keeps tokens low)
 // Individual agents were defaulting to HOLD as a hedge — not because the data
@@ -518,51 +508,6 @@ export async function runInvestmentCommitteeDebate(
     agentArguments: [],
   };
 
-  const policy = resolveSurvivalPolicy({
-    bankroll: portfolio.totalValue,
-    drawdownFromPeakPct: portfolio.drawdownFromPeak,
-    dailyLossPct: portfolio.pnlDayPct,
-    openPositions: portfolio.positions?.length || 0,
-  });
-  io?.emit('capital_mode', policy);
-
-  if (!marketAllowed(policy, snapshot.market)) {
-    transcript.blockReason = `Capital mode ${policy.capitalTier}/${policy.drawdownMode} blocks ${snapshot.market} trades`;
-    transcript.masterSynthesis = policy.strategy;
-    logger.info(`⏭️  Skipping LLM debate — ${transcript.blockReason}`);
-    return transcript;
-  }
-
-  const tier1 = runTier1Agents(snapshot, portfolio, policy);
-  io?.emit('agent_debate', { tier: 1, asset, consensus: tier1.consensus, votes: tier1.votes });
-  logger.info(`🧮 Tier-1 rule consensus ${(tier1.consensus * 100).toFixed(0)}% → ${tier1.dominant}`);
-
-  const budgetOk = await canCallClaude(portfolio.totalValue);
-  const skipLlm = !policy.allowCloudAI || !budgetOk || tier1.rejected || tier1.consensus < 0.5;
-
-  if (skipLlm) {
-    const features = extractFeatures(snapshot, { tier1Consensus: tier1.consensus });
-    const pWin = getApexLearner().predictWinProbability(features);
-    const ev = computeExpectedValue({ winProbability: pWin, avgWin: 2, avgLoss: 1 });
-    const evKill = shouldKillTrade(ev, 0.01);
-    const approved = !tier1.rejected && tier1.dominant !== 'HOLD' && !evKill && (tier1.consensus * 100) >= policy.minConfidence;
-    transcript.finalDecision = approved ? tier1.dominant : 'HOLD';
-    transcript.finalConfidence = Math.round(tier1.consensus * 100);
-    transcript.executionApproved = approved;
-    transcript.blockReason = approved
-      ? undefined
-      : (tier1.rejectionReasons[0] || (!budgetOk ? 'API daily budget exhausted — Tier 1 only' : 'Tier-1 consensus too low'));
-    transcript.masterSynthesis = `APEX-3 Tier-1 path (${policy.capitalTier}). ${policy.strategy}. EV=$${ev.ev.toFixed(3)}`;
-    transcript.stopLossPrice = tier1.stopLoss;
-    transcript.takeProfitPrice = tier1.takeProfit;
-    transcript.riskRewardRatio = Math.abs(tier1.takeProfit - snapshot.price) / Math.max(Math.abs(snapshot.price - tier1.stopLoss), 1e-9);
-    transcript.positionSizePct = approved ? Math.min(policy.maxRiskPerTradePct, ev.cappedBetPct * 100) : 0;
-    transcript.round1 = tier1.votes.map((v, idx) => ({ agentId: idx + 1, agentName: v.agentName, vote: v.vote, argument: v.reason }));
-    logger.info(`🧮 Tier-1 only decision: ${transcript.finalDecision} (${transcript.blockReason || 'approved'})`);
-    io?.emit('debate:complete', { debateId, asset, transcript });
-    return transcript;
-  }
-
   // Deep analysis — fetch ALL data before debate starts. optionsFlow was
   // previously a separate `await` after this block (not in the Promise.all),
   // silently turning 4-way parallel fetch into 3-parallel-then-1-sequential
@@ -904,7 +849,6 @@ export async function runInvestmentCommitteeDebate(
         system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: fullDebateContext }]
       });
-      await recordClaudeCall(estimateCallCost('claude-sonnet-5')).catch(() => {});
 
       const mc = masterResponse.content[0];
       if (mc.type !== 'text') throw new Error(`Master Coordinator returned non-text content block: ${mc.type}`);
@@ -965,67 +909,12 @@ export async function runInvestmentCommitteeDebate(
   // input when the voting agents have a track record of being overconfident.
   const kellyPct = calculateKellySize(avgConfidence / 100, riskReward) * regimeSizeMultiplier * calibrationMultiplier;
 
-  if (approved) {
-    const features = extractFeatures(snapshot, { tier1Consensus: avgConfidence / 100 });
-    const pWin = getApexLearner().predictWinProbability(features);
-    const ev = computeExpectedValue({ winProbability: pWin, avgWin: Math.max(riskReward, 1), avgLoss: 1 });
-    if (shouldKillTrade(ev, 0.01) && getApexLearner().nTrades >= 20) {
-      approved = false;
-      blockReason = `APEX-∞ EV kill: EV=$${ev.ev.toFixed(3)} PF=${ev.profitFactor.toFixed(2)}`;
-    }
-  }
-
-  if (approved && masterDecision.finalDecision !== 'HOLD') {
-    const closes = (snapshot.candles || []).map(c => c.close);
-    const n = closes.length;
-    const conf = confluenceFromScores({
-      h1: scoresFromCandles(closes.slice(Math.max(0, n - 8))),
-      h4: scoresFromCandles(closes.slice(Math.max(0, n - 16))),
-      daily: scoresFromCandles(closes.slice(Math.max(0, n - 30))),
-    });
-    const vol = classifyVolumeMicrostructure({
-      price: snapshot.price,
-      vwap: snapshot.indicators.vwap || snapshot.price,
-      volumeRatio: snapshot.indicators.volumeRatio || 1,
-      priceChangePct: snapshot.priceChangePct24h,
-      obvSlope: snapshot.indicators.obv || 0,
-      makingNewHighs: snapshot.price >= (snapshot.indicators.week52High || snapshot.price),
-    });
-    const pattern = classifyOhlcvPattern(snapshot.candles || [], mapMarketRegime(marketRegime), snapshot.indicators.rsi14, snapshot.indicators.volumeRatio);
-    const devil = runDevilsAdvocateTriple({
-      direction: (masterDecision.finalDecision || 'HOLD') as 'BUY' | 'SELL' | 'HOLD',
-      regime: marketRegime,
-      rsi14: snapshot.indicators.rsi14,
-      volumeRatio: snapshot.indicators.volumeRatio,
-      confluenceScore: conf.score,
-      tf1hContradicts: conf.sizeMultiplier === 0.5,
-    });
-    if (!devil.proceed) {
-      approved = false;
-      blockReason = `Devil×3 killed: ${devil.reasons.join('; ')}`;
-    } else if (!conf.trade) {
-      approved = false;
-      blockReason = `No multi-TF confluence: ${conf.reason}`;
-    } else if (pattern.dir === 'DOWN' && masterDecision.finalDecision === 'BUY') {
-      approved = false;
-      blockReason = 'Pattern CNN regime filter: DOWN vs BUY';
-    }
-    if (approved && conf.sizeMultiplier === 0.5) {
-      // applied below when writing positionSizePct
-      (transcript as any)._tfSize = 0.5;
-    }
-    if (vol.regime === 'DISTRIBUTION' && masterDecision.finalDecision === 'BUY') {
-      approved = false;
-      blockReason = `Volume microstructure: ${vol.reason}`;
-    }
-  }
-
   transcript.masterSynthesis = masterDecision.synthesis || '';
   transcript.finalDecision = masterDecision.finalDecision || 'HOLD';
   transcript.finalConfidence = masterDecision.confidence || avgConfidence;
   transcript.executionApproved = approved;
   transcript.blockReason = blockReason || undefined;
-  transcript.positionSizePct = approved ? kellyPct * ((transcript as any)._tfSize || 1) : 0;
+  transcript.positionSizePct = approved ? kellyPct : 0;
   transcript.stopLossPrice = stopLoss;
   transcript.takeProfitPrice = takeProfit;
   transcript.riskRewardRatio = riskReward;

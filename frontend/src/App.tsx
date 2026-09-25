@@ -18,6 +18,9 @@ import JournalPage from './pages/Journal';
 import NewsPage from './pages/News';
 import InvestmentPage from './pages/Investment';
 import StockUniversePage from './pages/StockUniverse';
+import PolymarketPage from './pages/Polymarket';
+import CopyTradingPage from './pages/CopyTrading';
+import AlternativeDataPage from './pages/AlternativeData';
 import SettingsPage from './pages/Settings';
 import Layout from './components/common/Layout';
 
@@ -52,6 +55,9 @@ export default function App() {
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="journal" element={<JournalPage />} />
           <Route path="news" element={<NewsPage />} />
+          <Route path="polymarket" element={<PolymarketPage />} />
+          <Route path="copy-trading" element={<CopyTradingPage />} />
+          <Route path="alternative-data" element={<AlternativeDataPage />} />
           <Route path="investment" element={<InvestmentPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="stocks" element={<StockUniversePage />} />

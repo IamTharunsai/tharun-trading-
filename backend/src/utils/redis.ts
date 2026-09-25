@@ -1,33 +1,26 @@
-import Redis from 'ioredis';
+// MOCKED — in-memory, data lost on container sleep (per AI Studio web migration guidelines)
+const store = new Map<string, string>();
 
-// ── REDIS ─────────────────────────────────────────────────────────────────────
-export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-  lazyConnect: true,
-  retryStrategy: (times) => {
-    const delay = Math.min(times * 200, 5000);
-    return delay;
+export const redis: any = {
+  status: 'ready',
+  get: async (k: string): Promise<string | null> => store.get(k) ?? null,
+  set: async (k: string, v: string): Promise<'OK'> => {
+    store.set(k, String(v));
+    return 'OK';
   },
-  reconnectOnError: () => true,
-  enableReadyCheck: false,
-  enableOfflineQueue: false
-});
-
-redis.on('error', (err) => {
-  // Silently handle Redis errors - it's optional
-  if (err.message && !err.message.includes('ECONNREFUSED')) {
-    console.warn('Redis warning:', err.message);
-  }
-});
-
-redis.on('connect', () => console.log('✅ Redis connected'));
-
-// Connection is a server lifecycle action, not an import side effect.
-export async function initRedis(): Promise<void> {
-  try {
-    await redis.connect();
-  } catch {
-    console.warn('⚠️ Redis not available - running without cache');
-  }
-}
-
+  setex: async (k: string, _ttl: number, v: string): Promise<'OK'> => {
+    store.set(k, String(v));
+    return 'OK';
+  },
+  del: async (k: string): Promise<number> => (store.delete(k) ? 1 : 0),
+  mget: async (keys: string[]): Promise<(string | null)[]> => keys.map(k => store.get(k) ?? null),
+  incr: async (k: string): Promise<number> => {
+    const val = (parseInt(store.get(k) || '0', 10) || 0) + 1;
+    store.set(k, String(val));
+    return val;
+  },
+  on: (_evt: string, _cb: Function): any => redis,
+  connect: async (): Promise<void> => {},
+  disconnect: async (): Promise<void> => {},
+  quit: async (): Promise<'OK'> => 'OK',
+};

@@ -3,7 +3,7 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { extractResponseText, withRetry } from '../utils/anthropicText';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export async function generateDailyJournal() {
   const today = new Date();

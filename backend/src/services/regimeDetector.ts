@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { redis } from '../utils/redis';
 import { logger } from '../utils/logger';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export type MarketRegime = 
   | 'TRENDING_BULL'

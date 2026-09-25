@@ -7,6 +7,7 @@
 import axios from 'axios';
 import { redis } from '../utils/redis';
 import { logger } from '../utils/logger';
+import { isPlaceholderKey } from '../utils/apiKeys';
 
 export interface OptionsFlow {
   asset: string;
@@ -62,13 +63,16 @@ export class OptionsFlowService {
       if (cached) return JSON.parse(cached);
     } catch { /* no cache available — fall through to a fresh fetch */ }
 
+    if (isPlaceholderKey(process.env.ALPACA_API_KEY) || isPlaceholderKey(process.env.ALPACA_SECRET_KEY)) {
+      return this.getSafeDefault(asset);
+    }
+
     try {
       const optionsData = await this.fetchOptionsData(asset, price);
       const flow = this.analyzeData(optionsData, asset, price);
       try { await redis.setex(cacheKey, 900, JSON.stringify(flow)); } catch { /* cache write is best-effort */ }
       return flow;
     } catch (error) {
-      logger.error(`Options flow analysis failed for ${asset}:`, error);
       return this.getSafeDefault(asset);
     }
   }

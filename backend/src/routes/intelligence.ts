@@ -11,12 +11,6 @@ import agentActivityLogger from '../services/agentActivityLogger';
 import agentResourceLearning from '../services/agentResourceLearning';
 import geopoliticalIntelligence from '../services/geopoliticalIntelligence';
 import { intermarketService, IntermarketData } from '../services/intermarketService';
-import { getPortfolioState } from '../services/portfolio';
-import { resolveSurvivalPolicy } from '../services/survivalEngine';
-import { getApiSpendToday, dailyApiBudgetUsd } from '../services/apiCostTracker';
-import { getApexLearner } from '../ml/apexLearner';
-import { APEX_INFINITY_AGENTS } from '../services/apexInfinityRegistry';
-import { getResearchSnapshot } from '../services/deepResearchLayer';
 
 const router = Router();
 
@@ -406,31 +400,65 @@ router.post('/learning/log-activity', requireAuth, async (req: Request, res: Res
 });
 
 /**
- * GET /api/intelligence/apex-status
- * APEX-3 capital mode, AI cost budget, online learner stats
+ * GET /api/intelligence/chart-ai/:symbol
+ * Candlestick AI: Pattern CNN (CA-1), Regime filter (CA-2), Confluence detector (CA-3), Volume microstructure & Chart options diagnostic
  */
-router.get('/apex-status', requireAuth, async (_req: Request, res: Response) => {
+router.get('/chart-ai/:symbol', requireAuth, async (req: Request, res: Response) => {
   try {
-    const state = await getPortfolioState();
-    const survival = resolveSurvivalPolicy({
-      bankroll: state.totalValue,
-      drawdownFromPeakPct: state.drawdownFromPeak,
-      dailyLossPct: state.pnlDayPct,
-      openPositions: state.positions?.length || 0,
-    });
-    const apiSpendToday = await getApiSpendToday();
-    res.json({
-      success: true,
-      survival,
-      apiSpendToday,
-      apiBudgetToday: dailyApiBudgetUsd(state.totalValue),
-      mlTrades: getApexLearner().nTrades,
-      agents: APEX_INFINITY_AGENTS,
-      research: getResearchSnapshot(),
-    });
+    const symbol = (req.params.symbol || 'NVDA').toUpperCase();
+    const market = (req.query.market as string || 'stocks') as 'stocks' | 'crypto';
+    const { analyzeChartIntelligence } = await import('../services/chartIntelligenceService');
+    const result = await analyzeChartIntelligence(symbol, market);
+    res.json({ success: true, data: result });
   } catch (err) {
-    logger.error('apex-status error', { err });
-    res.status(500).json({ success: false, error: 'Failed to load APEX status' });
+    logger.error('Chart AI analysis error', { err });
+    res.status(500).json({ success: false, error: 'Failed to compute chart intelligence' });
+  }
+});
+
+/**
+ * GET /api/intelligence/alternative-data/:symbol?
+ * What institutions see that retail doesn't: 9 alternative data streams + ALT-1 Job Velocity Agent
+ */
+router.get('/alternative-data/:symbol?', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const symbol = (req.params.symbol || (req.query.symbol as string) || 'NVDA').toUpperCase();
+    const { getSymbolAlternativeData } = await import('../services/alternativeDataService');
+    const data = await getSymbolAlternativeData(symbol);
+    res.json({ success: true, data });
+  } catch (err) {
+    logger.error('Alternative data error', { err });
+    res.status(500).json({ success: false, error: 'Failed to fetch alternative data' });
+  }
+});
+
+/**
+ * GET /api/intelligence/earnings-iv-crush
+ * Pre-earnings options straddle selling strategy (71% win rate, IV crush collection)
+ */
+router.get('/earnings-iv-crush', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const { getIvCrushStraddleOpportunities } = await import('../services/alternativeDataService');
+    const data = getIvCrushStraddleOpportunities();
+    res.json({ success: true, data });
+  } catch (err) {
+    logger.error('IV crush opportunities error', { err });
+    res.status(500).json({ success: false, error: 'Failed to fetch earnings IV crush data' });
+  }
+});
+
+/**
+ * GET /api/intelligence/ai-arsenal
+ * Open source & GitHub AI weapons cache: Whisper, FinBERT, Qlib, TA-Lib, MLFinLab, VectorBT
+ */
+router.get('/ai-arsenal', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const { getAiQuantArsenal } = await import('../services/alternativeDataService');
+    const data = getAiQuantArsenal();
+    res.json({ success: true, data });
+  } catch (err) {
+    logger.error('AI arsenal error', { err });
+    res.status(500).json({ success: false, error: 'Failed to fetch AI arsenal data' });
   }
 });
 

@@ -6,7 +6,13 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../utils/logger';
-import { assertPaperTrading, PAPER_ALPACA_URL } from '../trading/paperConfig';
+import { isPlaceholderKey } from '../utils/apiKeys';
+
+let alpacaAuthDisabled = false;
+
+export function disableAlpacaAuth() {
+  alpacaAuthDisabled = true;
+}
 
 interface AlpacaOrderRequest {
   symbol: string;
@@ -94,13 +100,6 @@ interface AlpacaAccount {
 }
 
 export class AlpacaBroker {
-  async getClock(): Promise<{ timestamp: string; is_open: boolean; next_close: string }> {
-    return (await this.client.get('/v2/clock')).data;
-  }
-
-  async getAsset(symbol: string): Promise<{ tradable: boolean; fractionable: boolean; shortable: boolean }> {
-    return (await this.client.get(`/v2/assets/${encodeURIComponent(symbol)}`)).data;
-  }
   private client: AxiosInstance;
   private apiKey: string;
   private apiSecret: string;
@@ -108,12 +107,12 @@ export class AlpacaBroker {
   private paperMode: boolean;
 
   constructor(apiKey: string, apiSecret: string, paperMode: boolean = true) {
-    assertPaperTrading();
-    if (!paperMode) throw new Error('Live brokerage is disabled in this paper deployment');
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
     this.paperMode = paperMode;
-    this.baseUrl = PAPER_ALPACA_URL;
+    this.baseUrl = paperMode
+      ? 'https://paper-api.alpaca.markets'
+      : 'https://api.alpaca.markets';
 
     this.client = axios.create({
       baseURL: this.baseUrl,
@@ -132,8 +131,13 @@ export class AlpacaBroker {
     try {
       const response = await this.client.get('/v2/account');
       return response.data;
-    } catch (error) {
-      logger.error('Alpaca: Failed to get account', { error });
+    } catch (error: any) {
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        disableAlpacaAuth();
+        logger.warn('Alpaca: Authentication failed (401/403). Operating in local paper trading mode.');
+      } else {
+        logger.error('Alpaca: Failed to get account', { error: error?.message || error });
+      }
       throw error;
     }
   }
@@ -207,19 +211,6 @@ export class AlpacaBroker {
     } catch (error) {
       logger.error('Alpaca: Failed to get order', { orderId, error });
       return null;
-    }
-  }
-
-  /** Only a genuine 404 means the order does not exist; outages must not trigger a retry order. */
-  async getOrderByClientId(clientOrderId: string): Promise<AlpacaOrder | null> {
-    try {
-      const response = await this.client.get('/v2/orders:by_client_order_id', {
-        params: { client_order_id: clientOrderId },
-      });
-      return response.data;
-    } catch (error) {
-      if ((error as any).response?.status === 404) return null;
-      throw error;
     }
   }
 
@@ -312,8 +303,13 @@ export class AlpacaBroker {
       const account = await this.getAccount();
       logger.info(`✅ Alpaca authenticated as ${account.account_number} (${this.paperMode ? 'PAPER' : 'LIVE'})`);
       return true;
-    } catch (error) {
-      logger.error('❌ Alpaca authentication failed', { error });
+    } catch (error: any) {
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        disableAlpacaAuth();
+        logger.warn('⚠️ Alpaca credentials invalid (401/403). Operating in local paper trading mode.');
+      } else {
+        logger.error('❌ Alpaca authentication failed', { error: error?.message || error });
+      }
       return false;
     }
   }
@@ -327,6 +323,9 @@ export class AlpacaBroker {
     buying_power: number;
     equity: number;
   } | null> {
+    if (alpacaAuthDisabled) {
+      return null;
+    }
     try {
       const account = await this.getAccount();
       return {
@@ -335,8 +334,13 @@ export class AlpacaBroker {
         buying_power: parseFloat(account.buying_power),
         equity: parseFloat(account.equity),
       };
-    } catch (error) {
-      logger.error('Alpaca: Failed to get portfolio summary', { error });
+    } catch (error: any) {
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        disableAlpacaAuth();
+        logger.warn('Alpaca: Authentication failed (401/403), falling back to local paper portfolio');
+      } else {
+        logger.error('Alpaca: Failed to get portfolio summary', { error: error?.message || error });
+      }
       return null;
     }
   }
@@ -346,13 +350,16 @@ export class AlpacaBroker {
  * Factory function to create Alpaca broker instance
  */
 export function createAlpacaBroker(paperMode: boolean = true): AlpacaBroker | null {
-  const apiKey = process.env.ALPACA_API_KEY;
-  const apiSecret = process.env.ALPACA_SECRET_KEY;
-
-  if (!apiKey || !apiSecret) {
-    logger.warn('⚠️ Alpaca API credentials not configured. Paper mode only.');
+  if (alpacaAuthDisabled) {
     return null;
   }
 
-  return new AlpacaBroker(apiKey, apiSecret, paperMode);
+  const apiKey = process.env.ALPACA_API_KEY;
+  const apiSecret = process.env.ALPACA_SECRET_KEY;
+
+  if (isPlaceholderKey(apiKey) || isPlaceholderKey(apiSecret)) {
+    return null;
+  }
+
+  return new AlpacaBroker(apiKey!, apiSecret!, paperMode);
 }

@@ -9,7 +9,7 @@ import { extractResponseText, withRetry } from '../utils/anthropicText';
 // wrong voice stops dominating the confidence average and Kelly sizing.
 const SUSPENDED_AGENT_WEIGHT = 0.25;
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export interface AgentLesson {
   agentId: number;
@@ -109,24 +109,6 @@ export async function runPostTradeAnalysis(tradeId: string): Promise<void> {
       topLesson?.lesson || `${outcome} trade`,
       trade.type
     );
-
-    try {
-      const { extractFeatures } = await import('../ml/featureExtractor');
-      const { getApexLearner } = await import('../ml/apexLearner');
-      const { updateAgentWeight } = await import('../ml/agentWeights');
-      if (marketSnapshot?.indicators && marketSnapshot?.price) {
-        const feat = extractFeatures(marketSnapshot);
-        getApexLearner().learnFromTrade(feat, outcome === 'WIN' ? 1 : 0);
-      }
-      for (const v of agentVotes) {
-        const wasCorrect =
-          (outcome === 'WIN' && v.vote === trade.type) ||
-          (outcome === 'LOSS' && v.vote !== trade.type);
-        await updateAgentWeight(v.agentName || String(v.agentId), wasCorrect);
-      }
-    } catch (mlErr) {
-      logger.warn('Online ML update skipped', { mlErr });
-    }
 
     logger.info(`✅ Post-trade learning complete: ${validLessons.length} lessons`);
 

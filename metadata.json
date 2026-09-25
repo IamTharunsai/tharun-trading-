@@ -1,0 +1,8 @@
+{
+  "name": "THARUN TRADING BOT",
+  "description": "AI Autonomous Multi-Agent Trading Platform",
+  "version": "1.0.0",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

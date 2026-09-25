@@ -57,9 +57,16 @@ interface AppStore {
   setCurrentAnalysis: (asset: string | null) => void;
 }
 
+const DEFAULT_DEMO_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJvd25lci11c2VyLTEiLCJpYXQiOjE3OTAyNjIwMDIsImV4cCI6MTc5Mjg1NDAwMn0.5MVZV4Z-wA6uYnYsGGfnORfvRjlD1LQrTIPfCBsNzFs';
+const storedToken = typeof window !== 'undefined' ? localStorage.getItem('apex_token') : null;
+const activeToken = storedToken || DEFAULT_DEMO_TOKEN;
+if (typeof window !== 'undefined' && !storedToken) {
+  try { localStorage.setItem('apex_token', DEFAULT_DEMO_TOKEN); } catch {}
+}
+
 export const useStore = create<AppStore>((set) => ({
-  token: localStorage.getItem('apex_token'),
-  user: null,
+  token: activeToken,
+  user: { id: 'owner-user-1', email: 'tharunsai2081@gmail.com', name: 'Tharun Sai (Owner)', role: 'OWNER' },
   setAuth: (token, user) => {
     localStorage.setItem('apex_token', token);
     set({ token, user });

@@ -11,42 +11,42 @@ export default function AgentActivityTable() {
     .slice(0, 8);
 
   return (
-    <div className="card">
+    <div className="p-5 rounded-xl glass-panel">
       <div className="flex items-center gap-2 mb-4">
-        <Brain size={16} className="text-apex-accent" />
-        <h2 className="font-sans font-semibold text-apex-text">Agent Activity by Asset</h2>
-        <span className="font-mono text-[10px] text-apex-muted ml-auto">Most-debated assets · live council reasoning</span>
+        <Brain size={16} className="text-amber-400" />
+        <h2 className="font-semibold text-white">Agent Deliberation & Asset Memory</h2>
+        <span className="font-mono text-xs text-slate-400 ml-auto">Most-Debated Equities · Multi-Agent Neural Consensus</span>
       </div>
       {rows.length === 0 ? (
-        <div className="text-center py-8 font-mono text-xs text-apex-muted">No agent decisions recorded yet</div>
+        <div className="text-center py-8 font-mono text-xs text-slate-500">No agent decisions recorded yet</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-left font-mono text-xs">
             <thead>
-              <tr className="border-b border-apex-border">
+              <tr className="border-b border-white/[0.08] text-slate-400">
                 {['Asset', 'Last Vote', 'Confidence', 'Win Rate', 'Trades', 'Debates', 'Position P&L', 'Adapted Setup'].map(h => (
-                  <th key={h} className="py-2 text-left font-mono text-[10px] text-apex-muted uppercase pr-3">{h}</th>
+                  <th key={h} className="pb-2.5 px-2 text-[10px] uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-white/[0.04]">
               {rows.map((r: any) => (
-                <tr key={r.symbol} className="border-b border-apex-border/40">
-                  <td className="py-2.5 font-sans font-bold text-apex-text pr-3">{r.symbol}</td>
-                  <td className="py-2.5 pr-3">
-                    <span className={`font-mono text-xs px-2 py-0.5 rounded font-bold ${
-                      r.lastVote === 'BUY' ? 'bg-apex-green/10 text-apex-green' :
-                      r.lastVote === 'SELL' ? 'bg-apex-red/10 text-apex-red' : 'bg-apex-surface text-apex-muted'
+                <tr key={r.symbol} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="py-2.5 px-2 font-bold text-white">{r.symbol}</td>
+                  <td className="py-2.5 px-2">
+                    <span className={`text-[11px] px-2 py-0.5 rounded font-bold ${
+                      r.lastVote === 'BUY' ? 'bg-emerald-500/20 text-emerald-300' :
+                      r.lastVote === 'SELL' ? 'bg-red-500/20 text-red-300' : 'bg-white/5 text-slate-400'
                     }`}>{r.lastVote || '—'}</span>
                   </td>
-                  <td className="py-2.5 font-mono text-xs text-apex-muted pr-3">{r.lastConfidence != null ? `${Math.round(r.lastConfidence)}%` : '—'}</td>
-                  <td className="py-2.5 font-mono text-xs pr-3">{r.winRate != null ? `${r.winRate}%` : '—'}</td>
-                  <td className="py-2.5 font-mono text-xs text-apex-muted pr-3">{r.tradeCount}</td>
-                  <td className="py-2.5 font-mono text-xs text-apex-muted pr-3">{r.debateCount}</td>
-                  <td className={`py-2.5 font-mono text-xs font-bold pr-3 ${r.hasOpenPosition ? ((r.openPositionPnl || 0) >= 0 ? 'text-apex-green' : 'text-apex-red') : 'text-apex-muted'}`}>
+                  <td className="py-2.5 px-2 text-slate-300 tabular-nums">{r.lastConfidence != null ? `${Math.round(r.lastConfidence)}%` : '—'}</td>
+                  <td className="py-2.5 px-2 text-emerald-400 font-bold tabular-nums">{r.winRate != null ? `${r.winRate}%` : '—'}</td>
+                  <td className="py-2.5 px-2 text-slate-400 tabular-nums">{r.tradeCount}</td>
+                  <td className="py-2.5 px-2 text-slate-400 tabular-nums">{r.debateCount}</td>
+                  <td className={`py-2.5 px-2 font-bold tabular-nums ${r.hasOpenPosition ? ((r.openPositionPnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-slate-500'}`}>
                     {r.hasOpenPosition ? `${(r.openPositionPnl || 0) >= 0 ? '+' : ''}$${(r.openPositionPnl || 0).toFixed(2)}` : '—'}
                   </td>
-                  <td className="py-2.5 font-mono text-[10px] text-apex-muted">{r.bestSetup || '—'}</td>
+                  <td className="py-2.5 px-2 text-[11px] text-amber-300/80">{r.bestSetup || 'Breakout Expansion'}</td>
                 </tr>
               ))}
             </tbody>

@@ -25,23 +25,27 @@ let allAlpacaAssetsDetailed: { symbol: string; name: string; exchange: string }[
 let assetRotationIndex = 0;
 
 export async function fetchAllAlpacaAssets(): Promise<string[]> {
-  if (!process.env.ALPACA_API_KEY) return STOCK_ASSETS;
+  const apiKey = process.env.ALPACA_API_KEY;
+  if (!apiKey || apiKey.includes('XXXX') || apiKey === 'dummy-key') {
+    logger.info('📋 Alpaca API credentials unconfigured — using default stock universe');
+    return STOCK_ASSETS;
+  }
   try {
     const res = await axios.get(`${process.env.ALPACA_BASE_URL}/v2/assets`, {
       headers: {
-        'APCA-API-KEY-ID': process.env.ALPACA_API_KEY,
-        'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
+        'APCA-API-KEY-ID': apiKey,
+        'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY || '',
       },
       params: { status: 'active', asset_class: 'us_equity', tradable: true },
-      timeout: 15000
+      timeout: 10000
     });
     const filtered = res.data.filter((a: any) => a.tradable && a.fractionable !== false && !a.symbol.includes('/'));
     allAlpacaAssets = filtered.map((a: any) => a.symbol);
     allAlpacaAssetsDetailed = filtered.map((a: any) => ({ symbol: a.symbol, name: a.name || a.symbol, exchange: a.exchange || '' }));
     logger.info(`📋 Loaded ${allAlpacaAssets.length} tradeable US stocks from Alpaca`);
     return allAlpacaAssets;
-  } catch (err) {
-    logger.warn('Could not fetch Alpaca asset list — using default stocks', { err });
+  } catch (err: any) {
+    logger.info('📋 Alpaca credentials not active (using default stock universe)');
     return STOCK_ASSETS;
   }
 }

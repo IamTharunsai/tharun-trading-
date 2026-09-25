@@ -159,7 +159,7 @@ export default function DebateRoomPage() {
   };
 
   const voteColor = (vote?: string) =>
-    vote === 'BUY' ? '#12805F' : vote === 'SELL' ? '#B0263B' : vote === 'HOLD' ? '#C9A24B' : 'var(--apex-border)';
+    vote === 'BUY' ? '#10B981' : vote === 'SELL' ? '#EF4444' : vote === 'HOLD' ? '#F59E0B' : 'rgba(255, 255, 255, 0.12)';
 
   const buyVotes  = Object.values(agentStates).filter(s => s.vote === 'BUY').length;
   const sellVotes = Object.values(agentStates).filter(s => s.vote === 'SELL').length;
@@ -167,61 +167,62 @@ export default function DebateRoomPage() {
   const totalVoted = buyVotes + sellVotes + holdVotes;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-5 max-w-7xl mx-auto text-slate-100">
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-2xl glass-panel bg-[#0B101D]/80">
         <div>
-          <h1 style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 4 }}>
-            Investment Committee
-          </h1>
-          <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
-            13-agent 3-round debate before every trade
+          <div className="flex items-center gap-3">
+            <h1 className="font-bold text-2xl text-white tracking-tight font-display">
+              Autonomous Investment Committee
+            </h1>
+            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
+              3-ROUND DELIBERATION
+            </span>
+          </div>
+          <p className="font-mono text-xs text-slate-400 mt-1">
+            Real-time consensus verification · Multi-agent Wyckoff, order flow & risk vetoes
           </p>
         </div>
 
         {/* Trigger controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="flex items-center gap-3 flex-wrap">
           <select
             value={selectedAsset}
             onChange={e => setSelectedAsset(e.target.value)}
             disabled={isDebating}
-            style={{ padding: '8px 12px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 8, fontFamily: 'Space Mono', fontSize: 11, cursor: 'pointer' }}
+            className="px-3 py-2 border border-white/10 bg-black/40 text-white rounded-lg font-mono text-xs cursor-pointer focus:outline-none focus:border-amber-400"
           >
-            <optgroup label="Stocks">
+            <optgroup label="Stocks (HFT & Core)">
               {STOCK_ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
             </optgroup>
             <optgroup label="Crypto">
               {CRYPTO_ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
             </optgroup>
           </select>
-          <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)', padding: '0 4px' }}>
-            {getMarket(selectedAsset).toUpperCase()}
+          <span className="font-mono text-xs text-slate-400">
+            [{getMarket(selectedAsset).toUpperCase()}]
           </span>
           <button
             onClick={triggerDebate}
             disabled={triggering || isDebating}
-            style={{
-              padding: '8px 20px', borderRadius: 8, fontFamily: 'Space Mono', fontWeight: 700, fontSize: 11, cursor: triggering || isDebating ? 'not-allowed' : 'pointer',
-              background: isDebating ? 'rgba(201,162,75,.1)' : 'var(--apex-accent)', color: isDebating ? '#C9A24B' : '#fff',
-              border: isDebating ? '1px solid rgba(201,162,75,.5)' : 'none', opacity: (triggering || isDebating) ? 0.7 : 1, transition: 'all .2s'
-            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-mono text-xs font-bold transition-all shadow-md shadow-amber-500/20 disabled:opacity-40"
           >
-            {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Starting...' : '▶ TRIGGER DEBATE'}
+            {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Convening...' : `▶ CONVENE COMMITTEE ON ${selectedAsset}`}
           </button>
         </div>
       </div>
 
       {/* Round explanation */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
-          { round: 'Round 1', label: 'Opening Arguments', color: '#C9A24B' },
-          { round: 'Round 2', label: 'Cross-Examination',  color: '#C9A24B' },
-          { round: 'Round 3', label: 'Final Verdict',      color: '#12805F' },
+          { round: 'Round 1', label: 'Opening Technical & Wire Arguments', color: '#F59E0B' },
+          { round: 'Round 2', label: 'Cross-Examination & Bearish Stress-Test', color: '#3B82F6' },
+          { round: 'Round 3', label: 'Kelly Position Sizing & Final Verdict', color: '#10B981' },
         ].map(item => (
-          <div key={item.round} style={{ background: 'var(--apex-card)', border: `1px solid ${item.color}40`, borderRadius: 10, padding: 14 }}>
-            <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: item.color, textTransform: 'uppercase', marginBottom: 4 }}>{item.round}</div>
-            <div style={{ fontFamily: 'Manrope', fontSize: 13, fontWeight: 700, color: 'var(--apex-text)' }}>{item.label}</div>
+          <div key={item.round} className="glass-panel p-3.5 rounded-xl border border-white/[0.06]">
+            <div className="font-mono text-[10px] text-amber-400 font-bold uppercase mb-1">{item.round}</div>
+            <div className="text-xs font-bold text-white">{item.label}</div>
           </div>
         ))}
       </div>
@@ -245,31 +246,32 @@ export default function DebateRoomPage() {
         </div>
       )}
 
-      {/* 14 Agent Cards */}
-      <div style={{ background: 'var(--apex-card)', border: '1px solid var(--apex-border)', borderRadius: 12, padding: 16 }}>
-        <div style={{ fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 12 }}>
-          AGENT COUNCIL — 14 SPECIALISTS
+      {/* Agent Cards */}
+      <div className="p-5 rounded-xl glass-panel">
+        <div className="font-mono text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider flex items-center justify-between">
+          <span>COUNCIL OF SPECIALISTS ({AGENTS.length})</span>
+          <span className="text-slate-500 font-normal">Multi-Strategy Neural Committee</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-2.5">
           {AGENTS.map(agent => {
             const state = agentStates[agent.id];
             const bc = voteColor(state?.vote);
             const pulse = state?.status === 'analyzing';
             return (
-              <div key={agent.id} style={{
-                background: 'var(--apex-surface)', border: `1px solid ${bc}`,
-                borderRadius: 8, padding: 10, transition: 'all .3s',
-                boxShadow: state?.vote ? `0 0 8px ${bc}40` : 'none',
-                animation: pulse ? 'pulse .8s infinite' : 'none',
-              }}>
-                <div style={{ fontSize: 18, marginBottom: 3 }}>{agent.icon}</div>
-                <div style={{ fontFamily: 'Manrope', fontSize: 10, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 2 }}>{agent.name}</div>
-                {agent.veto   && <div style={{ fontFamily: 'Space Mono', fontSize: 7, color: '#B0263B', marginBottom: 3 }}>⚡ VETO</div>}
-                <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: bc, fontWeight: 700 }}>
-                  {state?.vote || (state?.status === 'analyzing' ? '...' : 'IDLE')}
+              <div key={agent.id} className="bg-black/30 border rounded-lg p-2.5 transition-all"
+                style={{
+                  borderColor: state?.vote ? bc : 'rgba(255,255,255,0.08)',
+                  boxShadow: state?.vote ? `0 0 10px ${bc}30` : 'none',
+                }}
+              >
+                <div className="text-lg mb-1">{agent.icon}</div>
+                <div className="text-xs font-bold text-white truncate mb-1">{agent.name}</div>
+                {agent.veto && <div className="font-mono text-[9px] text-red-400 font-bold mb-1">⚡ VETO POWER</div>}
+                <div className="font-mono text-[10px] font-bold" style={{ color: bc }}>
+                  {state?.vote || (pulse ? 'DELIBERATING...' : 'READY')}
                 </div>
                 {state?.confidence !== undefined && (
-                  <div style={{ marginTop: 4, height: 2, background: 'var(--apex-border)', borderRadius: 1, overflow: 'hidden' }}>
+                  <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden">
                     <div style={{ height: '100%', width: `${state.confidence}%`, background: bc, transition: 'width .5s' }} />
                   </div>
                 )}
@@ -280,26 +282,30 @@ export default function DebateRoomPage() {
       </div>
 
       {/* Transcript + Decision */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Transcript */}
-        <div style={{ background: 'var(--apex-card)', border: '1px solid var(--apex-border)', borderRadius: 12, padding: 14 }}>
-          <div style={{ fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 12 }}>
-            LIVE TRANSCRIPT
+        <div className="p-5 rounded-xl glass-panel flex flex-col">
+          <div className="font-mono text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider">
+            REAL-TIME DELIBERATION TRANSCRIPT
           </div>
-          <div ref={transcriptRef} style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div ref={transcriptRef} className="max-h-80 overflow-y-auto space-y-2.5 pr-1 flex-1 font-mono text-xs">
             {transcript.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40, fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
-                Trigger a debate to see agents argue live.
+              <div className="text-center py-12 text-slate-500 text-xs">
+                Trigger a council session above to stream real-time debate reasoning.
               </div>
             ) : (
               transcript.map((item, i) => (
-                <div key={i} style={{ padding: '8px 10px', background: 'var(--apex-surface)', borderRadius: 6, borderLeft: `3px solid ${voteColor(item.vote)}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontFamily: 'Manrope', fontSize: 11, fontWeight: 700, color: 'var(--apex-accent)' }}>{item.agentName}</span>
-                    {item.vote && <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: voteColor(item.vote), fontWeight: 700 }}>{item.vote}</span>}
+                <div key={i} className="p-3 bg-black/30 rounded-lg border-l-2" style={{ borderLeftColor: voteColor(item.vote) }}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-bold text-amber-300 text-xs">{item.agentName}</span>
+                    {item.vote && (
+                      <span className="font-bold text-xs px-1.5 py-0.5 rounded" style={{ color: voteColor(item.vote), background: `${voteColor(item.vote)}15` }}>
+                        {item.vote}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-text)', lineHeight: 1.5 }}>
-                    {item.content.slice(0, 150)}{item.content.length > 150 ? '...' : ''}
+                  <div className="text-slate-300 text-xs leading-relaxed">
+                    {item.content}
                   </div>
                 </div>
               ))
@@ -308,39 +314,43 @@ export default function DebateRoomPage() {
         </div>
 
         {/* Final Decision */}
-        <div style={{ background: 'var(--apex-card)', border: `1px solid ${finalDecision ? voteColor(finalDecision.decision) : 'var(--apex-border)'}`, borderRadius: 12, padding: 14, transition: 'border .3s' }}>
-          <div style={{ fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 12 }}>
-            FINAL DECISION
+        <div className="p-5 rounded-xl glass-panel flex flex-col justify-between"
+          style={{ borderColor: finalDecision ? voteColor(finalDecision.decision) : undefined }}
+        >
+          <div>
+            <div className="font-mono text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider">
+              COMMITTEE VERDICT & EXECUTION ORDER
+            </div>
+            {finalDecision ? (
+              <div>
+                <div className="text-4xl font-extrabold tracking-tight mb-4 font-mono" style={{ color: voteColor(finalDecision.decision) }}>
+                  {finalDecision.decision}
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="bg-black/30 border border-white/10 rounded-lg p-3">
+                    <div className="font-mono text-[10px] text-slate-400 uppercase">GO (CONVICTION)</div>
+                    <div className="text-2xl font-bold text-emerald-400 font-mono mt-1">{finalDecision.goVotes}</div>
+                  </div>
+                  <div className="bg-black/30 border border-white/10 rounded-lg p-3">
+                    <div className="font-mono text-[10px] text-slate-400 uppercase">NO-GO (REJECT)</div>
+                    <div className="text-2xl font-bold text-red-400 font-mono mt-1">{finalDecision.noGoVotes}</div>
+                  </div>
+                </div>
+                <div className="font-mono text-xs text-slate-400">
+                  Synthesized Confidence: <strong className="text-white font-mono">{finalDecision.confidence?.toFixed(1)}%</strong>
+                </div>
+              </div>
+            ) : isDebating ? (
+              <div className="text-center py-12">
+                <div className="text-3xl mb-2 animate-bounce">⚡</div>
+                <div className="font-mono text-xs text-amber-300">Council analyzing multi-timeframe liquidity and risk...</div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-500 font-mono text-xs">
+                Awaiting committee trigger. Select an asset and start deliberation.
+              </div>
+            )}
           </div>
-          {finalDecision ? (
-            <div>
-              <div style={{ fontSize: 48, fontWeight: 900, color: voteColor(finalDecision.decision), marginBottom: 12, fontFamily: 'Manrope' }}>
-                {finalDecision.decision}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-                <div style={{ background: 'var(--apex-surface)', borderRadius: 8, padding: 10 }}>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>GO VOTES</div>
-                  <div style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 700, color: '#12805F' }}>{finalDecision.goVotes}</div>
-                </div>
-                <div style={{ background: 'var(--apex-surface)', borderRadius: 8, padding: 10 }}>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>NO-GO VOTES</div>
-                  <div style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 700, color: '#B0263B' }}>{finalDecision.noGoVotes}</div>
-                </div>
-              </div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
-                Avg confidence: {finalDecision.confidence?.toFixed(1)}%
-              </div>
-            </div>
-          ) : isDebating ? (
-            <div style={{ textAlign: 'center', padding: 40 }}>
-              <div style={{ fontSize: 32, marginBottom: 12, animation: 'pulse 1s infinite' }}>⚡</div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#C9A24B' }}>Agents deliberating...</div>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: 40, fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)' }}>
-              Trigger a debate to see the committee's verdict here.
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -34,7 +34,6 @@ yarn-error.log*
 Thumbs.db
 
 # Temporary
-.local-paper/
 tmp/
 temp/
 
@@ -47,5 +46,6 @@ prisma/migrations/.prisma
 out/
 .vercel
 .env*
+!.env.example
 .claude/
 .superpowers/

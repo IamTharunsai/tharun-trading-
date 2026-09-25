@@ -1,8 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
-  // Disable dark mode completely — we always use light
-  darkMode: false,
+  content: [
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
+    '../frontend/src/**/*.{js,ts,jsx,tsx}'
+  ],
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {
@@ -12,35 +15,24 @@ export default {
       },
       colors: {
         apex: {
-          bg:        '#EEF1F6',
-          bg2:       '#E4E9F2',
-          surface:   '#FFFFFF',
-          card:      '#FFF8F2',
-          border:    '#DCDFE6',
-          accent:    '#0E6B4F',
-          orange:    '#C9A24B',
-          gold:      '#C9A24B',
-          green:     '#12805F',
-          red:       '#B0263B',
-          yellow:    '#C9A24B',
-          muted:     '#5B6472',
-          text:      '#14171F',
-          cream:     '#F6F4EE',
-          darkgreen: '#0A4636',
-          navy:      '#16305C',
+          bg:            '#080C14',
+          bg2:           '#0D1322',
+          surface:       '#11192C',
+          card:          'rgba(17, 25, 44, 0.72)',
+          'card-hover':  'rgba(23, 34, 59, 0.85)',
+          border:        'rgba(255, 255, 255, 0.08)',
+          'border-bright': 'rgba(255, 255, 255, 0.16)',
+          gold:          '#F59E0B',
+          accent:        '#10B981',
+          orange:        '#F97316',
+          green:         '#10B981',
+          red:           '#EF4444',
+          cyan:          '#06B6D4',
+          text:          '#F8FAFC',
+          muted:         '#94A3B8',
+          subtle:        '#64748B',
+          navy:          '#0A1224',
         }
-      },
-      backgroundColor: {
-        'apex-bg':      '#EEF1F6',
-        'apex-surface': '#FFFFFF',
-        'apex-card':    '#FFF8F2',
-      },
-      textColor: {
-        'apex-text':  '#14171F',
-        'apex-muted': '#5B6472',
-      },
-      backdropBlur: {
-        xs: '2px',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -49,8 +41,8 @@ export default {
       },
       keyframes: {
         glow: {
-          '0%':   { boxShadow: '0 0 5px rgba(201,162,75,0.3)' },
-          '100%': { boxShadow: '0 0 20px rgba(201,162,75,0.6), 0 0 40px rgba(201,162,75,0.2)' }
+          '0%':   { boxShadow: '0 0 5px rgba(245,158,11,0.3)' },
+          '100%': { boxShadow: '0 0 20px rgba(245,158,11,0.6), 0 0 40px rgba(245,158,11,0.2)' }
         },
         ticker: {
           '0%':   { transform: 'translateX(0)' },
@@ -59,5 +51,5 @@ export default {
       }
     }
   },
-  plugins: []
+  plugins: [],
 };

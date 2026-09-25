@@ -51,17 +51,44 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     .filter(p => p.market === 'crypto')
     .reduce((sum, p) => sum + (prices[p.asset] || p.currentPrice) * p.quantity, 0);
 
+  // Ground-truth reconciliation against real live accounts (Alpaca + Polymarket)
   try {
-    const alpaca = createAlpacaBroker(true);
-    if (alpaca) {
-      const account = await alpaca.getPortfolioSummary();
-      if (account) {
-        cashBalance = account.cash;
-        totalValue = account.portfolio_value + cryptoInvested;
+    const { accountManager } = await import('./accountManager');
+    if (accountManager.isAlpacaConnected() || accountManager.isPolymarketConnected()) {
+      let liveCash = 0;
+      let liveTotal = 0;
+      let hasLive = false;
+
+      if (accountManager.isAlpacaConnected()) {
+        const alp = accountManager.getAlpacaState();
+        liveCash += alp.cash;
+        liveTotal += alp.portfolioValue;
+        hasLive = true;
+      }
+
+      if (accountManager.isPolymarketConnected()) {
+        const poly = accountManager.getPolymarketState();
+        liveCash += poly.usdcBalance;
+        liveTotal += poly.portfolioValue;
+        hasLive = true;
+      }
+
+      if (hasLive) {
+        cashBalance = liveCash;
+        totalValue = liveTotal;
+      }
+    } else {
+      const alpaca = createAlpacaBroker(true);
+      if (alpaca) {
+        const account = await alpaca.getPortfolioSummary();
+        if (account) {
+          cashBalance = account.cash;
+          totalValue = account.portfolio_value + cryptoInvested;
+        }
       }
     }
   } catch (err) {
-    logger.warn('Alpaca account fetch failed, falling back to locally-tracked portfolio value', { error: (err as Error).message });
+    logger.warn('Account live reconciliation failed, falling back to locally-tracked portfolio value', { error: (err as Error).message });
   }
 
   // Today's P&L = change in total portfolio value since the start of today,

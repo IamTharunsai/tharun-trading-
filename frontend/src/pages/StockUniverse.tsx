@@ -378,11 +378,18 @@ export default function StockUniversePage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selected, setSelected] = useState<any | null>(null);
 
-  const { data: stocks = [], isLoading } = useQuery({
+  const { data: rawStocks, isLoading } = useQuery({
     queryKey: ['stocks-universe'],
     queryFn: getStocksUniverse,
     refetchInterval: 60000,
   });
+
+  const stocks: any[] = useMemo(() => {
+    if (Array.isArray(rawStocks)) return rawStocks;
+    if (Array.isArray((rawStocks as any)?.stocks)) return (rawStocks as any).stocks;
+    if (Array.isArray((rawStocks as any)?.data)) return (rawStocks as any).data;
+    return [];
+  }, [rawStocks]);
 
   const filtered = useMemo(() => {
     let list = [...stocks];
@@ -447,11 +454,11 @@ export default function StockUniversePage() {
       </div>
 
       {/* Stats bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
         {[
           { label: 'Total Analyzed', value: stocks.length, icon: Activity },
           { label: 'With Full Name', value: `${withNames} / ${stocks.length}` },
-          { label: 'Traded', value: totalTraded },
+          { label: 'Actively Traded', value: totalTraded },
           { label: 'Open Positions', value: totalOpen },
         ].map((s, i) => (
           <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
@@ -472,21 +479,22 @@ export default function StockUniversePage() {
             style={{
               width: '100%', boxSizing: 'border-box',
               padding: '10px 12px 10px 36px',
-              background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
               fontFamily: 'Space Mono', fontSize: 12, color: C.text, outline: 'none',
             }}
           />
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Filter pills */}
+          {/* Filter buttons (terminal tabs) */}
           {(['all', 'traded', 'open', 'buy', 'sell'] as FilterKey[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
-              fontFamily: 'Space Mono', fontSize: 10, fontWeight: filter === f ? 700 : 400,
-              color: filter === f ? C.accent : C.muted,
-              background: filter === f ? `${C.accent}18` : 'transparent',
-              border: `1px solid ${filter === f ? C.accent : C.border}`,
-              borderRadius: 20, padding: '4px 12px', cursor: 'pointer', textTransform: 'uppercase',
+              fontFamily: 'Space Mono', fontSize: 10, fontWeight: filter === f ? 700 : 500,
+              color: filter === f ? '#000000' : C.muted,
+              background: filter === f ? '#F59E0B' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${filter === f ? '#F59E0B' : C.border}`,
+              borderRadius: 6, padding: '5px 12px', cursor: 'pointer', textTransform: 'uppercase',
+              transition: 'all 0.15s ease',
             }}>{f === 'all' ? `All (${stocks.length})` : f === 'open' ? `Open (${totalOpen})` : f === 'traded' ? `Traded (${totalTraded})` : f}</button>
           ))}
 

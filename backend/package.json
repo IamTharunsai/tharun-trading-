@@ -5,10 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "db:paper-local": "node scripts/localDatabase.mjs",
-    "start:paper-local": "npm run build && node scripts/startLocalPaper.mjs",
-    "test:paper-local": "npm run build && node scripts/verifyLocalPaper.mjs",
-    "build": "prisma generate --schema=./prisma/schema.prisma && tsc",
+    "build": "npx prisma generate --schema=./prisma/schema.prisma && ./node_modules/.bin/tsc",
     "start": "node dist/index.js",
     "test": "jest --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
@@ -46,7 +43,6 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "embedded-postgres": "18.4.0-beta.17",
     "@types/bcryptjs": "^2.4.6",
     "@types/bull": "^4.10.0",
     "@types/compression": "^1.7.5",

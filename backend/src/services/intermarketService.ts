@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { redis } from '../utils/redis';
 import { logger } from '../utils/logger';
+import { isPlaceholderKey } from '../utils/apiKeys';
 
 interface IntermarketData {
   timestamp: Date;
@@ -104,15 +105,11 @@ class IntermarketService {
       try { await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(analysis)); } catch { /* cache write is best-effort */ }
       return analysis;
     } catch (error) {
-      logger.error('Error in getIntermarketAnalysis:', error);
-      // A total data-fetch failure (all proxies unreachable) is re-thrown
-      // rather than papered over with getDefaultAnalysis()'s plausible-looking
-      // numbers — the caller (debateEngine.ts) treats a rejected promise as
-      // "no data" and omits the section, instead of presenting fabricated
-      // defaults to agents as if they were real. Other errors (e.g. a bug in
-      // the relationship/signal computation after a partial real fetch) still
-      // fall back to defaults, since some real data was actually obtained.
-      if (error instanceof Error && error.message.includes('All macro proxy fetches failed')) throw error;
+      if (error instanceof Error && error.message.includes('All macro proxy fetches failed')) {
+        logger.debug('Macro proxies unavailable — omitting macro section');
+        throw error;
+      }
+      logger.warn('Error in getIntermarketAnalysis:', { error: (error as Error).message });
       return this.getDefaultAnalysis();
     }
   }
@@ -249,6 +246,9 @@ class IntermarketService {
   // SPY/QQQ for equities, UUP for the dollar, GLD for gold, USO for oil, VIXY
   // for volatility, TLT for long bond yields. CoinGecko (no key required) for BTC.
   private async fetchAlpacaChangePercent(symbol: string): Promise<number | null> {
+    if (isPlaceholderKey(process.env.ALPACA_API_KEY) || isPlaceholderKey(process.env.ALPACA_SECRET_KEY)) {
+      return null;
+    }
     try {
       const res = await axios.get(`https://data.alpaca.markets/v2/stocks/${symbol}/snapshot`, {
         headers: {

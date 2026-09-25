@@ -15,9 +15,6 @@ import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { TradeSignal } from '../agents/types';
 import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions } from '../services/polymarket';
-import { resolveSurvivalPolicy, marketAllowed } from '../services/survivalEngine';
-import { runDeepResearchTick } from '../services/deepResearchLayer';
-import { reconcilePendingPaperEntries } from '../trading/paperOrderLifecycle';
 
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
@@ -48,16 +45,6 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       volumeAvg20: snapshot.indicators.volumeAvg20, atr14: snapshot.indicators.atr14,
     });
     const portfolio = await getPortfolioState();
-    const policy = resolveSurvivalPolicy({
-      bankroll: portfolio.totalValue,
-      drawdownFromPeakPct: portfolio.drawdownFromPeak,
-      dailyLossPct: portfolio.pnlDayPct,
-      openPositions: portfolio.positions?.length || 0,
-    });
-    if (!marketAllowed(policy, market === 'forex' ? 'forex' : market)) {
-      logger.info(`⏭️ Skipping ${asset} — ${policy.capitalTier}/${policy.drawdownMode} does not allow ${market}`);
-      return;
-    }
     const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime);
     if (transcript.executionApproved && transcript.finalDecision !== 'HOLD') {
       const decision = await prisma.agentDecision.findFirst({ where: { asset }, orderBy: { timestamp: 'desc' } });
@@ -202,7 +189,6 @@ export function initScheduler() {
 
   // ── EVERY 10 SECONDS: Stop Loss Monitor ──────────────────────────────────
   cron.schedule('*/10 * * * * *', async () => {
-    await reconcilePendingPaperEntries().catch(err => logger.error('Paper entry reconciliation failed', { error: (err as Error).message }));
     const prices = getCurrentPrices();
     await checkStopLosses(prices).catch(err => logger.error('Stop loss check failed', { err }));
   });
@@ -303,16 +289,7 @@ export function initScheduler() {
         return;
       }
       const portfolio = await getPortfolioState();
-      const policy = resolveSurvivalPolicy({
-        bankroll: portfolio.totalValue,
-        drawdownFromPeakPct: portfolio.drawdownFromPeak,
-        dailyLossPct: portfolio.pnlDayPct,
-      });
-      if (!policy.allowPolymarket || policy.drawdownMode === 'DEFEND') {
-        logger.info('🎯 Polymarket skipped — capital/drawdown policy');
-        return;
-      }
-      const opportunities = await scanPolymarketOpportunities(portfolio.totalValue, policy.minPolymarketEdge);
+      const opportunities = await scanPolymarketOpportunities(portfolio.totalValue);
       for (const opp of opportunities.slice(0, slotsAvailable)) {
         await placePolymarketBet(opp, opp.conditionId, true); // paper mode
       }
@@ -345,18 +322,12 @@ export function initScheduler() {
     } catch (err) { logger.error('Post-trade polling failed', { err }); }
   });
 
-  // ── EVERY 60 SECONDS: APEX-∞ deep research layer ────────────────────────
-  cron.schedule('* * * * *', async () => {
-    await runDeepResearchTick().catch(err => logger.warn('Deep research tick failed', { err }));
-  });
-
   logger.info('✅ Tharun Trading Scheduler initialized:');
   logger.info('   ⏱️ Investment Committee: dynamic market screen at 9:35 AM & 1 PM ET');
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');
   logger.info('   🎯 Polymarket opportunity scan every 30 minutes');
-  logger.info('   🔬 Deep research (8-K/Form4/13D) every 60 seconds');
   logger.info('   📓 Daily journal at 11:59 PM');
   logger.info('   📊 Weekly report every Sunday 8 AM');
   logger.info('   🎓 Post-trade learning every 2 minutes');

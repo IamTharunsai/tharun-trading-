@@ -2,6 +2,7 @@
   "name": "apex-trader-frontend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "dependencies": {
     "@tanstack/react-query": "^5.17.19",
     "axios": "^1.6.7",

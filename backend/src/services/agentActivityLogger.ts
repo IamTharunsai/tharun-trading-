@@ -8,7 +8,7 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export interface AgentActivity {
   id: string;

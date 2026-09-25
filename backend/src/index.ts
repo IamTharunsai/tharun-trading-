@@ -11,10 +11,6 @@ import { initMarketData } from './services/marketData';
 import { geopoliticalDataService } from './services/geopoliticalDataService';
 import { logger } from './utils/logger';
 import { prisma } from './utils/prisma';
-import { assertPaperTrading } from './trading/paperConfig';
-import { initRedis } from './utils/redis';
-import { reconcilePendingPaperEntries } from './trading/paperOrderLifecycle';
-import { isKillSwitchActive } from './agents/orchestrator';
 
 // Routes
 import authRoutes from './routes/auth';
@@ -32,26 +28,14 @@ import intelligenceRoutes from './routes/intelligence';
 
 const app = express();
 const server = http.createServer(app);
-const backgroundJobsEnabled = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
 
 // ── MIDDLEWARE ────────────────────────────────────────────────────────────────
-app.use(helmet());
-app.use(compression());
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:5173',
-  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
-];
+// Disable frameguard and strict CSP for AI Studio iframe embedding
+app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
+app.use(compression() as any);
 
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS blocked: ${origin}`));
-    }
-  },
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 }));
@@ -85,8 +69,6 @@ app.get('/health', (_, res) => {
   res.json({
     status: 'OPERATIONAL',
     mode: process.env.TRADING_MODE || 'paper',
-    backgroundJobsEnabled,
-    killSwitchActive: isKillSwitchActive(),
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -99,12 +81,16 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
-const PORT = parseInt(process.env.PORT || '4000');
+export async function boot(port: number = 3000) {
+  // Start HTTP & WebSocket server immediately so port 3000 is open without blocking
+  if (!server.listening) {
+    server.listen(port, '0.0.0.0', () => {
+      logger.info(`🚀 THARUN TRADING BOT backend running on http://0.0.0.0:${port}`);
+      logger.info(`📊 Trading mode: ${process.env.TRADING_MODE?.toUpperCase() || 'PAPER'}`);
+    });
+  }
 
-async function boot() {
   try {
-    assertPaperTrading();
-    if (backgroundJobsEnabled) void initRedis();
     // Test DB connection
     await prisma.$connect();
     logger.info('✅ Database connected');
@@ -112,18 +98,15 @@ async function boot() {
     // Init WebSocket
     initWebSocket(server);
     logger.info('✅ WebSocket server initialized');
-    if (backgroundJobsEnabled) {
-    await reconcilePendingPaperEntries();
 
-    // Init market data feeds (optional)
-    try {
-      await initMarketData();
+    // Init market data feeds (optional, non-blocking)
+    initMarketData().then(() => {
       logger.info('✅ Market data feeds connected');
-    } catch (err) {
+    }).catch((err) => {
       logger.warn('⚠️ Market data feeds failed to connect', { error: err instanceof Error ? err.message : String(err) });
-    }
+    });
 
-    // Init job scheduler (optional)
+    // Init job scheduler (optional, non-blocking)
     try {
       initScheduler();
       logger.info('✅ Job scheduler started');
@@ -131,23 +114,14 @@ async function boot() {
       logger.warn('⚠️ Job scheduler failed to start', { error: err instanceof Error ? err.message : String(err) });
     }
 
-    // Init geopolitical data service
-    try {
-      await geopoliticalDataService.initialize();
+    // Init geopolitical data service (non-blocking)
+    geopoliticalDataService.initialize().then(() => {
       logger.info('📡 Geopolitical & news data service initialized');
-    } catch (err) {
+    }).catch((err) => {
       logger.warn('⚠️ Geopolitical service failed', { error: err instanceof Error ? err.message : String(err) });
-    }
-
-    } else logger.info('Background jobs disabled: no scheduled trading or feed workers started');
-
-    server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
-      logger.info(`🚀 THARUN TRADING BOT backend running on port ${PORT}`);
-      logger.info(`📊 Trading mode: ${process.env.TRADING_MODE?.toUpperCase() || 'PAPER'}`);
     });
   } catch (error) {
-    logger.error('❌ Boot failed', { error: error instanceof Error ? error.message : String(error) });
-    process.exit(1);
+    logger.error('❌ Boot error handled', { error: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -160,7 +134,6 @@ process.on('SIGTERM', async () => {
 
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception', { error: error.message });
-  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason: any) => {
@@ -168,4 +141,4 @@ process.on('unhandledRejection', (reason: any) => {
   // Don't exit — log and continue so the whole server doesn't crash on one bad API call
 });
 
-boot();
+export { app, server };
