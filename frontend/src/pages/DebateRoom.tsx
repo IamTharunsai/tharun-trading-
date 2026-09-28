@@ -171,7 +171,7 @@ export default function DebateRoomPage() {
   };
 
   const voteColor = (vote?: string) =>
-    vote === 'BUY' ? '#10B981' : vote === 'SELL' ? '#EF4444' : vote === 'HOLD' ? '#F59E0B' : 'rgba(255, 255, 255, 0.12)';
+    vote === 'BUY' ? '#059669' : vote === 'SELL' ? '#DC2626' : vote === 'HOLD' ? '#D97706' : '#94A3B8';
 
   const buyVotes  = Object.values(agentStates).filter(s => s.vote === 'BUY').length;
   const sellVotes = Object.values(agentStates).filter(s => s.vote === 'SELL').length;
@@ -179,20 +179,20 @@ export default function DebateRoomPage() {
   const totalVoted = buyVotes + sellVotes + holdVotes;
 
   return (
-    <div className="flex flex-col gap-5 max-w-7xl mx-auto text-slate-100">
+    <div className="flex flex-col gap-5 max-w-7xl mx-auto text-slate-900">
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-2xl glass-panel bg-[#0B101D]/80">
+      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-2xl text-white tracking-tight font-display">
+            <h1 className="font-bold text-2xl text-slate-900 tracking-tight font-display">
               Autonomous Investment Committee
             </h1>
-            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
+            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold">
               3-ROUND DELIBERATION
             </span>
           </div>
-          <p className="font-mono text-xs text-slate-400 mt-1">
+          <p className="font-mono text-xs text-slate-500 mt-1">
             Real-time consensus verification · Multi-agent Wyckoff, order flow & risk vetoes
           </p>
         </div>
@@ -204,7 +204,7 @@ export default function DebateRoomPage() {
               value={selectedAsset}
               onChange={e => setSelectedAsset(e.target.value.toUpperCase())}
               disabled={isDebating}
-              className="px-3 py-2 border border-white/10 bg-black/40 text-white rounded-lg font-mono text-xs cursor-pointer focus:outline-none focus:border-amber-400"
+              className="px-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg font-mono text-xs cursor-pointer focus:outline-none focus:border-blue-500"
             >
               {Object.entries(SECTOR_CATEGORIES).map(([cat, symbols]) => (
                 <optgroup key={cat} label={cat}>
@@ -215,7 +215,7 @@ export default function DebateRoomPage() {
               ))}
             </select>
 
-            <span className="text-xs text-slate-500 font-mono">OR</span>
+            <span className="text-xs text-slate-400 font-mono font-bold">OR</span>
 
             <input
               type="text"
@@ -223,17 +223,17 @@ export default function DebateRoomPage() {
               value={selectedAsset}
               onChange={e => setSelectedAsset(e.target.value.trim().toUpperCase())}
               disabled={isDebating}
-              className="w-36 px-2.5 py-1.5 border border-white/10 bg-black/60 text-amber-300 font-mono text-xs rounded-lg uppercase placeholder:text-slate-600 focus:outline-none focus:border-amber-400"
+              className="w-40 px-2.5 py-1.5 border border-slate-300 bg-white text-slate-900 font-mono text-xs rounded-lg uppercase placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
             />
           </div>
 
-          <span className="font-mono text-xs text-slate-400">
+          <span className="font-mono text-xs text-slate-500 font-bold">
             [{getMarket(selectedAsset).toUpperCase()}]
           </span>
           <button
             onClick={triggerDebate}
             disabled={triggering || isDebating || !selectedAsset}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-mono text-xs font-bold transition-all shadow-md shadow-amber-500/20 disabled:opacity-40"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-40"
           >
             {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Convening...' : `▶ CONVENE COMMITTEE ON ${selectedAsset}`}
           </button>
@@ -243,41 +243,41 @@ export default function DebateRoomPage() {
       {/* Round explanation */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
-          { round: 'Round 1', label: 'Opening Technical & Wire Arguments', color: '#F59E0B' },
-          { round: 'Round 2', label: 'Cross-Examination & Bearish Stress-Test', color: '#3B82F6' },
-          { round: 'Round 3', label: 'Kelly Position Sizing & Final Verdict', color: '#10B981' },
+          { round: 'Round 1', label: 'Opening Technical & Wire Arguments', color: '#D97706' },
+          { round: 'Round 2', label: 'Cross-Examination & Bearish Stress-Test', color: '#2563EB' },
+          { round: 'Round 3', label: 'Kelly Position Sizing & Final Verdict', color: '#059669' },
         ].map(item => (
-          <div key={item.round} className="glass-panel p-3.5 rounded-xl border border-white/[0.06]">
-            <div className="font-mono text-[10px] text-amber-400 font-bold uppercase mb-1">{item.round}</div>
-            <div className="text-xs font-bold text-white">{item.label}</div>
+          <div key={item.round} className="p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+            <div className="font-mono text-[10px] font-bold uppercase mb-1" style={{ color: item.color }}>{item.round}</div>
+            <div className="text-xs font-bold text-slate-900">{item.label}</div>
           </div>
         ))}
       </div>
 
       {/* Vote tally bar */}
       {totalVoted > 0 && (
-        <div style={{ background: 'var(--apex-card)', border: '1px solid var(--apex-border)', borderRadius: 10, padding: 14 }}>
-          <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)', marginBottom: 8 }}>
+        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="font-mono text-xs text-slate-500 font-semibold mb-2">
             LIVE VOTE TALLY — {totalVoted}/15 agents voted
           </div>
-          <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', gap: 2 }}>
-            {buyVotes  > 0 && <div style={{ flex: buyVotes,  background: '#12805F', borderRadius: 4 }} title={`BUY: ${buyVotes}`} />}
-            {holdVotes > 0 && <div style={{ flex: holdVotes, background: '#C9A24B', borderRadius: 4 }} title={`HOLD: ${holdVotes}`} />}
-            {sellVotes > 0 && <div style={{ flex: sellVotes, background: '#B0263B', borderRadius: 4 }} title={`SELL: ${sellVotes}`} />}
+          <div className="flex h-3 rounded-full overflow-hidden gap-1 bg-slate-100 p-0.5">
+            {buyVotes  > 0 && <div style={{ flex: buyVotes,  background: '#059669', borderRadius: 4 }} title={`BUY: ${buyVotes}`} />}
+            {holdVotes > 0 && <div style={{ flex: holdVotes, background: '#D97706', borderRadius: 4 }} title={`HOLD: ${holdVotes}`} />}
+            {sellVotes > 0 && <div style={{ flex: sellVotes, background: '#DC2626', borderRadius: 4 }} title={`SELL: ${sellVotes}`} />}
           </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#12805F' }}>BUY: {buyVotes}</span>
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#C9A24B' }}>HOLD: {holdVotes}</span>
-            <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#B0263B' }}>SELL: {sellVotes}</span>
+          <div className="flex gap-4 mt-2 font-mono text-xs font-bold">
+            <span className="text-emerald-600">BUY: {buyVotes}</span>
+            <span className="text-amber-600">HOLD: {holdVotes}</span>
+            <span className="text-red-600">SELL: {sellVotes}</span>
           </div>
         </div>
       )}
 
       {/* Agent Cards */}
-      <div className="p-5 rounded-xl glass-panel">
-        <div className="font-mono text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider flex items-center justify-between">
+      <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+        <div className="font-mono text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider flex items-center justify-between">
           <span>COUNCIL OF SPECIALISTS ({AGENTS.length})</span>
-          <span className="text-slate-500 font-normal">Multi-Strategy Neural Committee</span>
+          <span className="text-slate-500 font-semibold">Multi-Strategy Neural Committee</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-2.5">
           {AGENTS.map(agent => {
@@ -285,20 +285,20 @@ export default function DebateRoomPage() {
             const bc = voteColor(state?.vote);
             const pulse = state?.status === 'analyzing';
             return (
-              <div key={agent.id} className="bg-black/30 border rounded-lg p-2.5 transition-all"
+              <div key={agent.id} className="bg-slate-50 border rounded-lg p-2.5 transition-all"
                 style={{
-                  borderColor: state?.vote ? bc : 'rgba(255,255,255,0.08)',
-                  boxShadow: state?.vote ? `0 0 10px ${bc}30` : 'none',
+                  borderColor: state?.vote ? bc : '#E2E8F0',
+                  boxShadow: state?.vote ? `0 0 8px ${bc}25` : 'none',
                 }}
               >
                 <div className="text-lg mb-1">{agent.icon}</div>
-                <div className="text-xs font-bold text-white truncate mb-1">{agent.name}</div>
-                {agent.veto && <div className="font-mono text-[9px] text-red-400 font-bold mb-1">⚡ VETO POWER</div>}
+                <div className="text-xs font-bold text-slate-900 truncate mb-1">{agent.name}</div>
+                {agent.veto && <div className="font-mono text-[9px] text-red-600 font-bold mb-1">⚡ VETO POWER</div>}
                 <div className="font-mono text-[10px] font-bold" style={{ color: bc }}>
                   {state?.vote || (pulse ? 'DELIBERATING...' : 'READY')}
                 </div>
                 {state?.confidence !== undefined && (
-                  <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden">
+                  <div className="mt-2 h-1 bg-slate-200 rounded-full overflow-hidden">
                     <div style={{ height: '100%', width: `${state.confidence}%`, background: bc, transition: 'width .5s' }} />
                   </div>
                 )}
@@ -311,27 +311,27 @@ export default function DebateRoomPage() {
       {/* Transcript + Decision */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Transcript */}
-        <div className="p-5 rounded-xl glass-panel flex flex-col">
-          <div className="font-mono text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider">
+        <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-col">
+          <div className="font-mono text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">
             REAL-TIME DELIBERATION TRANSCRIPT
           </div>
           <div ref={transcriptRef} className="max-h-80 overflow-y-auto space-y-2.5 pr-1 flex-1 font-mono text-xs">
             {transcript.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 text-xs">
+              <div className="text-center py-12 text-slate-400 text-xs">
                 Trigger a council session above to stream real-time debate reasoning.
               </div>
             ) : (
               transcript.map((item, i) => (
-                <div key={i} className="p-3 bg-black/30 rounded-lg border-l-2" style={{ borderLeftColor: voteColor(item.vote) }}>
+                <div key={i} className="p-3 bg-slate-50 rounded-lg border-l-4 border border-slate-200" style={{ borderLeftColor: voteColor(item.vote) }}>
                   <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-amber-300 text-xs">{item.agentName}</span>
+                    <span className="font-bold text-slate-900 text-xs">{item.agentName}</span>
                     {item.vote && (
                       <span className="font-bold text-xs px-1.5 py-0.5 rounded" style={{ color: voteColor(item.vote), background: `${voteColor(item.vote)}15` }}>
                         {item.vote}
                       </span>
                     )}
                   </div>
-                  <div className="text-slate-300 text-xs leading-relaxed">
+                  <div className="text-slate-700 text-xs leading-relaxed font-sans">
                     {item.content}
                   </div>
                 </div>
@@ -341,11 +341,11 @@ export default function DebateRoomPage() {
         </div>
 
         {/* Final Decision */}
-        <div className="p-5 rounded-xl glass-panel flex flex-col justify-between"
+        <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-col justify-between"
           style={{ borderColor: finalDecision ? voteColor(finalDecision.decision) : undefined }}
         >
           <div>
-            <div className="font-mono text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider">
+            <div className="font-mono text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">
               COMMITTEE VERDICT & EXECUTION ORDER
             </div>
             {finalDecision ? (
@@ -354,26 +354,26 @@ export default function DebateRoomPage() {
                   {finalDecision.decision}
                 </div>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="bg-black/30 border border-white/10 rounded-lg p-3">
-                    <div className="font-mono text-[10px] text-slate-400 uppercase">GO (CONVICTION)</div>
-                    <div className="text-2xl font-bold text-emerald-400 font-mono mt-1">{finalDecision.goVotes}</div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div className="font-mono text-[10px] text-slate-500 uppercase font-semibold">GO (CONVICTION)</div>
+                    <div className="text-2xl font-bold text-emerald-600 font-mono mt-1">{finalDecision.goVotes}</div>
                   </div>
-                  <div className="bg-black/30 border border-white/10 rounded-lg p-3">
-                    <div className="font-mono text-[10px] text-slate-400 uppercase">NO-GO (REJECT)</div>
-                    <div className="text-2xl font-bold text-red-400 font-mono mt-1">{finalDecision.noGoVotes}</div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div className="font-mono text-[10px] text-slate-500 uppercase font-semibold">NO-GO (REJECT)</div>
+                    <div className="text-2xl font-bold text-red-600 font-mono mt-1">{finalDecision.noGoVotes}</div>
                   </div>
                 </div>
-                <div className="font-mono text-xs text-slate-400">
-                  Synthesized Confidence: <strong className="text-white font-mono">{finalDecision.confidence?.toFixed(1)}%</strong>
+                <div className="font-mono text-xs text-slate-600 font-medium">
+                  Synthesized Confidence: <strong className="text-slate-900 font-mono">{finalDecision.confidence?.toFixed(1)}%</strong>
                 </div>
               </div>
             ) : isDebating ? (
               <div className="text-center py-12">
                 <div className="text-3xl mb-2 animate-bounce">⚡</div>
-                <div className="font-mono text-xs text-amber-300">Council analyzing multi-timeframe liquidity and risk...</div>
+                <div className="font-mono text-xs text-blue-700 font-bold">Council analyzing multi-timeframe liquidity and risk...</div>
               </div>
             ) : (
-              <div className="text-center py-12 text-slate-500 font-mono text-xs">
+              <div className="text-center py-12 text-slate-400 font-mono text-xs">
                 Awaiting committee trigger. Select an asset and start deliberation.
               </div>
             )}

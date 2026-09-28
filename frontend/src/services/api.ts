@@ -27,6 +27,10 @@ export const getMe = () => api.get('/auth/me').then(r => r.data);
 export const getPortfolio = () => api.get('/portfolio').then(r => r.data);
 export const getPositions = () => api.get('/portfolio/positions').then(r => r.data);
 export const getSnapshots = (days = 30) => api.get(`/portfolio/snapshots?days=${days}`).then(r => r.data);
+export const getPortfolioSnapshots = (timeframe: any = '7D') => {
+  const days = timeframe === '24H' ? 1 : timeframe === '7D' ? 7 : timeframe === '30D' ? 30 : timeframe === 'ALL' ? 90 : (typeof timeframe === 'number' ? timeframe : 30);
+  return api.get(`/portfolio/snapshots?days=${days}`).then(r => r.data);
+};
 
 // ── TRADES ────────────────────────────────────────────────────────────────────
 export const getTrades = (page = 1, limit = 50, filters?: any) =>

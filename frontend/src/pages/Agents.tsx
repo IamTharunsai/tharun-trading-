@@ -73,12 +73,12 @@ export default function AgentsPage() {
 
           {/* Market + Symbol selectors */}
           <select value={market} onChange={e => { setMarket(e.target.value as any); setSymbol(e.target.value === 'crypto' ? 'BTC' : 'NVDA'); }}
-            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
+            style={{ fontFamily: 'JetBrains Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A' }}>
             <option value="stocks">Stocks</option>
             <option value="crypto">Crypto</option>
           </select>
           <select value={symbol} onChange={e => setSymbol(e.target.value)}
-            style={{ fontFamily: 'Space Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #DCDFE6', background: '#F8F9FC', color: '#14171F' }}>
+            style={{ fontFamily: 'JetBrains Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A' }}>
             {(market === 'crypto' ? CRYPTO_LIST : STOCK_LIST).map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -87,9 +87,9 @@ export default function AgentsPage() {
           {/* Run debate only */}
           <button onClick={runNow} disabled={running || !!currentAnalysis}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
-              background: (running || !!currentAnalysis) ? 'rgba(201,162,75,0.1)' : '#C9A24B',
-              border: 'none', color: (running || !!currentAnalysis) ? '#C9A24B' : '#fff',
-              fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, cursor: (running || !!currentAnalysis) ? 'not-allowed' : 'pointer' }}>
+              background: (running || !!currentAnalysis) ? '#E2E8F0' : '#2563EB',
+              border: 'none', color: (running || !!currentAnalysis) ? '#94A3B8' : '#fff',
+              fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: (running || !!currentAnalysis) ? 'not-allowed' : 'pointer' }}>
             <PlayCircle size={13} />
             {running ? 'RUNNING...' : 'DEBATE'}
           </button>
@@ -97,9 +97,9 @@ export default function AgentsPage() {
           {/* Run debate + auto-trade */}
           <button onClick={runAndTrade} disabled={trading || !!currentAnalysis}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
-              background: (trading || !!currentAnalysis) ? 'rgba(18,128,95,0.1)' : '#12805F',
-              border: 'none', color: (trading || !!currentAnalysis) ? '#12805F' : '#fff',
-              fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, cursor: (trading || !!currentAnalysis) ? 'not-allowed' : 'pointer' }}>
+              background: (trading || !!currentAnalysis) ? '#E2E8F0' : '#059669',
+              border: 'none', color: (trading || !!currentAnalysis) ? '#94A3B8' : '#fff',
+              fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: (trading || !!currentAnalysis) ? 'not-allowed' : 'pointer' }}>
             <Zap size={13} />
             {trading ? 'DEBATING...' : 'DEBATE & TRADE'}
           </button>
@@ -107,8 +107,8 @@ export default function AgentsPage() {
           {/* Force immediate buy */}
           <button onClick={forceBuy}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
-              background: 'rgba(176,38,59,0.12)', border: '1px solid #B0263B',
-              color: '#B0263B', fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              background: '#FEE2E2', border: '1px solid #FCA5A5',
+              color: '#DC2626', fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
             ⚡ FORCE BUY
           </button>
         </div>
@@ -120,35 +120,35 @@ export default function AgentsPage() {
           const state = agentCouncil[agent.id];
           const vote = state?.vote;
           const status = state?.status || 'idle';
-          const voteColor = vote?.vote === 'BUY' ? '#12805F' : vote?.vote === 'SELL' ? '#B0263B' : vote?.vote === 'HOLD' ? '#C9A24B' : undefined;
+          const voteColor = vote?.vote === 'BUY' ? '#059669' : vote?.vote === 'SELL' ? '#DC2626' : vote?.vote === 'HOLD' ? '#D97706' : undefined;
           return (
             <div key={agent.id} style={{
-              background: '#F8F9FC',
-              border: `1px solid ${voteColor || '#DCDFE6'}`,
+              background: '#FFFFFF',
+              border: `1px solid ${voteColor || '#E2E8F0'}`,
               borderRadius: 10,
               padding: 12,
               transition: 'all .3s',
-              boxShadow: voteColor ? `0 0 10px ${voteColor}30` : 'none',
+              boxShadow: voteColor ? `0 0 10px ${voteColor}25` : '0 1px 3px rgba(0,0,0,0.05)',
             }}>
               <div style={{ fontSize: 20, marginBottom: 4 }}>{agent.icon}</div>
-              <div style={{ fontFamily: 'Manrope', fontSize: 11, fontWeight: 700, color: '#14171F', lineHeight: 1.2, marginBottom: 2 }}>{agent.name}</div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#5B6472', marginBottom: 6 }}>{agent.role}</div>
-              {agent.veto && <div style={{ fontFamily: 'Space Mono', fontSize: 8, color: '#B0263B', marginBottom: 4 }}>⚡ VETO</div>}
+              <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 700, color: '#0F172A', lineHeight: 1.2, marginBottom: 2 }}>{agent.name}</div>
+              <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: '#64748B', marginBottom: 6 }}>{agent.role}</div>
+              {agent.veto && <div style={{ fontFamily: 'JetBrains Mono', fontSize: 8, color: '#DC2626', marginBottom: 4 }}>⚡ VETO</div>}
 
               {status === 'analyzing' && !vote && (
-                <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#C9A24B', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: '#D97706', display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span> Analyzing...
                 </div>
               )}
               {vote && (
                 <div>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: voteColor }}>{vote.vote}</div>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#5B6472' }}>{vote.confidence}%</div>
-                  <div style={{ height: 2, background: '#DCDFE6', borderRadius: 1, marginTop: 4, overflow: 'hidden' }}>
+                  <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, color: voteColor }}>{vote.vote}</div>
+                  <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: '#64748B' }}>{vote.confidence}%</div>
+                  <div style={{ height: 2, background: '#E2E8F0', borderRadius: 1, marginTop: 4, overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${vote.confidence}%`, background: voteColor, transition: 'width .5s' }} />
                   </div>
                   {vote.reasoning && (
-                    <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#5B6472', marginTop: 4, lineHeight: 1.4,
+                    <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: '#64748B', marginTop: 4, lineHeight: 1.4,
                       overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                       {vote.reasoning}
                     </div>
@@ -156,7 +156,7 @@ export default function AgentsPage() {
                 </div>
               )}
               {!vote && status === 'idle' && (
-                <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#C4A882' }}>STANDBY</div>
+                <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: '#94A3B8' }}>STANDBY</div>
               )}
             </div>
           );

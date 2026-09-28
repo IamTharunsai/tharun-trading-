@@ -158,10 +158,10 @@ export default function AgentMonitorPage() {
 
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontFamily: 'Manrope', fontSize: 24, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 6 }}>
+        <h1 style={{ fontFamily: 'Inter', fontSize: 24, fontWeight: 800, color: 'var(--apex-text)', marginBottom: 6 }}>
           🔍 Agent Activity Monitor
         </h1>
-        <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)' }}>
+        <p style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--apex-muted)' }}>
           Real-time feed of all 14 agents — votes, analysis, trades
         </p>
       </div>
@@ -176,8 +176,8 @@ export default function AgentMonitorPage() {
             { label: 'Uptime',         value: `${Math.floor(status.uptime / 60)}m` },
           ].map(s => (
             <div key={s.label} style={{ background: 'var(--apex-surface)', border: '1px solid var(--apex-border)', borderRadius: 10, padding: 14 }}>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>{s.label.toUpperCase()}</div>
-              <div style={{ fontFamily: 'Manrope', fontSize: 22, fontWeight: 700, color: 'var(--apex-accent)' }}>{s.value}</div>
+              <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>{s.label.toUpperCase()}</div>
+              <div style={{ fontFamily: 'Inter', fontSize: 22, fontWeight: 700, color: 'var(--apex-accent)' }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -186,7 +186,7 @@ export default function AgentMonitorPage() {
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
-          style={{ padding: '7px 10px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'Space Mono', fontSize: 10 }}>
+          style={{ padding: '7px 10px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'JetBrains Mono', fontSize: 10 }}>
           <option value="ALL">All Types</option>
           {['GATHERING','LEARNING','ANALYZING','VOTING','TRADING'].map(t => (
             <option key={t} value={t}>{TYPE_ICON[t]} {t}</option>
@@ -194,34 +194,34 @@ export default function AgentMonitorPage() {
         </select>
 
         <select value={filterAgent} onChange={e => setFilterAgent(parseInt(e.target.value))}
-          style={{ padding: '7px 10px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'Space Mono', fontSize: 10 }}>
+          style={{ padding: '7px 10px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'JetBrains Mono', fontSize: 10 }}>
           <option value={0}>All Agents</option>
           {Object.entries(AGENTS).map(([id, a]) => (
             <option key={id} value={id}>{a.icon} {a.name}</option>
           ))}
         </select>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-text)', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--apex-text)', cursor: 'pointer' }}>
           <input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} />
           Live WebSocket
           {live && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#12805F', display: 'inline-block', animation: 'pulse 1s infinite' }} />}
         </label>
 
-        <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)', marginLeft: 'auto' }}>
+        <span style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--apex-muted)', marginLeft: 'auto' }}>
           {filtered.length} entries
         </span>
       </div>
 
       {/* Activity Feed */}
       <div ref={feedRef} style={{ background: 'var(--apex-surface)', border: '1px solid var(--apex-border)', borderRadius: 12, overflow: 'hidden', maxHeight: 600, overflowY: 'auto' }}>
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--apex-border)', fontFamily: 'Space Mono', fontSize: 10, fontWeight: 700, color: 'var(--apex-muted)', position: 'sticky', top: 0, background: 'var(--apex-surface)' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--apex-border)', fontFamily: 'JetBrains Mono', fontSize: 10, fontWeight: 700, color: 'var(--apex-muted)', position: 'sticky', top: 0, background: 'var(--apex-surface)' }}>
           LIVE AGENT ACTIVITIES
         </div>
 
         {filtered.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>🤖</div>
-            <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)' }}>
+            <div style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--apex-muted)' }}>
               No activities yet — go to Agent Council and click DEBATE to start
             </div>
           </div>
@@ -237,11 +237,11 @@ export default function AgentMonitorPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span style={{ fontSize: 15 }}>{agent?.icon || '🤖'}</span>
                     <div>
-                      <span style={{ fontFamily: 'Manrope', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)' }}>
+                      <span style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 700, color: 'var(--apex-text)' }}>
                         {agent?.name || activity.agentName}
                       </span>
                       {activity.source && (
-                        <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginLeft: 6 }}>
+                        <span style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--apex-muted)', marginLeft: 6 }}>
                           {activity.source}
                         </span>
                       )}
@@ -251,21 +251,21 @@ export default function AgentMonitorPage() {
                     <span style={{
                       background: TYPE_COLOR[activity.activityType] || '#888',
                       color: '#fff', padding: '2px 7px', borderRadius: 4,
-                      fontFamily: 'Space Mono', fontSize: 8, fontWeight: 700
+                      fontFamily: 'JetBrains Mono', fontSize: 8, fontWeight: 700
                     }}>
                       {TYPE_ICON[activity.activityType]} {activity.activityType}
                     </span>
                     {activity.confidence != null && (
-                      <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)' }}>
+                      <span style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--apex-muted)' }}>
                         {(activity.confidence * 100).toFixed(0)}%
                       </span>
                     )}
-                    <span style={{ fontFamily: 'Space Mono', fontSize: 8, color: 'var(--apex-muted)' }}>
+                    <span style={{ fontFamily: 'JetBrains Mono', fontSize: 8, color: 'var(--apex-muted)' }}>
                       {new Date(activity.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
                 </div>
-                <div style={{ fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-text)', lineHeight: 1.5 }}>
+                <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--apex-text)', lineHeight: 1.5 }}>
                   {activity.content}
                 </div>
               </div>

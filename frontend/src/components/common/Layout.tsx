@@ -123,31 +123,31 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-[#080C14] text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       {/* ── Sidebar ──────────────────────────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 flex flex-col bg-[#0B101D]/90 backdrop-blur-xl border-r border-white/[0.08] overflow-y-auto">
+      <aside className="w-64 flex-shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-y-auto shadow-xs">
         {/* Brand header */}
-        <div className="p-4 border-b border-white/[0.08]">
+        <div className="p-4 border-b border-slate-200">
           <div className="flex items-center gap-2.5 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-emerald-600 flex items-center justify-center font-bold text-black shadow-md shadow-amber-500/10">
-              <Zap size={18} className="text-black" />
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-sm">
+              <Zap size={18} className="text-white" />
             </div>
             <div>
-              <div className="font-bold text-sm tracking-wide text-white leading-tight font-display">
+              <div className="font-bold text-sm tracking-wide text-slate-900 leading-tight">
                 THARUN TERMINAL
               </div>
-              <div className="font-mono text-[10px] text-amber-400 font-bold tracking-wider leading-tight">
+              <div className="font-mono text-[10px] text-blue-700 font-bold tracking-wider leading-tight">
                 AUTONOMOUS HEDGE CORE
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-slate-400">
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-slate-500">
+            <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               SYSTEM ACTIVE
             </span>
-            <span className="text-slate-500">{timeEst.split(' ')[0]}</span>
+            <span className="text-slate-400">{timeEst.split(' ')[0]}</span>
           </div>
         </div>
 
@@ -155,7 +155,7 @@ export default function Layout() {
         <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
           {NAV_GROUPS.map((grp) => (
             <div key={grp.group} className="space-y-1">
-              <div className="px-3 text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
+              <div className="px-3 text-[10px] font-mono font-bold tracking-wider text-slate-400 uppercase">
                 {grp.group}
               </div>
               {grp.items.map(({ path, label, icon: Icon }) => (
@@ -166,8 +166,8 @@ export default function Layout() {
                   className={({ isActive }) => `
                     flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all
                     ${isActive
-                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold shadow-sm'
-                      : 'text-slate-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200/80 font-semibold shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
                     }
                   `}
                 >
@@ -180,21 +180,21 @@ export default function Layout() {
         </nav>
 
         {/* Bottom controls */}
-        <div className="p-3 border-t border-white/[0.08] space-y-2">
+        <div className="p-3 border-t border-slate-200 space-y-2 bg-slate-50/50">
           <button
             onClick={handleExportCsv}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-mono text-xs transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-xs font-medium transition-colors shadow-xs"
           >
-            <FileSpreadsheet size={13} className="text-emerald-400" />
+            <FileSpreadsheet size={13} className="text-emerald-600" />
             <span>BLPAPI EXCEL EXPORT</span>
           </button>
 
           <button
             onClick={handleKillSwitch}
-            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-all ${
+            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-all shadow-xs ${
               killSwitchActive
-                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500 animate-pulse'
-                : 'bg-red-500/10 text-red-400 border-red-500/40 hover:bg-red-500/20'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 animate-pulse'
+                : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
             }`}
           >
             <Power size={13} />
@@ -203,7 +203,7 @@ export default function Layout() {
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-slate-400 hover:text-white text-xs font-mono transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-slate-500 hover:text-slate-800 text-xs font-mono transition-colors"
           >
             <LogOut size={13} /> Logout
           </button>
@@ -211,29 +211,29 @@ export default function Layout() {
       </aside>
 
       {/* ── Main Viewport ────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#080C14]">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
         {/* Top Ticker Bar & Terminal Controls */}
-        <div className="bg-[#0B101D] border-b border-white/[0.08] flex items-center justify-between px-4 py-1.5 text-xs font-mono">
+        <div className="bg-white border-b border-slate-200 flex items-center justify-between px-4 py-1.5 text-xs font-mono shadow-xs">
           <div className="flex items-center gap-4">
-            <span className="text-amber-400 font-bold">TERMINAL FEED:</span>
-            <span className="text-slate-400">{timeEst}</span>
-            <span className="text-slate-600">|</span>
-            <span className="text-slate-400">{timeUtc}</span>
+            <span className="text-blue-700 font-bold">TERMINAL FEED:</span>
+            <span className="text-slate-600">{timeEst}</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-slate-600">{timeUtc}</span>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="text-emerald-600 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               1000-TRADE ENGINE: ONLINE
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-amber-300">POLYMARKET ARBITRAGE: LIVE</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-blue-600 font-semibold">POLYMARKET ARBITRAGE: LIVE</span>
           </div>
         </div>
 
         <LiveTicker />
 
-        <main className="flex-1 overflow-y-auto p-6 bg-[#080C14]">
+        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
           <Outlet />
         </main>
       </div>

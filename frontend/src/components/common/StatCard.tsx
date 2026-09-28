@@ -12,30 +12,30 @@ interface StatCardProps {
 
 export default function StatCard({ label, value, sub, icon, trend, accent, mono }: StatCardProps) {
   const valueColorClass = trend === 'up'
-    ? 'text-emerald-400'
+    ? 'text-emerald-600'
     : trend === 'down'
-    ? 'text-red-400'
+    ? 'text-red-600'
     : accent
-    ? 'text-amber-400'
-    : 'text-white';
+    ? 'text-blue-700'
+    : 'text-slate-900';
 
   return (
-    <div className={`p-4 rounded-xl backdrop-blur-md transition-all ${
+    <div className={`p-4 rounded-xl transition-all bg-white border shadow-sm ${
       accent
-        ? 'bg-[#121B2E]/90 border border-amber-500/40 shadow-lg shadow-amber-500/5'
-        : 'bg-[#101728]/70 border border-white/[0.08] hover:border-white/[0.16]'
+        ? 'border-blue-300 ring-1 ring-blue-100'
+        : 'border-slate-200/90 hover:border-slate-300'
     }`}>
       <div className="flex items-start justify-between mb-2">
-        <span className="font-mono text-[10px] text-slate-400 uppercase tracking-wider">
+        <span className="font-mono text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
           {label}
         </span>
-        {icon && <span className="text-amber-400/80">{icon}</span>}
+        {icon && <span className="text-blue-600">{icon}</span>}
       </div>
       <div className={`text-2xl font-bold leading-tight tabular-nums ${mono ? 'font-mono' : 'font-sans'} ${valueColorClass}`}>
         {value}
       </div>
       {sub && (
-        <div className="font-mono text-xs text-slate-400 mt-1.5 flex items-center gap-1.5">
+        <div className="font-mono text-xs text-slate-500 mt-1.5 flex items-center gap-1.5">
           {sub}
         </div>
       )}

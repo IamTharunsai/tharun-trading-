@@ -18,7 +18,7 @@ export default function LastUpdated({ at }: { at?: number | Date | null }) {
       title={format(ts, 'EEEE, MMMM d yyyy • HH:mm:ss')}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 5,
-        fontFamily: 'Space Mono', fontSize: 10, color: 'var(--apex-muted)',
+        fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--apex-muted)',
       }}
     >
       <RefreshCw size={10} />

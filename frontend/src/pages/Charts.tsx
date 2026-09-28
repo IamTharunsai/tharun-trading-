@@ -164,11 +164,11 @@ export default function ChartsPage() {
       const chart = createChart(chartRef.current, {
         width: chartRef.current.clientWidth,
         height: 480,
-        layout: { background: { color: '#0F172A' }, textColor: '#94A3B8' },
-        grid: { vertLines: { color: '#1E293B' }, horzLines: { color: '#1E293B' } },
+        layout: { background: { color: '#FFFFFF' }, textColor: '#475569' },
+        grid: { vertLines: { color: '#F1F5F9' }, horzLines: { color: '#F1F5F9' } },
         crosshair: { mode: 1 },
-        rightPriceScale: { borderColor: '#334155' },
-        timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: '#CBD5E1' },
+        timeScale: { borderColor: '#CBD5E1', timeVisible: true, secondsVisible: false },
       });
       chartInstance.current = chart;
 
@@ -599,16 +599,17 @@ export default function ChartsPage() {
             </div>
           )}
 
-          <div className="card p-0 overflow-hidden bg-[#0F172A] border border-slate-800">
-            <div className="flex p-4 border-b border-slate-800 items-center justify-between flex-wrap gap-2">
-              <span className="font-sans font-semibold text-white flex items-center gap-2">
+          <div className="p-0 overflow-hidden bg-white border border-slate-200/90 rounded-xl shadow-sm">
+            <div className="flex p-4 border-b border-slate-100 items-center justify-between flex-wrap gap-2 bg-slate-50/50">
+              <span className="font-semibold text-slate-900 flex items-center gap-2">
                 <span>{selected} Candlestick & Level Lab — {timeframe} ({range})</span>
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                <span className="font-mono text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-bold">
                   🛑 Stop: ${levels?.stopLoss || '—'} · 🎯 TP: ${levels?.takeProfit1 || '—'} · VWAP: ${levels?.vwap || '—'}
                 </span>
               </span>
-              <span className="font-mono text-xs text-emerald-400 font-semibold">
-                ● Live Real-Time Feed Active
+              <span className="font-mono text-xs text-emerald-600 font-bold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Live Real-Time Feed Active
               </span>
             </div>
 
@@ -662,19 +663,19 @@ export default function ChartsPage() {
       {/* Candle-by-Candle Quantitative Inspector */}
       {activeTab === 'candles_table' && (
         <div className="space-y-4">
-          <div className="card glass-panel bg-[#0F172A] border border-slate-800 rounded-xl p-5 shadow-xl">
-            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-800 pb-4">
+          <div className="card bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-100 pb-4">
               <div>
-                <h2 className="font-sans font-bold text-lg text-white flex items-center gap-2">
-                  <List size={18} className="text-emerald-400" />
+                <h2 className="font-sans font-bold text-lg text-slate-900 flex items-center gap-2">
+                  <List size={18} className="text-emerald-600" />
                   Candle-by-Candle Microstructure Inspector: {selected} ({timeframe})
                 </h2>
-                <p className="font-mono text-xs text-slate-400 mt-1">
+                <p className="font-mono text-xs text-slate-500 mt-1">
                   Full tick-level breakdown of every candlestick up and down with body-to-wick mathematical classification
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300">
+                <span className="font-mono text-xs px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-slate-700 font-bold">
                   {candles.length} Candles Loaded
                 </span>
               </div>
@@ -683,7 +684,7 @@ export default function ChartsPage() {
             <div className="overflow-x-auto mt-4">
               <table className="w-full text-left font-mono text-xs">
                 <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                  <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] bg-slate-50/50">
                     <th className="py-2.5 px-3">Date / Time</th>
                     <th className="py-2.5 px-3">Type</th>
                     <th className="py-2.5 px-3">Open</th>
@@ -697,43 +698,43 @@ export default function ChartsPage() {
                     <th className="py-2.5 px-3 text-right">Volume</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-slate-100">
                   {[...candles].reverse().map((c: any, idx: number) => {
                     const isBull = c.isBullish ?? (c.close >= c.open);
                     return (
-                      <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-2.5 px-3 text-slate-300 font-sans">
+                      <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-2.5 px-3 text-slate-700 font-sans">
                           {new Date(c.timestamp).toLocaleString(undefined, {
                             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                           })}
                         </td>
                         <td className="py-2.5 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            isBull ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                   : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            isBull ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                   : 'bg-rose-50 text-rose-700 border border-rose-200'
                           }`}>
                             {isBull ? '▲ BULL' : '▼ BEAR'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-slate-300">${c.open?.toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-emerald-400 font-bold">${c.high?.toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-rose-400 font-bold">${c.low?.toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-white font-bold">${c.close?.toFixed(2)}</td>
-                        <td className={`py-2.5 px-3 font-bold ${isBull ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <td className="py-2.5 px-3 text-slate-800">${c.open?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-emerald-600 font-bold">${c.high?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-rose-600 font-bold">${c.low?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-slate-900 font-bold">${c.close?.toFixed(2)}</td>
+                        <td className={`py-2.5 px-3 font-bold ${isBull ? 'text-emerald-600' : 'text-rose-600'}`}>
                           {c.changePct ? `${c.changePct >= 0 ? '+' : ''}${c.changePct.toFixed(2)}%` : '—'}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-400">${c.wickUpper?.toFixed(2) || '0.00'}</td>
-                        <td className="py-2.5 px-3 text-slate-400">${c.wickLower?.toFixed(2) || '0.00'}</td>
+                        <td className="py-2.5 px-3 text-slate-500">${c.wickUpper?.toFixed(2) || '0.00'}</td>
+                        <td className="py-2.5 px-3 text-slate-500">${c.wickLower?.toFixed(2) || '0.00'}</td>
                         <td className="py-2.5 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-sans ${
                             c.pattern && c.pattern !== 'Standard'
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
-                              : 'text-slate-400'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200 font-bold'
+                              : 'text-slate-500'
                           }`}>
                             {c.pattern || 'Standard'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right text-slate-400">
+                        <td className="py-2.5 px-3 text-right text-slate-500">
                           {c.volume ? c.volume.toLocaleString() : '—'}
                         </td>
                       </tr>
@@ -749,19 +750,19 @@ export default function ChartsPage() {
       {/* Polymarket Alpha & Probabilities Tab */}
       {activeTab === 'polymarket' && (
         <div className="space-y-4">
-          <div className="card glass-panel bg-[#0F172A] border border-slate-800 rounded-xl p-5 shadow-xl">
-            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-800 pb-4">
+          <div className="card bg-white border border-slate-200/90 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-100 pb-4">
               <div>
-                <h2 className="font-sans font-bold text-lg text-white flex items-center gap-2">
-                  <Compass size={18} className="text-cyan-400" />
+                <h2 className="font-sans font-bold text-lg text-slate-900 flex items-center gap-2">
+                  <Compass size={18} className="text-blue-600" />
                   Polymarket Live Probabilities & Edge Radar
                 </h2>
-                <p className="font-mono text-xs text-slate-400 mt-1">
+                <p className="font-mono text-xs text-slate-500 mt-1">
                   Autonomous probability analysis: implied market probability vs Bayesian AI fair value & Kelly criterion sizing
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs px-2.5 py-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300">
+                <span className="font-mono text-xs px-2.5 py-1 rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold">
                   Polymarket Gamma Engine Live
                 </span>
               </div>
@@ -775,35 +776,35 @@ export default function ChartsPage() {
                 const hasEdge = ev > 3;
 
                 return (
-                  <div key={pred.id} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between space-y-4">
+                  <div key={pred.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4">
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-mono text-[10px] text-slate-400 uppercase tracking-wider">{pred.category || 'POLITICS / MACRO'}</span>
+                        <span className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">{pred.category || 'POLITICS / MACRO'}</span>
                         <span className={`font-mono text-[10px] px-2 py-0.5 rounded font-bold ${
-                          hasEdge ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                          hasEdge ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-200 text-slate-600'
                         }`}>
                           {hasEdge ? `+${ev.toFixed(1)}% EV EDGE` : 'FAIR PRICED'}
                         </span>
                       </div>
-                      <h3 className="font-sans font-bold text-sm text-white line-clamp-2" title={pred.title}>
+                      <h3 className="font-sans font-bold text-sm text-slate-900 line-clamp-2" title={pred.title}>
                         {pred.title}
                       </h3>
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between font-mono text-xs">
-                        <span className="text-emerald-400 font-bold">YES: ${(yesPrice).toFixed(2)} ({(yesPrice * 100).toFixed(0)}%)</span>
-                        <span className="text-rose-400 font-bold">NO: ${(noPrice).toFixed(2)} ({(noPrice * 100).toFixed(0)}%)</span>
+                        <span className="text-emerald-700 font-bold">YES: ${(yesPrice).toFixed(2)} ({(yesPrice * 100).toFixed(0)}%)</span>
+                        <span className="text-rose-700 font-bold">NO: ${(noPrice).toFixed(2)} ({(noPrice * 100).toFixed(0)}%)</span>
                       </div>
 
-                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
+                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden flex">
                         <div className="bg-emerald-500 h-2" style={{ width: `${yesPrice * 100}%` }} />
                         <div className="bg-rose-500 h-2" style={{ width: `${noPrice * 100}%` }} />
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1">
-                        <span>Kelly Size: {pred.kellyFraction ? `${(pred.kellyFraction * 100).toFixed(1)}%` : '2.5%'}</span>
-                        <span>Vol: ${pred.volume24h ? (pred.volume24h / 1000).toFixed(0) + 'k' : '—'}</span>
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-1">
+                        <span>Kelly Size: <strong className="text-slate-800">{pred.kellyFraction ? `${(pred.kellyFraction * 100).toFixed(1)}%` : '2.5%'}</strong></span>
+                        <span>Vol: <strong className="text-slate-800">${pred.volume24h ? (pred.volume24h / 1000).toFixed(0) + 'k' : '—'}</strong></span>
                       </div>
                     </div>
                   </div>

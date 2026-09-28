@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getNews, getIpoCalendar } from '../services/api';
 import api from '../services/api';
-import { Newspaper, ExternalLink, Globe, Rocket } from 'lucide-react';
+import { Newspaper, ExternalLink, Globe, Rocket, AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
 
@@ -53,46 +53,74 @@ function parseArray(val: any): string[] {
 }
 
 function MarketNewsTab() {
-  const { data: news = [] } = useQuery({ queryKey: ['news'], queryFn: getNews, refetchInterval: 60000 });
+  const { data: rawNews = [] } = useQuery({ queryKey: ['news'], queryFn: getNews, refetchInterval: 60000 });
+  const news = Array.isArray(rawNews) ? rawNews : Array.isArray((rawNews as any)?.news) ? (rawNews as any).news : [];
 
-  const sentimentColor = (score: number) =>
-    score > 0.2 ? 'text-apex-green bg-apex-green/10' :
-    score < -0.2 ? 'text-apex-red bg-apex-red/10' :
-    'text-apex-muted bg-apex-surface';
+  const sentimentBadge = (score: number) => {
+    if (score > 0.2) {
+      return <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">BULLISH (+{score.toFixed(2)})</span>;
+    }
+    if (score < -0.2) {
+      return <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">BEARISH ({score.toFixed(2)})</span>;
+    }
+    return <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">NEUTRAL</span>;
+  };
 
   return (
     <div className="space-y-3">
       {news.map((n: any) => {
+        if (!n) return null;
         const assets = parseArray(n.assetsMentioned);
         return (
-          <div key={n.id} className="card hover:border-apex-border/80 transition-colors">
+          <div key={n.id || Math.random()} className="p-4 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                   {assets.map((a: string) => (
-                    <span key={a} className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-apex-accent/10 text-apex-accent">{a}</span>
+                    <span key={a} className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                      {a}
+                    </span>
                   ))}
-                  <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${sentimentColor(n.sentimentScore || 0)}`}>
-                    {n.sentimentLabel || 'NEUTRAL'} {n.sentimentScore ? `(${n.sentimentScore.toFixed(2)})` : ''}
-                  </span>
+                  {sentimentBadge(n.sentimentScore || 0)}
+                  {n.source && (
+                    <span className="font-mono text-[10px] text-slate-500 font-semibold">
+                      {n.source}
+                    </span>
+                  )}
+                  {n.publishedAt && (
+                    <span className="font-mono text-[10px] text-slate-400">
+                      · {format(new Date(n.publishedAt), 'MM/dd HH:mm')}
+                    </span>
+                  )}
                 </div>
-                <h3 className="font-sans font-semibold text-sm text-apex-text">{n.headline}</h3>
-                {n.summary && <p className="font-sans text-xs text-apex-muted mt-1 leading-relaxed">{n.summary}</p>}
-                <div className="flex items-center gap-3 mt-2">
-                  <span className="font-mono text-[10px] text-apex-muted">{n.source}</span>
-                  <span className="font-mono text-[10px] text-apex-muted">{n.publishedAt ? format(new Date(n.publishedAt), 'MM/dd HH:mm') : ''}</span>
-                </div>
+                <h3 className="font-sans font-bold text-sm text-slate-900 leading-snug">
+                  {n.headline || n.title}
+                </h3>
+                {n.summary && (
+                  <p className="font-sans text-xs text-slate-600 mt-1 leading-relaxed">
+                    {n.summary}
+                  </p>
+                )}
               </div>
               {n.url && (
-                <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-apex-muted hover:text-apex-accent transition-colors flex-shrink-0">
-                  <ExternalLink size={14} />
+                <a
+                  href={n.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-slate-400 hover:text-blue-600 transition-colors p-1"
+                >
+                  <ExternalLink size={16} />
                 </a>
               )}
             </div>
           </div>
         );
       })}
-      {news.length === 0 && <div className="card text-center py-12 font-mono text-xs text-apex-muted">No news articles analyzed yet</div>}
+      {news.length === 0 && (
+        <div className="p-12 text-center bg-white border border-slate-200 rounded-xl font-mono text-xs text-slate-400">
+          No news articles analyzed yet
+        </div>
+      )}
     </div>
   );
 }
@@ -112,9 +140,9 @@ function GeopoliticsTab() {
           api.get('/monitor/geopolitics', { params: { hours: 24 } }),
           api.get('/monitor/sentiment'),
         ]);
-        setNews(newsResponse.data.news || []);
-        setEvents(eventsResponse.data.events || []);
-        setSentiment(sentimentResponse.data);
+        setNews(Array.isArray(newsResponse.data?.news) ? newsResponse.data.news : []);
+        setEvents(Array.isArray(eventsResponse.data?.events) ? eventsResponse.data.events : []);
+        setSentiment(sentimentResponse.data || null);
       } catch (err) {
         console.error('Failed to fetch data', err);
       }
@@ -125,33 +153,6 @@ function GeopoliticsTab() {
     return () => clearInterval(interval);
   }, []);
 
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'GEOPOLITICS': return '#C9A24B';
-      case 'CRYPTO': return '#12805F';
-      case 'STOCKS': return '#C9A24B';
-      case 'MACROECONOMICS': return '#12805F';
-      case 'EMERGENCY': return '#B0263B';
-      default: return '#5B6472';
-    }
-  };
-
-  const getSentimentEmoji = (s: string) =>
-    s === 'POSITIVE' ? '📈' : s === 'NEGATIVE' ? '📉' : s === 'NEUTRAL' ? '➡️' : '❓';
-
-  const getSentimentColor = (s: string) =>
-    s === 'POSITIVE' ? '#12805F' : s === 'NEGATIVE' ? '#B0263B' : '#5B6472';
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'CRITICAL': return '#B0263B';
-      case 'HIGH': return '#C9A24B';
-      case 'MEDIUM': return '#C9A24B';
-      case 'LOW': return '#12805F';
-      default: return '#5B6472';
-    }
-  };
-
   const filteredNews = news.filter(n => {
     if (selectedCategory !== 'ALL' && n.category !== selectedCategory) return false;
     if (selectedSentiment !== 'ALL' && n.sentiment !== selectedSentiment) return false;
@@ -159,67 +160,81 @@ function GeopoliticsTab() {
   });
 
   return (
-    <div>
+    <div className="space-y-4">
       {sentiment && (
-        <div style={{
-          background: 'var(--apex-surface)',
-          border: `2px solid ${getSentimentColor(sentiment.overallSentiment === 'BULLISH' ? 'POSITIVE' : sentiment.overallSentiment === 'BEARISH' ? 'NEGATIVE' : 'NEUTRAL')}`,
-          borderRadius: 12,
-          padding: 20,
-          marginBottom: 20
-        }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
+        <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)', marginBottom: 8 }}>OVERALL SENTIMENT</div>
-              <div style={{ fontSize: 28, fontFamily: 'Manrope', fontWeight: 800, color: getSentimentColor(sentiment.overallSentiment === 'BULLISH' ? 'POSITIVE' : sentiment.overallSentiment === 'BEARISH' ? 'NEGATIVE' : 'NEUTRAL') }}>
-                {sentiment.overallSentiment === 'BULLISH' ? '🟢' : sentiment.overallSentiment === 'BEARISH' ? '🔴' : '⚪'}
-                {' ' + sentiment.overallSentiment}
+              <div className="font-mono text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1">
+                OVERALL MARKET SENTIMENT
+              </div>
+              <div className={`text-2xl font-bold flex items-center gap-2 ${
+                sentiment.overallSentiment === 'BULLISH' ? 'text-emerald-700' :
+                sentiment.overallSentiment === 'BEARISH' ? 'text-red-700' : 'text-slate-800'
+              }`}>
+                {sentiment.overallSentiment === 'BULLISH' ? <TrendingUp size={24} className="text-emerald-600" /> :
+                 sentiment.overallSentiment === 'BEARISH' ? <TrendingDown size={24} className="text-red-600" /> :
+                 <Minus size={24} className="text-slate-500" />}
+                {sentiment.overallSentiment}
               </div>
             </div>
+
             <div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)', marginBottom: 8 }}>NEWS BREAKDOWN</div>
-              <div style={{ display: 'flex', gap: 20 }}>
+              <div className="font-mono text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1">
+                NEWS SENTIMENT RATIO
+              </div>
+              <div className="flex items-center gap-6">
                 <div>
-                  <div style={{ fontFamily: 'Manrope', fontSize: 20, fontWeight: 800, color: '#12805F' }}>{sentiment.positiveNews}</div>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)' }}>Positive</div>
+                  <div className="text-xl font-bold text-emerald-600 tabular-nums">{sentiment.positiveNews}</div>
+                  <div className="font-mono text-[10px] text-slate-500 font-semibold">Positive</div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: 'Manrope', fontSize: 20, fontWeight: 800, color: '#B0263B' }}>{sentiment.negativeNews}</div>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)' }}>Negative</div>
+                  <div className="text-xl font-bold text-red-600 tabular-nums">{sentiment.negativeNews}</div>
+                  <div className="font-mono text-[10px] text-slate-500 font-semibold">Negative</div>
+                </div>
+                <div>
+                  <div className="text-xl font-bold text-slate-700 tabular-nums">{sentiment.totalNews}</div>
+                  <div className="font-mono text-[10px] text-slate-500 font-semibold">Total Articles</div>
                 </div>
               </div>
             </div>
+
             <div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-muted)', marginBottom: 8 }}>⚠️ CRITICAL ALERTS</div>
-              <div style={{ fontFamily: 'Manrope', fontSize: 24, fontWeight: 800, color: '#C9A24B' }}>{sentiment.criticalEvents}</div>
-              <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)' }}>Active events</div>
+              <div className="font-mono text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1">
+                CRITICAL GEOPOLITICAL ALERTS
+              </div>
+              <div className="text-2xl font-bold text-amber-600 tabular-nums flex items-center gap-2">
+                <AlertTriangle size={20} className="text-amber-600" />
+                {sentiment.criticalEvents} Active Events
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* Filter Row */}
+      <div className="flex gap-3 flex-wrap">
         <div>
-          <label style={{ fontSize: 11, color: 'var(--apex-muted)', display: 'block', marginBottom: 6 }}>CATEGORY</label>
+          <label className="text-[10px] font-mono text-slate-500 font-bold block mb-1">CATEGORY</label>
           <select
             value={selectedCategory}
             onChange={e => setSelectedCategory(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'Space Mono', cursor: 'pointer' }}
+            className="px-3 py-1.5 border border-slate-300 bg-white text-slate-900 rounded-lg text-xs font-mono"
           >
             <option value="ALL">All Categories</option>
             <option value="CRYPTO">Crypto</option>
             <option value="STOCKS">Stocks</option>
             <option value="GEOPOLITICS">Geopolitics</option>
-            <option value="MACROECONOMICS">Macro</option>
+            <option value="MACROECONOMICS">Macroeconomics</option>
             <option value="EMERGENCY">Emergency</option>
           </select>
         </div>
         <div>
-          <label style={{ fontSize: 11, color: 'var(--apex-muted)', display: 'block', marginBottom: 6 }}>SENTIMENT</label>
+          <label className="text-[10px] font-mono text-slate-500 font-bold block mb-1">SENTIMENT</label>
           <select
             value={selectedSentiment}
             onChange={e => setSelectedSentiment(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'Space Mono', cursor: 'pointer' }}
+            className="px-3 py-1.5 border border-slate-300 bg-white text-slate-900 rounded-lg text-xs font-mono"
           >
             <option value="ALL">All Sentiments</option>
             <option value="POSITIVE">Positive</option>
@@ -229,46 +244,36 @@ function GeopoliticsTab() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <div style={{ background: 'var(--apex-surface)', border: '1px solid var(--apex-border)', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--apex-border)', fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-muted)' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* News Feed */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+          <div className="p-3.5 border-b border-slate-200 font-mono text-xs font-bold text-slate-700 bg-slate-50/50">
             📰 NEWS FEED ({filteredNews.length})
           </div>
-          <div style={{ flex: 1, maxHeight: '600px', overflowY: 'auto' }}>
+          <div className="flex-1 max-h-[550px] overflow-y-auto divide-y divide-slate-100">
             {filteredNews.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--apex-muted)' }}>No news matching filters</div>
+              <div className="p-8 text-center text-slate-400 font-mono text-xs">No news matching filters</div>
             ) : (
               filteredNews.map(item => (
-                <div key={item.id} style={{
-                  padding: 12,
-                  borderBottom: '1px solid var(--apex-border)',
-                  background: item.sentiment === 'POSITIVE' ? 'rgba(18,128,95, 0.05)' : item.sentiment === 'NEGATIVE' ? 'rgba(176,38,59, 0.05)' : 'transparent'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: 'Manrope', fontSize: 12, fontWeight: 700, color: 'var(--apex-text)', lineHeight: 1.4 }} title={item.title}>
-                        {item.title.slice(0, 60)}...
-                      </div>
-                      <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)', marginTop: 4 }}>{item.source}</div>
-                    </div>
-                    <span style={{ fontSize: 14, marginLeft: 8, flexShrink: 0 }}>{getSentimentEmoji(item.sentiment)}</span>
+                <div key={item.id} className="p-3.5 hover:bg-slate-50/80 transition-colors">
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className="font-bold text-xs text-slate-900 line-clamp-2">{item.title}</h4>
+                    <span className="text-xs ml-2 font-mono">{item.sentiment === 'POSITIVE' ? '🟢' : item.sentiment === 'NEGATIVE' ? '🔴' : '⚪'}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                    <span style={{ background: getCategoryColor(item.category), color: 'white', padding: '2px 6px', borderRadius: 3, fontFamily: 'Space Mono', fontSize: 8, fontWeight: 700 }}>
+                  <div className="font-mono text-[10px] text-slate-500 mb-2">{item.source}</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <span className="bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
                       {item.category}
                     </span>
-                    <span style={{
-                      background: item.impact === 'HIGH' ? 'rgba(176,38,59, 0.2)' : item.impact === 'MEDIUM' ? 'rgba(201,162,75, 0.2)' : 'rgba(18,128,95, 0.2)',
-                      color: item.impact === 'HIGH' ? '#B0263B' : item.impact === 'MEDIUM' ? '#C9A24B' : '#12805F',
-                      padding: '2px 6px', borderRadius: 3, fontFamily: 'Space Mono', fontSize: 8, fontWeight: 700
-                    }}>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                      item.impact === 'HIGH' ? 'bg-red-50 text-red-700 border border-red-200' :
+                      item.impact === 'MEDIUM' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                      'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
                       {item.impact} IMPACT
                     </span>
                     {parseArray(item.sectorsAffected).map(sector => (
-                      <span key={sector} style={{
-                        background: 'rgba(91,100,114,0.12)', color: 'var(--apex-text)',
-                        padding: '2px 6px', borderRadius: 3, fontFamily: 'Space Mono', fontSize: 8, fontWeight: 700
-                      }}>
+                      <span key={sector} className="bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
                         {sector}
                       </span>
                     ))}
@@ -279,30 +284,30 @@ function GeopoliticsTab() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--apex-surface)', border: '1px solid var(--apex-border)', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '16px', borderBottom: '1px solid var(--apex-border)', fontFamily: 'Space Mono', fontSize: 11, fontWeight: 700, color: 'var(--apex-muted)' }}>
+        {/* Geopolitical Events */}
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+          <div className="p-3.5 border-b border-slate-200 font-mono text-xs font-bold text-slate-700 bg-slate-50/50">
             🌍 GEOPOLITICAL EVENTS ({events.length})
           </div>
-          <div style={{ flex: 1, maxHeight: '600px', overflowY: 'auto' }}>
+          <div className="flex-1 max-h-[550px] overflow-y-auto divide-y divide-slate-100">
             {events.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--apex-muted)' }}>No active geopolitical events</div>
+              <div className="p-8 text-center text-slate-400 font-mono text-xs">No active geopolitical events</div>
             ) : (
               events.map(event => (
-                <div key={event.id} style={{
-                  padding: 12,
-                  borderBottom: '1px solid var(--apex-border)',
-                  borderTop: `1px solid ${getSeverityColor(event.severity)}`,
-                  background: `${getSeverityColor(event.severity)}0D`,
-                }}>
-                  <div style={{ fontFamily: 'Manrope', fontSize: 12, fontWeight: 700, color: 'var(--apex-text)', marginBottom: 6 }}>{event.region}</div>
-                  <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--apex-text)', lineHeight: 1.4, marginBottom: 8 }}>{event.event}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ background: getSeverityColor(event.severity), color: 'white', padding: '3px 8px', borderRadius: 3, fontFamily: 'Space Mono', fontSize: 9, fontWeight: 700 }}>
+                <div key={event.id} className="p-3.5 hover:bg-slate-50/80 transition-colors">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-bold text-xs text-slate-900">{event.region}</span>
+                    <span className={`font-mono text-[9px] font-bold px-2 py-0.5 rounded ${
+                      event.severity === 'CRITICAL' ? 'bg-red-50 text-red-700 border border-red-200' :
+                      event.severity === 'HIGH' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                      'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
                       {event.severity}
                     </span>
-                    <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)' }}>
-                      Affects: {parseArray(event.affectedAssets).join(', ') || 'Global'}
-                    </span>
+                  </div>
+                  <p className="font-sans text-xs text-slate-700 leading-snug mb-2">{event.event}</p>
+                  <div className="font-mono text-[10px] text-slate-500">
+                    Affects: <span className="font-semibold text-slate-800">{parseArray(event.affectedAssets).join(', ') || 'Global'}</span>
                   </div>
                 </div>
               ))
@@ -315,32 +320,34 @@ function GeopoliticsTab() {
 }
 
 function IpoCalendarTab() {
-  const { data: ipos = [] } = useQuery({ queryKey: ['ipo-calendar'], queryFn: getIpoCalendar, staleTime: 60 * 60000 });
-
-  const statusColor = (status: string) =>
-    status === 'priced' ? '#12805F' : status === 'filed' ? '#C9A24B' : '#5B6472';
+  const { data: rawIpos = [] } = useQuery({ queryKey: ['ipo-calendar'], queryFn: getIpoCalendar, staleTime: 60 * 60000 });
+  const ipos = Array.isArray(rawIpos) ? rawIpos : Array.isArray((rawIpos as any)?.ipos) ? (rawIpos as any).ipos : [];
 
   return (
     <div className="space-y-3">
       {ipos.length === 0 && (
-        <div className="card text-center py-12 font-mono text-xs text-apex-muted">No upcoming IPOs in the next 30 days</div>
+        <div className="p-12 text-center bg-white border border-slate-200 rounded-xl font-mono text-xs text-slate-400">
+          No upcoming IPOs in the next 30 days
+        </div>
       )}
       {ipos.map((ipo: any) => (
-        <div key={`${ipo.symbol}-${ipo.date}`} className="card hover:border-apex-border/80 transition-colors">
+        <div key={`${ipo.symbol}-${ipo.date}`} className="p-4 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-xs font-bold text-apex-accent">{ipo.symbol}</span>
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded text-white" style={{ background: statusColor(ipo.status) }}>
+                <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {ipo.symbol}
+                </span>
+                <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                   {ipo.status?.toUpperCase()}
                 </span>
-                {ipo.exchange && <span className="font-mono text-[10px] text-apex-muted">{ipo.exchange}</span>}
+                {ipo.exchange && <span className="font-mono text-[10px] text-slate-500 font-semibold">{ipo.exchange}</span>}
               </div>
-              <h3 className="font-sans font-semibold text-sm text-apex-text">{ipo.name}</h3>
-              <div className="flex items-center gap-4 mt-2 font-mono text-[10px] text-apex-muted">
-                <span>Date: {ipo.date}</span>
-                {ipo.priceRange && <span>Price: ${ipo.priceRange}</span>}
-                {ipo.numberOfShares && <span>Shares: {(ipo.numberOfShares / 1e6).toFixed(1)}M</span>}
+              <h3 className="font-sans font-bold text-sm text-slate-900">{ipo.name}</h3>
+              <div className="flex items-center gap-4 mt-2 font-mono text-[10px] text-slate-500">
+                <span>Date: <strong className="text-slate-800">{ipo.date}</strong></span>
+                {ipo.priceRange && <span>Price: <strong className="text-slate-800">${ipo.priceRange}</strong></span>}
+                {ipo.numberOfShares && <span>Shares: <strong className="text-slate-800">{(ipo.numberOfShares / 1e6).toFixed(1)}M</strong></span>}
               </div>
             </div>
           </div>
@@ -354,17 +361,21 @@ export default function NewsPage() {
   const [tab, setTab] = useState<'news' | 'geo' | 'ipo'>('news');
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <Newspaper size={20} className="text-apex-accent" />
-          <h1 className="font-sans font-bold text-2xl text-apex-text">Market News</h1>
-          <span className="font-mono text-xs text-apex-muted ml-2">Analyzed by Agent 2</span>
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-2 p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-blue-50 text-blue-700">
+            <Newspaper size={20} />
+          </div>
+          <div>
+            <h1 className="font-bold text-2xl text-slate-900 tracking-tight">Market Intelligence & News</h1>
+            <p className="font-mono text-xs text-slate-500 mt-0.5">Continuous Multi-Asset Real-Time Sentiment & Geopolitical Feed</p>
+          </div>
         </div>
         <LastUpdated />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--apex-border)' }}>
+      <div className="flex gap-2 border-b border-slate-200 pb-2">
         {([
           { id: 'news' as const, label: 'Market News', icon: Newspaper },
           { id: 'geo' as const, label: 'Geopolitics & Sentiment', icon: Globe },
@@ -373,16 +384,11 @@ export default function NewsPage() {
           <button
             key={id}
             onClick={() => setTab(id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '10px 16px',
-              fontFamily: 'Manrope', fontSize: 13, fontWeight: tab === id ? 700 : 500,
-              color: tab === id ? 'var(--apex-accent)' : 'var(--apex-muted)',
-              background: 'transparent',
-              border: 'none',
-              borderBottom: tab === id ? '2px solid var(--apex-accent)' : '2px solid transparent',
-              cursor: 'pointer',
-            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold transition-all ${
+              tab === id
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300'
+            }`}
           >
             <Icon size={14} />
             {label}

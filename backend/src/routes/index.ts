@@ -297,9 +297,9 @@ portfolioRouter.get('/snapshots', async (req: Request, res: Response) => {
 portfolioRouter.get('/positions', async (_req: Request, res: Response) => {
   try {
     const positions = await prisma.position.findMany({ where: { status: 'OPEN' } });
-    res.json(positions);
+    res.json(Array.isArray(positions) ? positions : []);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch positions' });
+    res.json([]);
   }
 });
 

@@ -24,7 +24,6 @@ export default function DashboardPage() {
   const [selectedAsset, setSelectedAsset] = useState('NVDA');
 
   const pnlDayPos   = (portfolio?.pnlDayPct || 0) >= 0;
-  const pnlTotalPos = (portfolio?.pnlTotal   || 0) >= 0;
 
   const debateMutation = useMutation({
     mutationFn: (asset: string) => runDebate(asset),
@@ -48,24 +47,24 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="flex flex-col gap-6 text-slate-100 max-w-7xl mx-auto">
+    <div className="flex flex-col gap-6 text-slate-900 max-w-7xl mx-auto">
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-2xl glass-panel bg-[#0B101D]/80">
+      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-2xl text-white tracking-tight font-display">
+            <h1 className="font-bold text-2xl text-slate-900 tracking-tight">
               Autonomous Trading Cockpit
             </h1>
-            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
-              BLOOMBERG TERMINAL EDITION
+            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold">
+              INSTITUTIONAL SUITE
             </span>
           </div>
-          <p className="font-mono text-xs text-slate-400 mt-1 flex items-center gap-2">
+          <p className="font-mono text-xs text-slate-500 mt-1 flex items-center gap-2">
             <span>{format(new Date(), 'EEEE, MMMM d yyyy')}</span>
             <span>·</span>
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-emerald-600 font-bold flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               1000-TRADE HFT & POLYMARKET ENGINE ARMED
             </span>
           </p>
@@ -73,41 +72,41 @@ export default function DashboardPage() {
         <LastUpdated />
         <div className="flex items-center gap-3 flex-wrap">
           {killSwitchActive ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/40 font-mono text-xs text-red-400 font-bold">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> KILL SWITCH ACTIVE
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 font-mono text-xs text-red-700 font-bold">
+              <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" /> KILL SWITCH ACTIVE
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 font-mono text-xs text-emerald-400 font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> ALGO EXECUTION ACTIVE
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 font-mono text-xs text-emerald-700 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> ALGO EXECUTION ACTIVE
             </span>
           )}
           {currentAnalysis && (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 font-mono text-xs text-amber-300 font-bold">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 font-mono text-xs text-blue-700 font-bold">
               ANALYZING {currentAnalysis}
             </span>
           )}
-          <span className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 font-mono text-xs text-slate-300">
+          <span className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 font-mono text-xs text-slate-700 font-semibold">
             {import.meta.env.VITE_TRADING_MODE || 'PAPER'} MODE
           </span>
         </div>
       </div>
 
       {/* ── 1000-Trade Day HFT & Arbitrage Trigger Bar ─────────────────────── */}
-      <div className="p-4 rounded-xl glass-panel bg-gradient-to-r from-amber-950/20 via-[#0B101D] to-emerald-950/20 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4">
+      <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <Zap className="text-amber-400 animate-pulse" size={18} />
-            <span className="font-mono text-xs font-bold text-amber-300">DAILY EXECUTION PACING:</span>
-            <span className="font-mono text-xs text-white font-bold bg-white/10 px-2 py-0.5 rounded">
+            <Zap className="text-blue-600" size={18} />
+            <span className="font-mono text-xs font-bold text-slate-800">DAILY EXECUTION PACING:</span>
+            <span className="font-mono text-xs text-blue-800 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
               {(portfolio?.tradesExecutedToday ?? 0)} EXECUTED TODAY
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-3 text-xs font-mono text-slate-400">
-            <span>Broker: <strong className="text-emerald-400 font-mono">{portfolio?.brokerConnected ? 'CONNECTED' : 'STANDBY'}</strong></span>
+          <div className="hidden md:flex items-center gap-3 text-xs font-mono text-slate-500">
+            <span>Broker: <strong className="text-emerald-700 font-bold">{portfolio?.brokerConnected ? 'CONNECTED' : 'STANDBY'}</strong></span>
             <span>·</span>
-            <span>Win Rate: <strong className="text-emerald-400 font-mono">{stats?.totalTrades ? `${stats.winRate}%` : 'N/A'}</strong></span>
+            <span>Win Rate: <strong className="text-emerald-700 font-bold">{stats?.totalTrades ? `${stats.winRate}%` : 'N/A'}</strong></span>
             <span>·</span>
-            <span>Open Orders: <strong className="text-amber-300 font-mono">{positions?.length ?? 0}</strong></span>
+            <span>Open Orders: <strong className="text-blue-700 font-bold">{Array.isArray(positions) ? positions.length : 0}</strong></span>
           </div>
         </div>
 
@@ -115,7 +114,7 @@ export default function DashboardPage() {
           <select
             value={selectedAsset}
             onChange={(e) => setSelectedAsset(e.target.value)}
-            className="bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-400"
+            className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
           >
             <option value="NVDA">NVDA (NVIDIA)</option>
             <option value="AAPL">AAPL (Apple)</option>
@@ -129,7 +128,7 @@ export default function DashboardPage() {
           <button
             onClick={() => debateMutation.mutate(selectedAsset)}
             disabled={debateMutation.isPending || killSwitchActive}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-mono text-xs font-bold transition-all shadow-md shadow-amber-500/20 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
           >
             <Play size={13} />
             <span>{debateMutation.isPending ? 'COUNCIL DEBATING...' : `TRIGGER COUNCIL ON ${selectedAsset}`}</span>
@@ -138,7 +137,7 @@ export default function DashboardPage() {
           <button
             onClick={() => scanMutation.mutate()}
             disabled={scanMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold transition-all shadow-md shadow-emerald-500/20 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
           >
             <Search size={13} />
             <span>{scanMutation.isPending ? 'SCANNING ARB...' : 'SCAN POLYMARKET ARB'}</span>
@@ -166,13 +165,13 @@ export default function DashboardPage() {
         <StatCard
           label="Polymarket Micro Fund"
           value={portfolio?.polymarketBalance ? `$${portfolio.polymarketBalance.toFixed(2)}` : '$0.00'}
-          sub={portfolio?.polymarketConnected ? "Polygon USDC Verified" : "Wallet Disconnected"}
+          sub={portfolio?.polymarketConnected ? "Polygon USDC Verified" : "Paper Mode Simulation ($0.00)"}
           icon={<Activity size={16} />}
           mono
         />
         <StatCard
           label="Open Positions"
-          value={positions?.length || 0}
+          value={Array.isArray(positions) ? positions.length : 0}
           sub={`Trades Today: ${portfolio?.tradesExecutedToday || 0}`}
           icon={<BarChart2 size={16} />}
           mono
@@ -195,7 +194,7 @@ export default function DashboardPage() {
       {/* Agent Council + Positions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AgentCouncilPanel />
-        <ActivePositions positions={positions || []} />
+        <ActivePositions positions={Array.isArray(positions) ? positions : []} />
       </div>
 
       {/* Per-asset agent reasoning, win rate, trade frequency, strategy adaptation */}

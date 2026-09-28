@@ -5,7 +5,7 @@ import { getTrades, getTradeStats } from '../services/api';
 import { format } from 'date-fns';
 import {
   TrendingUp, TrendingDown, ArrowLeftRight, ChevronLeft, ChevronRight,
-  Filter, Download, CheckCircle, XCircle, Clock, Zap, Target, DollarSign
+  Download, CheckCircle, XCircle, Clock
 } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
 import LastUpdated from '../components/common/LastUpdated';
@@ -31,6 +31,7 @@ export function TradesPage() {
   // Base list of trades with safe array check
   const rawTrades: any[] = useMemo(() => {
     if (Array.isArray(data?.trades)) return data.trades;
+    if (Array.isArray(data)) return data;
     return [];
   }, [data]);
 
@@ -61,10 +62,10 @@ export function TradesPage() {
     const winners = closed.filter((t: any) => (t.pnl || 0) > 0);
     const losers = closed.filter((t: any) => (t.pnl || 0) < 0);
     const totalPnl = trades.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0);
-    const winRate = closed.length > 0 ? ((winners.length / closed.length) * 100).toFixed(1) : '72.0';
+    const winRate = closed.length > 0 ? ((winners.length / closed.length) * 100).toFixed(1) : (stats?.winRate ? String(stats.winRate) : '0.0');
     const totalWinsAmount = winners.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0);
     const totalLossesAmount = Math.abs(losers.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0));
-    const profitFactor = totalLossesAmount > 0 ? (totalWinsAmount / totalLossesAmount).toFixed(2) : '3.14';
+    const profitFactor = totalLossesAmount > 0 ? (totalWinsAmount / totalLossesAmount).toFixed(2) : (stats?.profitFactor ? String(stats.profitFactor) : '1.00');
 
     return {
       count: trades.length,
@@ -74,7 +75,7 @@ export function TradesPage() {
       losersCount: losers.length,
       profitFactor
     };
-  }, [trades]);
+  }, [trades, stats]);
 
   const total = data?.total || trades.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -104,27 +105,27 @@ export function TradesPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto text-slate-100">
+    <div className="space-y-6 max-w-7xl mx-auto text-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-2xl glass-panel bg-[#0B101D]/80 border border-white/10">
+      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-2xl text-white tracking-tight font-display">
+            <h1 className="font-bold text-2xl text-slate-900 tracking-tight font-display">
               Execution Ledger & Trade History
             </h1>
-            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               24/7 MULTI-ASSET ENGINE
             </span>
           </div>
-          <p className="font-mono text-xs text-slate-400 mt-1">
+          <p className="font-mono text-xs text-slate-500 mt-1">
             Complete institutional audit trail across Stocks, Crypto, and Polymarket Arbitrage
           </p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={exportCSV}
-            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-mono text-slate-300 hover:text-white transition"
+            className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-700 font-bold transition shadow-xs"
           >
             <Download size={13} />
             EXPORT AUDIT CSV
@@ -161,10 +162,10 @@ export function TradesPage() {
       </div>
 
       {/* Primary Market Switcher & Outcome Filter Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl glass-panel bg-[#0B101D]/60 border border-white/10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         {/* Asset Class Tabs */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono text-xs text-slate-400 uppercase tracking-wider mr-1">Market:</span>
+          <span className="font-mono text-xs text-slate-500 uppercase font-semibold mr-1">Market:</span>
           {[
             { id: 'all', label: 'All Markets' },
             { id: 'stocks', label: 'Stocks & ETFs' },
@@ -176,8 +177,8 @@ export function TradesPage() {
               onClick={() => { setFilterMarket(m.id as any); setPage(1); }}
               className={`px-3.5 py-1.5 rounded-lg font-mono text-xs font-bold transition-all ${
                 filterMarket === m.id
-                  ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                  : 'bg-white/[0.04] text-slate-400 hover:text-white hover:bg-white/[0.08] border border-white/5'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               {m.label}
@@ -187,12 +188,12 @@ export function TradesPage() {
 
         {/* Outcome Filter Tabs: All, Winners, Losers, Open */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono text-xs text-slate-400 uppercase tracking-wider mr-1">Outcome:</span>
+          <span className="font-mono text-xs text-slate-500 uppercase font-semibold mr-1">Outcome:</span>
           {[
             { id: 'all', label: 'All Trades', icon: ArrowLeftRight },
-            { id: 'winners', label: `Winners (${currentStats.winnersCount})`, icon: CheckCircle, color: 'text-emerald-400' },
-            { id: 'losers', label: `Losers (${currentStats.losersCount})`, icon: XCircle, color: 'text-rose-400' },
-            { id: 'open', label: 'Open Positions', icon: Clock, color: 'text-amber-400' },
+            { id: 'winners', label: `Winners (${currentStats.winnersCount})`, icon: CheckCircle, color: 'text-emerald-600' },
+            { id: 'losers', label: `Losers (${currentStats.losersCount})`, icon: XCircle, color: 'text-red-600' },
+            { id: 'open', label: 'Open Positions', icon: Clock, color: 'text-blue-600' },
           ].map(o => {
             const Icon = o.icon;
             const active = filterOutcome === o.id;
@@ -200,10 +201,10 @@ export function TradesPage() {
               <button
                 key={o.id}
                 onClick={() => { setFilterOutcome(o.id as any); setPage(1); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono text-xs transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono text-xs font-bold transition-all ${
                   active
-                    ? 'bg-white/20 text-white font-bold border border-white/30'
-                    : 'bg-white/[0.03] text-slate-400 hover:text-white border border-transparent'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
                 <Icon size={12} className={o.color || ''} />
@@ -215,43 +216,43 @@ export function TradesPage() {
       </div>
 
       {/* Execution Table */}
-      <div className="p-5 rounded-xl glass-panel overflow-x-auto border border-white/10">
-        <div className="flex items-center justify-between pb-3 mb-2 border-b border-white/10 text-xs font-mono">
-          <div className="text-slate-400">
-            Displaying <span className="text-amber-400 font-bold">{trades.length}</span> executed orders
-            {filterMarket !== 'all' && <span className="ml-1 text-slate-300">in {filterMarket.toUpperCase()}</span>}
-            {filterOutcome !== 'all' && <span className="ml-1 text-slate-300">({filterOutcome.toUpperCase()})</span>}
+      <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm overflow-x-auto">
+        <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100 text-xs font-mono">
+          <div className="text-slate-500 font-medium">
+            Displaying <span className="text-slate-900 font-bold">{trades.length}</span> executed orders
+            {filterMarket !== 'all' && <span className="ml-1 text-blue-700 font-bold">in {filterMarket.toUpperCase()}</span>}
+            {filterOutcome !== 'all' && <span className="ml-1 text-slate-700">({filterOutcome.toUpperCase()})</span>}
           </div>
-          <div className="text-slate-400">
-            Engine Latency: <span className="text-emerald-400">42ms</span>
+          <div className="text-slate-500">
+            Engine Latency: <span className="text-emerald-600 font-bold">42ms</span>
           </div>
         </div>
 
         <table className="w-full text-left font-mono text-xs">
           <thead>
-            <tr className="border-b border-white/[0.08] text-slate-400">
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Asset / Contract</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Market</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Side</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Qty / Shares</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Entry</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Exit / Current</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Net P&L ($)</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">ROI (%)</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Status</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Alpha / Strategy</th>
-              <th className="pb-3 px-3 text-[10px] uppercase tracking-wider">Timestamp</th>
+            <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/50">
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Asset / Contract</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Market</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Side</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Qty / Shares</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Entry</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Exit / Current</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Net P&L ($)</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">ROI (%)</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Status</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Alpha / Strategy</th>
+              <th className="py-2.5 px-3 text-[10px] uppercase font-bold tracking-wider">Timestamp</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/[0.04]">
+          <tbody className="divide-y divide-slate-100">
             {trades.map((t: any) => {
               const isPolymarket = t.market?.toLowerCase() === 'polymarket';
               const isPos = (t.pnl || 0) >= 0;
 
               return (
-                <tr key={t.id} className="hover:bg-white/[0.02] transition-colors">
+                <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
                   {/* Asset */}
-                  <td className="py-3 px-3 font-bold text-white max-w-[220px] truncate" title={t.asset}>
+                  <td className="py-3 px-3 font-bold text-slate-900 max-w-[220px] truncate" title={t.asset}>
                     {t.asset}
                   </td>
 
@@ -259,10 +260,10 @@ export function TradesPage() {
                   <td className="py-3 px-3">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                       isPolymarket
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
                         : t.market === 'crypto'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                        ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                        : 'bg-blue-50 text-blue-700 border border-blue-200'
                     }`}>
                       {t.market?.toUpperCase()}
                     </span>
@@ -272,37 +273,35 @@ export function TradesPage() {
                   <td className="py-3 px-3">
                     <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
                       t.type === 'BUY'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-red-50 text-red-700 border border-red-200'
                     }`}>
                       {isPolymarket ? (t.type === 'BUY' ? 'YES' : 'NO') : t.type}
                     </span>
                   </td>
 
                   {/* Qty */}
-                  <td className="py-3 px-3 text-slate-300 tabular-nums">
+                  <td className="py-3 px-3 text-slate-700 tabular-nums">
                     {t.quantity != null ? Number(t.quantity).toFixed(isPolymarket ? 2 : 4) : '—'}
                   </td>
 
-                  {/* Entry Price */}
-                  <td className="py-3 px-3 text-slate-300 tabular-nums">
-                    {isPolymarket ? `${(t.entryPrice * 100).toFixed(0)}¢` : `$${Number(t.entryPrice).toFixed(2)}`}
+                  {/* Entry */}
+                  <td className="py-3 px-3 text-slate-700 tabular-nums">
+                    ${t.entryPrice != null ? Number(t.entryPrice).toFixed(isPolymarket ? 2 : 2) : '—'}
                   </td>
 
-                  {/* Exit Price */}
-                  <td className="py-3 px-3 text-slate-400 tabular-nums">
-                    {t.exitPrice != null 
-                      ? (isPolymarket ? `${(t.exitPrice * 100).toFixed(0)}¢` : `$${Number(t.exitPrice).toFixed(2)}`)
-                      : '—'}
+                  {/* Exit */}
+                  <td className="py-3 px-3 text-slate-700 tabular-nums">
+                    {t.exitPrice != null ? `$${Number(t.exitPrice).toFixed(isPolymarket ? 2 : 2)}` : '—'}
                   </td>
 
                   {/* PnL */}
-                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnl != null ? (isPos ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400'}`}>
+                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnl != null ? (isPos ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
                     {t.pnl != null ? `${isPos ? '+' : ''}$${Number(t.pnl).toFixed(2)}` : '—'}
                   </td>
 
                   {/* ROI */}
-                  <td className={`py-3 px-3 font-bold tabular-nums ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnlPct != null ? (isPos ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
                     {t.pnlPct != null ? `${isPos ? '+' : ''}${Number(t.pnlPct).toFixed(2)}%` : '—'}
                   </td>
 
@@ -310,22 +309,22 @@ export function TradesPage() {
                   <td className="py-3 px-3">
                     <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
                       t.status === 'OPEN'
-                        ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
                         : isPos
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-800 text-slate-400'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
                     }`}>
                       {t.status === 'OPEN' ? 'OPEN' : isPos ? 'WIN' : 'LOSS'}
                     </span>
                   </td>
 
                   {/* Strategy */}
-                  <td className="py-3 px-3 text-slate-400 truncate max-w-[160px]" title={t.exitReason || t.entryReason}>
+                  <td className="py-3 px-3 text-slate-500 truncate max-w-[160px]" title={t.exitReason || t.entryReason}>
                     {t.exitReason || t.entryReason || (isPolymarket ? 'Kelly Bayesian Oracle' : 'Wyckoff Flow')}
                   </td>
 
                   {/* Timestamp */}
-                  <td className="py-3 px-3 text-slate-400 whitespace-nowrap">
+                  <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
                     {format(new Date(t.openedAt || Date.now()), 'MM/dd HH:mm:ss')}
                   </td>
                 </tr>
@@ -335,22 +334,22 @@ export function TradesPage() {
         </table>
 
         {trades.length === 0 && (
-          <div className="text-center py-16 font-mono text-xs text-slate-500">
+          <div className="text-center py-16 font-mono text-xs text-slate-400">
             No trades match the selected market and outcome filters.
           </div>
         )}
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-4 border-t border-white/[0.08] mt-3">
-            <span className="font-mono text-xs text-slate-400">
+          <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-3">
+            <span className="font-mono text-xs text-slate-500">
               {total} total recorded trades · page {page} of {totalPages}
             </span>
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:border-amber-400 disabled:opacity-30 transition"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 transition"
               >
                 <ChevronLeft size={14} />
               </button>
@@ -361,10 +360,10 @@ export function TradesPage() {
                   <button
                     key={p}
                     onClick={() => setPage(p)}
-                    className={`w-7 h-7 rounded-lg font-mono text-xs transition ${
+                    className={`w-7 h-7 rounded-lg font-mono text-xs font-bold transition ${
                       p === page
-                        ? 'bg-amber-500 text-black font-bold'
-                        : 'border border-white/10 text-slate-400 hover:text-white'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                     }`}
                   >
                     {p}
@@ -374,7 +373,7 @@ export function TradesPage() {
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="p-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:border-amber-400 disabled:opacity-30 transition"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 transition"
               >
                 <ChevronRight size={14} />
               </button>

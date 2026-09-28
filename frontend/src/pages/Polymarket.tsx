@@ -252,26 +252,26 @@ export default function PolymarketPage() {
   }, [polyTrades, tradeFilter]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto text-slate-100">
+    <div className="space-y-6 max-w-7xl mx-auto text-slate-900">
       {/* ── Top Header Bar ────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-amber-400 tracking-wider">POLYMARKET QUANTITATIVE ORACLE</span>
-            <span className="text-xs text-slate-500">·</span>
-            <span className="text-xs font-mono text-emerald-400 flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${autoTradeEnabled ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
+            <span className="text-xs font-mono font-bold text-blue-700 tracking-wider">POLYMARKET QUANTITATIVE ORACLE</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-xs font-mono text-emerald-600 flex items-center gap-1.5 font-semibold">
+              <span className={`w-2 h-2 rounded-full ${autoTradeEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
               {autoTradeEnabled ? '24/7 AUTO-ENGINE ACTIVE' : '24/7 ENGINE PAUSED'}
             </span>
-            <span className="text-xs text-slate-500">·</span>
-            <span className="text-xs font-mono text-slate-400">
+            <span className="text-slate-300">·</span>
+            <span className="text-xs font-mono text-slate-500">
               UTC: {currentTime.slice(11, 19)}
             </span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 mt-1">
             Polymarket Probability Arbitrage & 24/7 Engine
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 mt-0.5">
             Institutional Bayesian probability models, continuous 24/7 execution, and Kelly criterion bankroll compounding.
           </p>
         </div>
@@ -281,8 +281,8 @@ export default function PolymarketPage() {
             onClick={() => setAutoTradeEnabled(!autoTradeEnabled)}
             className={`flex items-center gap-2 px-3.5 py-2 text-xs font-mono font-bold rounded-lg transition-all ${
               autoTradeEnabled
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20'
-                : 'bg-white/5 text-slate-400 hover:text-white border border-white/10'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200'
             }`}
           >
             {autoTradeEnabled ? <Pause size={13} /> : <Play size={13} />}
@@ -292,7 +292,7 @@ export default function PolymarketPage() {
           <button
             onClick={handleScan}
             disabled={scanning}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
           >
             <RefreshCw size={13} className={scanning ? 'animate-spin' : ''} />
             {scanning ? 'SCANNING ORACLE...' : 'SCAN POLYMARKET'}
@@ -302,44 +302,44 @@ export default function PolymarketPage() {
 
       {/* ── Financial KPI Stat Grid (Connected) ────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10">
-          <div className="text-xs font-mono text-slate-400 mb-1">POLYMARKET BANKROLL</div>
-          <div className="text-2xl font-mono font-bold text-white tabular-nums">${bankroll.toFixed(2)}</div>
-          <div className={`text-xs font-mono mt-1 flex items-center gap-1 ${walletConnected ? 'text-emerald-400' : 'text-slate-400'}`}>
-            <Zap size={11} className={walletConnected ? 'text-emerald-400' : 'text-slate-500'} />
+        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="text-xs font-mono text-slate-500 mb-1 font-semibold">POLYMARKET BANKROLL</div>
+          <div className="text-2xl font-mono font-bold text-slate-900 tabular-nums">${bankroll.toFixed(2)}</div>
+          <div className={`text-xs font-mono mt-1 flex items-center gap-1 ${walletConnected ? 'text-emerald-600' : 'text-slate-500'}`}>
+            <Zap size={11} className={walletConnected ? 'text-emerald-600' : 'text-slate-400'} />
             {walletConnected ? 'Connected Wallet Balance' : 'Paper Mode Simulation ($0.00)'}
           </div>
         </div>
 
-        <div className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10">
-          <div className="text-xs font-mono text-slate-400 mb-1">WIN RATE (CLOSED)</div>
-          <div className="text-2xl font-mono font-bold text-emerald-400 tabular-nums">{stats.winRate}%</div>
-          <div className="text-xs text-slate-400 font-mono mt-1">
+        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="text-xs font-mono text-slate-500 mb-1 font-semibold">WIN RATE (CLOSED)</div>
+          <div className="text-2xl font-mono font-bold text-emerald-600 tabular-nums">{stats.winRate}%</div>
+          <div className="text-xs text-slate-500 font-mono mt-1">
             {stats.winnersCount} Won · {stats.losersCount} Lost
           </div>
         </div>
 
-        <div className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10">
-          <div className="text-xs font-mono text-slate-400 mb-1">NET P&L (TOTAL)</div>
-          <div className={`text-2xl font-mono font-bold tabular-nums ${stats.netTotalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="text-xs font-mono text-slate-500 mb-1 font-semibold">NET P&L (TOTAL)</div>
+          <div className={`text-2xl font-mono font-bold tabular-nums ${stats.netTotalPnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
             {stats.netTotalPnl >= 0 ? '+' : ''}${stats.netTotalPnl.toFixed(2)}
           </div>
-          <div className="text-xs text-slate-400 font-mono mt-1">
+          <div className="text-xs text-slate-500 font-mono mt-1">
             Realized: +${stats.realizedPnl.toFixed(2)} · Open: +${stats.unrealizedPnl.toFixed(2)}
           </div>
         </div>
 
-        <div className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10">
-          <div className="text-xs font-mono text-slate-400 mb-1">ACTIVE OPEN WAGERS</div>
-          <div className="text-2xl font-mono font-bold text-cyan-400 tabular-nums">{stats.openCount} Contracts</div>
-          <div className="text-xs text-slate-400 font-mono mt-1">
+        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="text-xs font-mono text-slate-500 mb-1 font-semibold">ACTIVE OPEN WAGERS</div>
+          <div className="text-2xl font-mono font-bold text-blue-700 tabular-nums">{stats.openCount} Contracts</div>
+          <div className="text-xs text-slate-500 font-mono mt-1">
             Value: ${stats.currentPortfolioValue.toFixed(2)}
           </div>
         </div>
       </div>
 
       {/* ── Main Polymarket Tabs ──────────────────────────────────── */}
-      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
         <div className="flex items-center gap-3">
           {[
             { id: 'scanner', label: 'Oracle Edge Scanner', icon: Sparkles },
@@ -354,8 +354,8 @@ export default function PolymarketPage() {
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-4 py-2 text-xs font-mono font-bold rounded-lg transition-all ${
                   active
-                    ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                    : 'text-slate-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.06]'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200'
                 }`}
               >
                 <Icon size={14} />
@@ -370,17 +370,17 @@ export default function PolymarketPage() {
       {activeTab === 'scanner' && (
         <div className="space-y-5">
           {/* Category Filters & Simulation Bankroll */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl glass-panel bg-[#0B101D]/60 border border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-slate-400 mr-1">Filter:</span>
+              <span className="text-xs font-mono text-slate-500 mr-1 font-semibold">Filter:</span>
               {['all', 'macro', 'crypto', 'tech', 'geopolitical'].map(cat => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
                   className={`px-3 py-1 text-xs font-mono rounded-lg transition-colors capitalize ${
                     selectedCategory === cat
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold'
-                      : 'text-slate-400 hover:text-white border border-transparent'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 border border-transparent'
                   }`}
                 >
                   {cat}
@@ -389,14 +389,14 @@ export default function PolymarketPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs font-mono text-slate-400">Bankroll Sizing Base:</span>
-              <div className="flex items-center gap-1.5 bg-black/40 px-2.5 py-1 rounded-lg border border-white/10">
-                <span className="text-xs font-mono text-amber-400">$</span>
+              <span className="text-xs font-mono text-slate-500 font-semibold">Bankroll Sizing Base:</span>
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-300">
+                <span className="text-xs font-mono text-blue-700 font-bold">$</span>
                 <input
                   type="number"
                   value={bankroll}
                   onChange={e => setBankroll(Number(e.target.value) || 500)}
-                  className="w-16 bg-transparent text-xs font-mono text-white focus:outline-none"
+                  className="w-16 bg-transparent text-xs font-mono text-slate-900 focus:outline-none font-bold"
                 />
               </div>
             </div>
@@ -412,70 +412,70 @@ export default function PolymarketPage() {
               return (
                 <div
                   key={pred.id}
-                  className="p-5 rounded-xl glass-panel bg-[#0B101D]/80 border border-white/10 hover:border-amber-500/40 transition-all flex flex-col justify-between"
+                  className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between"
                 >
                   <div>
-                    <div className="flex items-center justify-between text-xs text-slate-400 font-mono mb-2">
-                      <span className="uppercase text-amber-400 font-bold px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/20">
+                    <div className="flex items-center justify-between text-xs text-slate-500 font-mono mb-2">
+                      <span className="uppercase text-blue-700 font-bold px-2 py-0.5 rounded bg-blue-50 border border-blue-200">
                         {pred.category}
                       </span>
                       <span>Expires {new Date(pred.resolutionDate).toLocaleDateString()}</span>
                     </div>
 
-                    <h3 className="text-base font-semibold text-white leading-snug min-h-[44px] mb-3">
+                    <h3 className="text-base font-semibold text-slate-900 leading-snug min-h-[44px] mb-3">
                       {pred.title}
                     </h3>
 
                     {/* Market vs AI Probability Comparison */}
-                    <div className="p-3.5 rounded-lg bg-black/40 border border-white/5 space-y-2.5 mb-3">
+                    <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2.5 mb-3">
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-slate-400">Polymarket Odds:</span>
-                        <span className="text-white font-bold">
+                        <span className="text-slate-500">Polymarket Odds:</span>
+                        <span className="text-slate-900 font-bold">
                           YES {(pred.yesPrice * 100).toFixed(0)}¢ · NO {(pred.noPrice * 100).toFixed(0)}¢
                         </span>
                       </div>
 
                       <div className="flex justify-between items-center text-xs font-mono">
-                        <span className="text-slate-400">AI True Probability:</span>
-                        <span className="text-emerald-400 font-bold">
+                        <span className="text-slate-500">AI True Probability:</span>
+                        <span className="text-emerald-700 font-bold">
                           {(pred.trueYesProbability * 100).toFixed(1)}%
                         </span>
                       </div>
 
-                      <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex">
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden flex">
                         <div
-                          className="bg-slate-500 h-full"
+                          className="bg-slate-400 h-full"
                           style={{ width: `${pred.yesPrice * 100}%` }}
                           title="Market Price"
                         />
                         <div
-                          className="bg-emerald-400 h-full"
+                          className="bg-emerald-500 h-full"
                           style={{ width: `${Math.max(0, (pred.trueYesProbability - pred.yesPrice) * 100)}%` }}
                           title="Model Edge"
                         />
                       </div>
 
-                      <div className="flex justify-between items-center pt-1 text-[11px] font-mono border-t border-white/5">
-                        <span className="text-emerald-400 font-bold">Alpha Edge: +{edgePct}%</span>
-                        <span className="text-cyan-400 font-bold">Expected Value: +{pred.expectedValue.toFixed(1)}%</span>
+                      <div className="flex justify-between items-center pt-1 text-[11px] font-mono border-t border-slate-200">
+                        <span className="text-emerald-700 font-bold">Alpha Edge: +{edgePct}%</span>
+                        <span className="text-blue-700 font-bold">Expected Value: +{pred.expectedValue.toFixed(1)}%</span>
                       </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-3 mb-4 font-sans">
+                    <p className="text-xs text-slate-600 leading-relaxed line-clamp-3 mb-4 font-sans">
                       {pred.reasoning}
                     </p>
                   </div>
 
                   {/* Execution Row */}
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                     <div className="text-xs font-mono">
-                      <div className="text-slate-400">Kelly Stake ({kellyPct}%):</div>
-                      <div className="text-amber-400 font-bold text-sm">${calculatedWager}</div>
+                      <div className="text-slate-500">Kelly Stake ({kellyPct}%):</div>
+                      <div className="text-blue-700 font-bold text-sm">${calculatedWager}</div>
                     </div>
 
                     <button
                       onClick={() => handleOpenWager(pred)}
-                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-bold text-black bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors shadow-sm"
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-xs"
                     >
                       <span>BET {pred.recommendedBet}</span>
                       <ArrowUpRight size={14} />
@@ -492,9 +492,9 @@ export default function PolymarketPage() {
       {activeTab === 'trades' && (
         <div className="space-y-4">
           {/* Sub-filter Bar: All, Winners, Losers, Open */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-mono text-slate-400 mr-1">Trades Filter:</span>
+              <span className="text-xs font-mono text-slate-500 mr-1 font-semibold">Trades Filter:</span>
               {[
                 { id: 'all', label: `All Wagers (${polyTrades.length})` },
                 { id: 'winners', label: `🏆 Winners (${stats.winnersCount})` },
@@ -506,8 +506,8 @@ export default function PolymarketPage() {
                   onClick={() => setTradeFilter(f.id as any)}
                   className={`px-3 py-1 rounded-lg text-xs font-mono transition ${
                     tradeFilter === f.id
-                      ? 'bg-amber-500 text-black font-bold'
-                      : 'bg-white/5 text-slate-400 hover:text-white'
+                      ? 'bg-blue-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   {f.label}
@@ -515,76 +515,76 @@ export default function PolymarketPage() {
               ))}
             </div>
 
-            <div className="text-xs font-mono text-slate-400">
-              Polymarket Realized: <span className="text-emerald-400 font-bold">+${stats.realizedPnl.toFixed(2)}</span>
+            <div className="text-xs font-mono text-slate-500">
+              Polymarket Realized: <span className="text-emerald-600 font-bold">+${stats.realizedPnl.toFixed(2)}</span>
             </div>
           </div>
 
           {/* Polymarket Executed Trades Table */}
-          <div className="p-5 rounded-xl glass-panel bg-[#0B101D]/80 border border-white/10 overflow-x-auto">
+          <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">
               <thead>
-                <tr className="border-b border-white/10 text-slate-400 pb-2.5">
-                  <th className="py-2.5 px-3">EVENT / MARKET</th>
-                  <th className="py-2.5 px-3">SIDE</th>
-                  <th className="py-2.5 px-3">ENTRY ODDS</th>
-                  <th className="py-2.5 px-3">CURRENT / EXIT</th>
-                  <th className="py-2.5 px-3">SHARES</th>
-                  <th className="py-2.5 px-3">WAGER ($)</th>
-                  <th className="py-2.5 px-3">VALUE ($)</th>
-                  <th className="py-2.5 px-3 text-right">RETURN (P&L)</th>
-                  <th className="py-2.5 px-3 text-center">STATUS</th>
-                  <th className="py-2.5 px-3">ENGINE</th>
+                <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/50">
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">EVENT / MARKET</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">SIDE</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">ENTRY ODDS</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">CURRENT / EXIT</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">SHARES</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">WAGER ($)</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">VALUE ($)</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px] text-right">RETURN (P&L)</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px] text-center">STATUS</th>
+                  <th className="py-2.5 px-3 uppercase font-bold text-[10px]">ENGINE</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-slate-100">
                 {filteredTrades.map(w => {
                   const isPos = w.pnl >= 0;
                   return (
-                    <tr key={w.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3 px-3 text-white font-medium max-w-[240px] truncate" title={w.title}>
+                    <tr key={w.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-3 text-slate-900 font-medium max-w-[240px] truncate" title={w.title}>
                         {w.title}
                       </td>
                       <td className="py-3 px-3">
                         <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          w.outcome === 'YES' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
+                          w.outcome === 'YES' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
                         }`}>
                           {w.outcome}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-slate-300 tabular-nums">
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">
                         {(w.entryPrice * 100).toFixed(0)}¢
                       </td>
-                      <td className="py-3 px-3 text-slate-300 tabular-nums">
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">
                         {w.exitPrice ? `${(w.exitPrice * 100).toFixed(0)}¢` : `${(w.currentPrice * 100).toFixed(0)}¢`}
                       </td>
-                      <td className="py-3 px-3 text-slate-300 tabular-nums">
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">
                         {w.shares.toFixed(2)}
                       </td>
-                      <td className="py-3 px-3 text-slate-300 tabular-nums">
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">
                         ${w.amount.toFixed(2)}
                       </td>
-                      <td className="py-3 px-3 text-amber-300 tabular-nums font-bold">
+                      <td className="py-3 px-3 text-blue-700 tabular-nums font-bold">
                         ${w.currentValue.toFixed(2)}
                       </td>
                       <td className={`py-3 px-3 text-right tabular-nums font-bold ${
-                        isPos ? 'text-emerald-400' : 'text-rose-400'
+                        isPos ? 'text-emerald-600' : 'text-red-600'
                       }`}>
                         {isPos ? '+' : ''}${w.pnl.toFixed(2)} ({isPos ? '+' : ''}{w.pnlPct.toFixed(1)}%)
                       </td>
                       <td className="py-3 px-3 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           w.status === 'OPEN'
-                            ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
                             : w.status === 'RESOLVED_WON'
-                            ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-red-50 text-red-700 border border-red-200'
                         }`}>
                           {w.status === 'OPEN' ? 'OPEN' : w.status === 'RESOLVED_WON' ? 'WON' : 'LOST'}
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-slate-500">
                           {w.autoTraded ? '24/7 Auto' : 'Manual'}
                         </span>
                       </td>
@@ -595,7 +595,7 @@ export default function PolymarketPage() {
             </table>
 
             {filteredTrades.length === 0 && (
-              <div className="text-center py-12 font-mono text-xs text-slate-500">
+              <div className="text-center py-12 font-mono text-xs text-slate-400">
                 No Polymarket wagers match the selected filter.
               </div>
             )}
@@ -607,18 +607,18 @@ export default function PolymarketPage() {
       {activeTab === 'autotrade' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Configuration Controls */}
-          <div className="lg:col-span-1 p-5 rounded-xl glass-panel bg-[#0B101D]/80 border border-white/10 space-y-4">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Sliders size={16} className="text-amber-400" />
+          <div className="lg:col-span-1 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm space-y-4">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Sliders size={16} className="text-blue-600" />
               24/7 Execution Parameters
             </h2>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               The bot continuously monitors the Polymarket CLOB 24 hours a day without manual input.
             </p>
 
             <div className="space-y-4 pt-2">
               <div>
-                <label className="text-xs font-mono text-slate-300 block mb-1">
+                <label className="text-xs font-mono text-slate-700 block mb-1 font-semibold">
                   MINIMUM ALPHA EDGE THRESHOLD: {autoMinEdge}%
                 </label>
                 <input
@@ -627,13 +627,13 @@ export default function PolymarketPage() {
                   max={25}
                   value={autoMinEdge}
                   onChange={e => setAutoMinEdge(Number(e.target.value))}
-                  className="w-full accent-amber-400"
+                  className="w-full accent-blue-600"
                 />
                 <span className="text-[11px] text-slate-500">Only bets when AI model edge exceeds {autoMinEdge}%.</span>
               </div>
 
               <div>
-                <label className="text-xs font-mono text-slate-300 block mb-1">
+                <label className="text-xs font-mono text-slate-700 block mb-1 font-semibold">
                   MAX STAKE PER CONTRACT: ${autoMaxStake}
                 </label>
                 <input
@@ -643,13 +643,13 @@ export default function PolymarketPage() {
                   step={5}
                   value={autoMaxStake}
                   onChange={e => setAutoMaxStake(Number(e.target.value))}
-                  className="w-full accent-amber-400"
+                  className="w-full accent-blue-600"
                 />
                 <span className="text-[11px] text-slate-500">Limits maximum single order risk exposure.</span>
               </div>
 
               <div>
-                <label className="text-xs font-mono text-slate-300 block mb-1">
+                <label className="text-xs font-mono text-slate-700 block mb-1 font-semibold">
                   KELLY FRACTION: {(autoKellyScale * 100).toFixed(0)}% (Fractional Kelly)
                 </label>
                 <input
@@ -659,14 +659,14 @@ export default function PolymarketPage() {
                   step={0.05}
                   value={autoKellyScale}
                   onChange={e => setAutoKellyScale(Number(e.target.value))}
-                  className="w-full accent-amber-400"
+                  className="w-full accent-blue-600"
                 />
                 <span className="text-[11px] text-slate-500">Quarter-Kelly protects from drawdown variance.</span>
               </div>
 
-              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono text-emerald-300 space-y-1">
+              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-mono text-emerald-800 space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
-                  <CheckCircle size={13} /> 24/7 Automated Guardian Active
+                  <CheckCircle size={13} className="text-emerald-600" /> 24/7 Automated Guardian Active
                 </div>
                 <div>CLOB Zero-Gas API Connected</div>
                 <div>Multi-Agent Bayesian Consensus: Active</div>
@@ -675,24 +675,24 @@ export default function PolymarketPage() {
           </div>
 
           {/* Right: Live 24/7 Heartbeat & Event Feed */}
-          <div className="lg:col-span-2 p-5 rounded-xl glass-panel bg-[#0B101D]/80 border border-white/10 space-y-4">
+          <div className="lg:col-span-2 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Activity size={16} className="text-emerald-400" />
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Activity size={16} className="text-emerald-600" />
                 Live 24/7 Autonomous Activity Log
               </h2>
-              <span className="text-xs font-mono text-slate-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-mono text-slate-500 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 Live Stream
               </span>
             </div>
 
-            <div className="p-3 bg-black/60 rounded-xl border border-white/5 h-[340px] overflow-y-auto font-mono text-xs space-y-2">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 h-[340px] overflow-y-auto font-mono text-xs space-y-2">
               {autoLogs.map(l => (
-                <div key={l.id} className="flex items-start gap-2.5 pb-2 border-b border-white/[0.04]">
-                  <span className="text-slate-500 whitespace-nowrap">{l.time}</span>
+                <div key={l.id} className="flex items-start gap-2.5 pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-400 whitespace-nowrap">{l.time}</span>
                   <span className={`leading-relaxed ${
-                    l.type === 'trade' ? 'text-amber-300 font-bold' : l.type === 'win' ? 'text-emerald-400 font-bold' : 'text-slate-300'
+                    l.type === 'trade' ? 'text-blue-700 font-bold' : l.type === 'win' ? 'text-emerald-700 font-bold' : 'text-slate-700'
                   }`}>
                     {l.msg}
                   </span>
@@ -705,83 +705,83 @@ export default function PolymarketPage() {
 
       {/* ── Wager Execution Modal ─────────────────────────────────── */}
       {selectedPrediction && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg p-6 rounded-2xl glass-panel bg-[#0B0F19] border border-amber-500/30 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg p-6 rounded-2xl bg-white border border-slate-200 shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-start justify-between">
               <div>
-                <span className="text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
+                <span className="text-xs font-mono text-blue-700 font-bold uppercase tracking-wider">
                   EXECUTE PREDICTION WAGER
                 </span>
-                <h3 className="text-base font-bold text-white mt-1">
+                <h3 className="text-base font-bold text-slate-900 mt-1">
                   {selectedPrediction.title}
                 </h3>
               </div>
               <button
                 onClick={() => setSelectedPrediction(null)}
-                className="text-slate-400 hover:text-white text-lg font-bold"
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-2 text-xs font-mono">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs font-mono">
               <div className="flex justify-between">
-                <span className="text-slate-400">Category:</span>
-                <span className="text-white capitalize">{selectedPrediction.category}</span>
+                <span className="text-slate-500">Category:</span>
+                <span className="text-slate-900 font-semibold capitalize">{selectedPrediction.category}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">AI True Probability:</span>
-                <span className="text-emerald-400 font-bold">{(selectedPrediction.trueYesProbability * 100).toFixed(1)}%</span>
+                <span className="text-slate-500">AI True Probability:</span>
+                <span className="text-emerald-700 font-bold">{(selectedPrediction.trueYesProbability * 100).toFixed(1)}%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Calculated Alpha Edge:</span>
-                <span className="text-cyan-400 font-bold">+{(selectedPrediction.edge * 100).toFixed(1)}%</span>
+                <span className="text-slate-500">Calculated Alpha Edge:</span>
+                <span className="text-blue-700 font-bold">+{(selectedPrediction.edge * 100).toFixed(1)}%</span>
               </div>
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-mono text-slate-300 block">SELECT OUTCOME:</label>
+              <label className="text-xs font-mono text-slate-700 block font-semibold">SELECT OUTCOME:</label>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setWagerOutcome('YES')}
                   className={`p-3 rounded-xl border text-xs font-mono font-bold flex flex-col items-center gap-1 transition-all ${
                     wagerOutcome === 'YES'
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                      : 'border-white/10 text-slate-400 hover:text-white'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <span>BUY YES CONTRACT</span>
-                  <span className="text-sm font-bold text-white">{(selectedPrediction.yesPrice * 100).toFixed(0)}¢</span>
+                  <span className="text-sm font-bold text-slate-900">{(selectedPrediction.yesPrice * 100).toFixed(0)}¢</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setWagerOutcome('NO')}
                   className={`p-3 rounded-xl border text-xs font-mono font-bold flex flex-col items-center gap-1 transition-all ${
                     wagerOutcome === 'NO'
-                      ? 'bg-red-500/20 border-red-500 text-red-300'
-                      : 'border-white/10 text-slate-400 hover:text-white'
+                      ? 'bg-red-50 border-red-300 text-red-800'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <span>BUY NO CONTRACT</span>
-                  <span className="text-sm font-bold text-white">{(selectedPrediction.noPrice * 100).toFixed(0)}¢</span>
+                  <span className="text-sm font-bold text-slate-900">{(selectedPrediction.noPrice * 100).toFixed(0)}¢</span>
                 </button>
               </div>
 
               <div>
                 <div className="flex justify-between text-xs font-mono mb-1">
-                  <span className="text-slate-400">Wager Amount ($ USD):</span>
-                  <span className="text-amber-400 font-bold">
+                  <span className="text-slate-500 font-semibold">Wager Amount ($ USD):</span>
+                  <span className="text-blue-700 font-bold">
                     Est. Shares: {(wagerAmount / (wagerOutcome === 'YES' ? selectedPrediction.yesPrice : selectedPrediction.noPrice)).toFixed(1)}
                   </span>
                 </div>
                 <input
                   type="number"
                   min={1}
-                  max={bankroll}
+                  max={bankroll || 1000}
                   value={wagerAmount}
                   onChange={e => setWagerAmount(Number(e.target.value))}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-amber-400"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-mono text-slate-900 focus:outline-none focus:border-blue-500 font-bold"
                 />
               </div>
             </div>
@@ -789,7 +789,7 @@ export default function PolymarketPage() {
             <button
               onClick={handleExecuteWager}
               disabled={wagerLoading}
-              className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold rounded-xl text-xs transition-colors shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-mono font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-2"
             >
               {wagerLoading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
               <span>CONFIRM EXECUTION ON POLYMARKET CLOB</span>

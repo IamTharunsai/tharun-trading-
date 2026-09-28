@@ -3,29 +3,30 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════════
-   THARUN TRADING BOT — BLOOMBERG TERMINAL + GLASSMORPHISM THEME
-   Institutional dark obsidian + emerald + gold + cyan aesthetic.
+   APEX INSTITUTIONAL FINANCIAL SUITE — CORPORATE LIGHT THEME
+   Crisp, ultra-clean, high-contrast institutional aesthetic.
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
-  color-scheme: dark;
-  --apex-bg:            #080C14;
-  --apex-bg2:           #0D1322;
-  --apex-surface:       #11192C;
-  --apex-card:          rgba(17, 25, 44, 0.72);
-  --apex-card-hover:    rgba(23, 34, 59, 0.85);
-  --apex-border:        rgba(255, 255, 255, 0.08);
-  --apex-border-bright: rgba(255, 255, 255, 0.16);
-  --apex-gold:          #F59E0B;
-  --apex-accent:        #10B981;
-  --apex-orange:        #F97316;
-  --apex-green:         #10B981;
-  --apex-red:           #EF4444;
-  --apex-cyan:          #06B6D4;
-  --apex-text:          #F8FAFC;
-  --apex-muted:         #94A3B8;
-  --apex-subtle:        #64748B;
-  --apex-navy:          #0A1224;
+  color-scheme: light;
+  --apex-bg:            #F8FAFC;
+  --apex-bg2:           #FFFFFF;
+  --apex-surface:       #FFFFFF;
+  --apex-card:          #FFFFFF;
+  --apex-card-hover:    #F1F5F9;
+  --apex-border:        #E2E8F0;
+  --apex-border-bright: #CBD5E1;
+  --apex-primary:       #1E40AF;
+  --apex-accent:        #059669;
+  --apex-gold:          #D97706;
+  --apex-orange:        #EA580C;
+  --apex-green:         #059669;
+  --apex-red:           #DC2626;
+  --apex-cyan:          #0284C7;
+  --apex-text:          #0F172A;
+  --apex-muted:         #64748B;
+  --apex-subtle:        #94A3B8;
+  --apex-navy:          #0F172A;
 }
 
 /* ─── Base resets ────────────────────────────────────────────────── */
@@ -34,180 +35,143 @@
 }
 
 html {
-  background: #080C14 !important;
-  color: #F8FAFC !important;
+  background: #F8FAFC !important;
+  color: #0F172A !important;
 }
 
 body {
-  background:
-    radial-gradient(circle at 10% 10%, rgba(16, 185, 129, 0.04), transparent 40%),
-    radial-gradient(circle at 90% 90%, rgba(245, 158, 11, 0.04), transparent 45%),
-    radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.02), transparent 60%),
-    #080C14 !important;
-  color: #F8FAFC !important;
-  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #F8FAFC !important;
+  color: #0F172A !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   min-height: 100vh;
   margin: 0;
   padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
-  color: #F8FAFC !important;
+  background: #F8FAFC !important;
+  color: #0F172A !important;
   min-height: 100vh;
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #080C14; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #10B981; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
 /* ─── Typography & Tabular Figures ───────────────────────────────── */
-.font-mono    { font-family: 'Space Mono', monospace !important; font-variant-numeric: tabular-nums; }
-.font-sans    { font-family: 'Manrope', sans-serif !important; }
-.font-display { font-family: 'Fraunces', serif !important; }
+.font-mono    { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; font-variant-numeric: tabular-nums; }
+.font-sans    { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; }
+.font-display { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; font-weight: 700; letter-spacing: -0.02em; }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── Glassmorphism card utility ─────────────────────────────────── */
+/* ─── Institutional panels ──────────────────────────────────────── */
 .glass-panel {
-  background: rgba(17, 25, 44, 0.72);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.05);
+  color: #0F172A !important;
 }
 
 .glass-panel-hover:hover {
-  background: rgba(23, 34, 59, 0.85);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: #F8FAFC !important;
+  border-color: #CBD5E1 !important;
 }
 
-/* ─── Glass card component ───────────────────────────────────────── */
+/* ─── Corporate Card Component ───────────────────────────────────── */
 .card {
-  background: var(--apex-card) !important;
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  border: 1px solid var(--apex-border) !important;
-  border-radius: 16px;
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 12px;
   padding: 1.25rem;
-  color: #14171F !important;
-  box-shadow: 0 8px 32px rgba(20, 30, 50, 0.06), inset 0 1px 0 rgba(255,255,255,0.5);
+  color: #0F172A !important;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.05);
 }
 
 .card-glow {
-  border-color: rgba(201, 162, 75, 0.5) !important;
-  box-shadow: 0 0 24px rgba(201, 162, 75, 0.18), inset 0 1px 0 rgba(255,255,255,0.5);
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15) !important;
 }
 
-/* ─── Glass buttons ──────────────────────────────────────────────── */
+/* ─── Corporate Buttons ──────────────────────────────────────────── */
 .btn-glass {
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(20, 30, 50, 0.12);
-  border-radius: 10px;
-  color: #14171F;
-  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  color: #0F172A;
+  font-weight: 600;
+  transition: all 0.15s ease-in-out;
 }
 .btn-glass:hover {
-  border-color: rgba(201, 162, 75, 0.6);
-  box-shadow: 0 4px 16px rgba(201, 162, 75, 0.2);
-  transform: translateY(-1px);
+  background: #F8FAFC;
+  border-color: #94A3B8;
+  color: #0F172A;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #0E6B4F, #0A4636);
-  border: 1px solid rgba(201, 162, 75, 0.4);
-  border-radius: 10px;
+  background: #1E40AF;
+  border: 1px solid #1D4ED8;
+  border-radius: 8px;
   color: #FFFFFF;
-  box-shadow: 0 4px 16px rgba(14, 107, 79, 0.25);
-  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  font-weight: 600;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.15s ease-in-out;
 }
 .btn-primary:hover {
-  box-shadow: 0 6px 22px rgba(14, 107, 79, 0.35);
-  transform: translateY(-1px);
+  background: #1D4ED8;
 }
 
-/* ─── Status dots ────────────────────────────────────────────────── */
+/* ─── Status Indicators ──────────────────────────────────────────── */
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   display: inline-block;
-  margin-right: 4px;
+  margin-right: 6px;
   flex-shrink: 0;
 }
-.status-dot.live      { background: #12805F; box-shadow: 0 0 6px #12805F; animation: pulse-dot 2s infinite; }
-.status-dot.analyzing { background: #C9A24B; box-shadow: 0 0 6px #C9A24B; animation: pulse-dot 1s infinite; }
-.status-dot.offline   { background: #5B6472; }
-.status-dot.error     { background: #B0263B; box-shadow: 0 0 6px #B0263B; }
+.status-dot.live      { background: #059669; }
+.status-dot.analyzing { background: #D97706; }
+.status-dot.offline   { background: #94A3B8; }
+.status-dot.error     { background: #DC2626; }
 
-/* ─── Scanline ───────────────────────────────────────────────────── */
-.scanline::after {
-  content: '';
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(to right, transparent, rgba(201,162,75,0.10), transparent);
-  animation: scanline 10s linear infinite;
-  pointer-events: none;
-  z-index: 9999;
-}
+/* ─── P&L Colors ─────────────────────────────────────────────────── */
+.pnl-positive { color: #059669 !important; }
+.pnl-negative { color: #DC2626 !important; }
+.pnl-neutral  { color: #64748B !important; }
 
-/* ─── P&L helpers ────────────────────────────────────────────────── */
-.pnl-positive { color: #12805F; }
-.pnl-negative { color: #B0263B; }
-.pnl-neutral  { color: #5B6472; }
-
-/* ─── Keyframes ──────────────────────────────────────────────────── */
-@keyframes scanline {
-  0%   { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
-}
-
-@keyframes ticker {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-
-@keyframes glow {
-  0%   { box-shadow: 0 0 5px rgba(201,162,75,0.3); }
-  100% { box-shadow: 0 0 20px rgba(201,162,75,0.6), 0 0 40px rgba(201,162,75,0.2); }
-}
-
-@keyframes mover-in {
-  0%   { opacity: 0; transform: translateY(6px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
-}
-
-/* ─── Ensure selects and inputs have correct background ──────────── */
+/* ─── Form Controls ──────────────────────────────────────────────── */
 select, input, textarea {
-  background-color: rgba(255, 255, 255, 0.7);
-  color: #14171F;
-  border-color: rgba(20, 30, 50, 0.12);
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 6px;
+}
+select:focus, input:focus, textarea:focus {
+  border-color: #2563EB !important;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
 select option {
-  background-color: #FFFFFF;
-  color: #14171F;
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
 }
 
-/* ─── Table text visibility ──────────────────────────────────────── */
+/* ─── Tables ─────────────────────────────────────────────────────── */
 table {
-  color: #14171F;
+  color: #0F172A !important;
 }
-
-th, td {
-  color: inherit;
+th {
+  color: #475569 !important;
+  font-weight: 600 !important;
+}
+td {
+  color: #0F172A !important;
 }

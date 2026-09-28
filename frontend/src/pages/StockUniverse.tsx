@@ -489,31 +489,30 @@ export default function StockUniversePage() {
   };
 
   const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
-    <button onClick={() => toggleSort(k)} style={{
-      fontFamily: 'Space Mono', fontSize: 10, color: sortBy === k ? C.accent : C.muted,
-      background: sortBy === k ? `${C.accent}15` : 'transparent',
-      border: `1px solid ${sortBy === k ? C.accent : C.border}`,
-      borderRadius: 6, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-    }}>
+    <button onClick={() => toggleSort(k)} className={`font-mono text-[11px] px-2.5 py-1 rounded-md border font-semibold flex items-center gap-1 transition ${
+      sortBy === k
+        ? 'bg-blue-50 text-blue-700 border-blue-300'
+        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+    }`}>
       {label}{sortBy === k ? (sortDir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />) : null}
     </button>
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, color: C.text }}>
+    <div className="flex flex-col gap-5 text-slate-900 max-w-7xl mx-auto">
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-mono font-bold text-amber-400 uppercase tracking-wider">INSTITUTIONAL UNIVERSE ENGINE</span>
-            <span className="text-xs text-slate-600">·</span>
-            <span className="text-[11px] font-mono text-emerald-400">10,428 LISTED SECURITIES SYNCHRONIZED</span>
+            <span className="text-[11px] font-mono font-bold text-blue-700 uppercase tracking-wider">INSTITUTIONAL UNIVERSE ENGINE</span>
+            <span className="text-xs text-slate-400">·</span>
+            <span className="text-[11px] font-mono text-emerald-600 font-bold">10,428 LISTED SECURITIES SYNCHRONIZED</span>
           </div>
-          <h1 style={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: 24, color: C.text, margin: 0 }}>
+          <h1 className="font-bold text-2xl text-slate-900 tracking-tight font-display">
             US Equities & Cross-Industry Intelligence
           </h1>
-          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: '4px 0 0' }}>
+          <p className="font-mono text-xs text-slate-500 mt-1">
             Complete US marketplace directory, GICS sector categorization, alternative industry ripple radar, and committee deliberation
           </p>
         </div>
@@ -521,16 +520,16 @@ export default function StockUniversePage() {
       </div>
 
       {/* ── Top Level 3-Tier Tab Navigation ────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-white/10 pb-3 flex-wrap">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
         <button
           onClick={() => setActiveTab('all_us_market')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all ${
             activeTab === 'all_us_market'
-              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10'
-              : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
           }`}
         >
-          <Globe size={14} className={activeTab === 'all_us_market' ? 'text-amber-400' : ''} />
+          <Globe size={14} />
           FULL US MARKETPLACE ({allStocksData?.total || '10,428+'})
         </button>
 
@@ -538,11 +537,11 @@ export default function StockUniversePage() {
           onClick={() => setActiveTab('ripple_radar')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all ${
             activeTab === 'ripple_radar'
-              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10'
-              : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
           }`}
         >
-          <Zap size={14} className={activeTab === 'ripple_radar' ? 'text-emerald-400' : ''} />
+          <Zap size={14} />
           CROSS-INDUSTRY RIPPLE & BOOM RADAR
         </button>
 
@@ -550,11 +549,11 @@ export default function StockUniversePage() {
           onClick={() => setActiveTab('analyzed')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition-all ${
             activeTab === 'analyzed'
-              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm shadow-blue-500/10'
-              : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
           }`}
         >
-          <Layers size={14} className={activeTab === 'analyzed' ? 'text-blue-400' : ''} />
+          <Layers size={14} />
           AGENT ANALYZED MEMORIES ({stocks.length})
         </button>
       </div>
@@ -563,7 +562,7 @@ export default function StockUniversePage() {
       {activeTab === 'all_us_market' && (
         <div className="space-y-4">
           {/* Search + Sector Filters */}
-          <div className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10 space-y-3">
+          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm space-y-3">
             <div className="flex flex-col md:flex-row items-center gap-3">
               <div className="relative flex-1 w-full">
                 <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -571,17 +570,17 @@ export default function StockUniversePage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search all 10,400+ US stocks by ticker (e.g. CEG, OKLO, LLY), name, or industry…"
-                  className="w-full pl-9 pr-4 py-2.5 bg-black/40 border border-white/10 rounded-lg font-mono text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
+                  className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg font-mono text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="flex items-center gap-3 w-full md:w-auto">
-                <label className="flex items-center gap-2 text-xs font-mono text-slate-300 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs font-mono text-slate-700 cursor-pointer font-medium">
                   <input
                     type="checkbox"
                     checked={tradableOnly}
                     onChange={e => setTradableOnly(e.target.checked)}
-                    className="rounded border-white/20 text-amber-500 focus:ring-0 cursor-pointer"
+                    className="rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
                   />
                   <span>Tradable Only</span>
                 </label>
@@ -596,8 +595,8 @@ export default function StockUniversePage() {
                   onClick={() => setSelectedSector(sec)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-mono whitespace-nowrap transition-colors ${
                     selectedSector === sec
-                      ? 'bg-amber-500 text-black font-bold shadow-sm'
-                      : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+                      ? 'bg-blue-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
                   }`}
                 >
                   {sec}
@@ -607,11 +606,11 @@ export default function StockUniversePage() {
           </div>
 
           {/* Directory Count */}
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+          <div className="flex items-center justify-between text-xs font-mono text-slate-500">
             <span>
               Showing {allMarketStocks.length} listed securities (Total Matching: {allStocksData?.total || 0})
             </span>
-            <span className="text-amber-400/90 flex items-center gap-1">
+            <span className="text-blue-700 font-bold flex items-center gap-1">
               <ShieldCheck size={13} /> Authoritative SEC EDGAR & Alpaca Registry
             </span>
           </div>
@@ -630,48 +629,48 @@ export default function StockUniversePage() {
               {allMarketStocks.map((stock: any) => (
                 <div
                   key={stock.symbol}
-                  className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10 hover:border-amber-500/40 transition-all flex flex-col justify-between"
+                  className="p-4 rounded-xl bg-white border border-slate-200/90 hover:border-blue-400 transition-all flex flex-col justify-between shadow-sm"
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="font-mono text-base font-bold text-amber-300">
+                        <span className="font-mono text-base font-bold text-blue-700">
                           {stock.symbol}
                         </span>
-                        <span className="ml-2 font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
+                        <span className="ml-2 font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 font-semibold">
                           {stock.exchange || 'US'}
                         </span>
                       </div>
                       {stock.price ? (
-                        <span className="font-mono font-bold text-sm text-white">
+                        <span className="font-mono font-bold text-sm text-slate-900">
                           ${typeof stock.price === 'number' ? stock.price.toFixed(2) : stock.price}
                         </span>
                       ) : (
-                        <span className="font-mono text-[10px] text-slate-500">LIVE FEED</span>
+                        <span className="font-mono text-[10px] text-slate-400 font-semibold">LIVE FEED</span>
                       )}
                     </div>
 
-                    <div className="font-semibold text-xs text-slate-200 mt-1 line-clamp-1">
+                    <div className="font-semibold text-xs text-slate-800 mt-1 line-clamp-1">
                       {stock.name}
                     </div>
 
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                         {stock.sector}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-400 truncate max-w-[160px]">
+                      <span className="text-[10px] font-mono text-slate-500 truncate max-w-[160px]">
                         {stock.industry}
                       </span>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-slate-500">
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-slate-500 font-semibold">
                       {stock.tradable ? '● EXECUTION READY' : '○ SEC REGISTRANT'}
                     </span>
                     <button
                       onClick={() => handleConveneDebate(stock.symbol)}
-                      className="px-2.5 py-1 text-[11px] font-mono font-bold text-black bg-amber-500 hover:bg-amber-400 rounded-md transition-colors flex items-center gap-1 shadow-sm"
+                      className="px-2.5 py-1 text-[11px] font-mono font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors flex items-center gap-1 shadow-xs"
                     >
                       <span>CONVENE</span>
                       <ArrowUpRight size={12} />
@@ -687,11 +686,11 @@ export default function StockUniversePage() {
       {/* ── TAB 2: CROSS-INDUSTRY RIPPLE & BOOM RADAR ───────────────────── */}
       {activeTab === 'ripple_radar' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl glass-panel bg-emerald-950/20 border border-emerald-500/30">
-            <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400 mb-1">
-              <Sparkles size={14} /> CROSS-INDUSTRY ALTERNATIVE BOOM INTELLIGENCE
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-800 mb-1">
+              <Sparkles size={14} className="text-emerald-600" /> CROSS-INDUSTRY ALTERNATIVE BOOM INTELLIGENCE
             </div>
-            <p className="text-xs text-slate-300 font-sans">
+            <p className="text-xs text-emerald-900 font-sans">
               Our agents monitor primary macro catalysts and news journals to isolate second-order and third-order ripple beneficiaries across alternative industries where asymmetric capital flows occur.
             </p>
           </div>
@@ -709,48 +708,48 @@ export default function StockUniversePage() {
               {rippleOpportunities.map((opp: any) => (
                 <div
                   key={opp.id}
-                  className="p-5 rounded-2xl glass-panel bg-[#0B101D]/80 border border-white/10 hover:border-emerald-500/40 transition-all space-y-4"
+                  className="p-5 rounded-xl bg-white border border-slate-200/90 hover:border-emerald-400 transition-all space-y-4 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
                           {opp.transmissionDegree.replace('_', ' ')}
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400">
+                        <span className="text-[10px] font-mono text-slate-500 font-semibold">
                           {opp.targetSector}
                         </span>
                       </div>
-                      <h3 className="font-bold text-sm text-white">
+                      <h3 className="font-bold text-sm text-slate-900">
                         {opp.targetIndustry}
                       </h3>
                     </div>
-                    <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">
+                    <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded">
                       {opp.confidence}% Conviction
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-lg bg-black/40 border border-white/5 space-y-1">
-                    <div className="text-[10px] font-mono text-slate-400 uppercase">Primary Catalyst</div>
-                    <div className="text-xs font-mono text-amber-300 font-semibold">{opp.headline}</div>
-                    <div className="text-xs text-slate-300 mt-1">{opp.strategicThesis}</div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                    <div className="text-[10px] font-mono text-slate-500 font-semibold uppercase">Primary Catalyst</div>
+                    <div className="text-xs font-mono text-blue-700 font-bold">{opp.headline}</div>
+                    <div className="text-xs text-slate-700 mt-1 font-sans">{opp.strategicThesis}</div>
                   </div>
 
                   <div>
-                    <div className="text-[10px] font-mono text-slate-400 uppercase mb-2">Recommended Beneficiary Plays</div>
+                    <div className="text-[10px] font-mono text-slate-500 uppercase font-semibold mb-2">Recommended Beneficiary Plays</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {opp.recommendedTickers?.map((tick: any) => (
                         <div
                           key={tick.symbol}
-                          className="p-2.5 rounded-lg bg-white/5 border border-white/10 flex items-center justify-between"
+                          className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between"
                         >
                           <div>
-                            <div className="font-mono font-bold text-xs text-white">{tick.symbol}</div>
-                            <div className="text-[10px] text-slate-400 truncate max-w-[110px]">{tick.companyName}</div>
+                            <div className="font-mono font-bold text-xs text-slate-900">{tick.symbol}</div>
+                            <div className="text-[10px] text-slate-500 truncate max-w-[110px]">{tick.companyName}</div>
                           </div>
                           <button
                             onClick={() => handleConveneDebate(tick.symbol)}
-                            className="px-2 py-1 text-[10px] font-mono font-bold text-black bg-emerald-400 hover:bg-emerald-300 rounded transition-colors"
+                            className="px-2 py-1 text-[10px] font-mono font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded transition-colors shadow-xs"
                           >
                             DEBATE
                           </button>
@@ -769,52 +768,46 @@ export default function StockUniversePage() {
       {activeTab === 'analyzed' && (
         <div className="space-y-4">
           {/* Stats bar */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               { label: 'Total Analyzed', value: stocks.length, icon: Activity },
               { label: 'With Full Name', value: `${withNames} / ${stocks.length}` },
               { label: 'Actively Traded', value: totalTraded },
               { label: 'Open Positions', value: totalOpen },
             ].map((s, i) => (
-              <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
-                <div style={{ fontFamily: 'Space Mono', fontSize: 9, color: C.muted, textTransform: 'uppercase', marginBottom: 4 }}>{s.label}</div>
-                <div style={{ fontFamily: 'Manrope', fontWeight: 700, fontSize: 18, color: C.text }}>{s.value}</div>
+              <div key={i} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+                <div className="font-mono text-[10px] text-slate-500 uppercase font-semibold mb-1">{s.label}</div>
+                <div className="font-mono font-bold text-xl text-slate-900">{s.value}</div>
               </div>
             ))}
           </div>
 
           {/* Search + filter + sort */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.muted }} />
+          <div className="flex flex-col gap-3 p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+            <div className="relative">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search analyzed stocks by ticker, company name, or sector…"
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  padding: '10px 12px 10px 36px',
-                  background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
-                  fontFamily: 'Space Mono', fontSize: 12, color: C.text, outline: 'none',
-                }}
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg font-mono text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
               />
             </div>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* Filter buttons (terminal tabs) */}
-              {(['all', 'traded', 'open', 'buy', 'sell'] as FilterKey[]).map(f => (
-                <button key={f} onClick={() => setFilter(f)} style={{
-                  fontFamily: 'Space Mono', fontSize: 10, fontWeight: filter === f ? 700 : 500,
-                  color: filter === f ? '#000000' : C.muted,
-                  background: filter === f ? '#F59E0B' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${filter === f ? '#F59E0B' : C.border}`,
-                  borderRadius: 6, padding: '5px 12px', cursor: 'pointer', textTransform: 'uppercase',
-                  transition: 'all 0.15s ease',
-                }}>{f === 'all' ? `All (${stocks.length})` : f === 'open' ? `Open (${totalOpen})` : f === 'traded' ? `Traded (${totalTraded})` : f}</button>
-              ))}
+            <div className="flex gap-2 flex-wrap items-center justify-between">
+              {/* Filter buttons */}
+              <div className="flex gap-1.5 flex-wrap items-center">
+                {(['all', 'traded', 'open', 'buy', 'sell'] as FilterKey[]).map(f => (
+                  <button key={f} onClick={() => setFilter(f)} className={`font-mono text-xs px-3 py-1.5 rounded-lg border font-bold transition ${
+                    filter === f ? 'bg-blue-600 text-white border-blue-600 shadow-xs' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                  }`}>
+                    {f === 'all' ? `All (${stocks.length})` : f === 'open' ? `Open (${totalOpen})` : f === 'traded' ? `Traded (${totalTraded})` : f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
 
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted, alignSelf: 'center' }}>Sort:</span>
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <span className="font-mono text-xs text-slate-500 font-semibold mr-1">Sort:</span>
                 <SortBtn k="name" label="Name" />
                 <SortBtn k="debateCount" label="Debates" />
                 <SortBtn k="tradeCount" label="Trades" />

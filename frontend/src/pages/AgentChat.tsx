@@ -91,23 +91,23 @@ export default function AgentChatPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-140px)] max-w-7xl mx-auto">
+    <div className="flex flex-col gap-4 h-[calc(100vh-140px)] max-w-7xl mx-auto text-slate-900">
       {/* Top Quick-Quote Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl glass-panel bg-[#0B101D] border border-white/[0.08]">
+      <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
         <div className="flex items-center gap-3">
-          <MessageSquare className="text-amber-400" size={18} />
-          <span className="font-bold text-white text-sm">Instant Bloomberg (IB) Secure Messaging</span>
-          <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+          <MessageSquare className="text-blue-600" size={18} />
+          <span className="font-bold text-slate-900 text-sm">Instant Bloomberg (IB) Secure Messaging</span>
+          <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold">
             ENCRYPTED DIRECT WIRE
           </span>
         </div>
 
         <div className="flex items-center gap-4 text-xs font-mono">
-          <span className="text-slate-400">ACTIVE TICKER:</span>
+          <span className="text-slate-500 font-semibold">ACTIVE TICKER:</span>
           <div className="flex items-center gap-2">
-            <span className="text-white font-bold">{asset}</span>
-            <span className="text-amber-300 font-bold tabular-nums">${currentPrice.toFixed(2)}</span>
-            <span className={`tabular-nums ${currentChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span className="text-slate-900 font-bold">{asset}</span>
+            <span className="text-blue-700 font-bold tabular-nums">${currentPrice.toFixed(2)}</span>
+            <span className={`tabular-nums font-bold ${currentChange >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
               {currentChange >= 0 ? '+' : ''}{currentChange.toFixed(2)}%
             </span>
           </div>
@@ -116,8 +116,8 @@ export default function AgentChatPage() {
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
         {/* Agent Directory */}
-        <div className="lg:col-span-1 rounded-xl glass-panel bg-[#0B101D] p-3 flex flex-col gap-3 overflow-hidden">
-          <div className="text-[10px] font-mono font-bold tracking-wider text-slate-400 uppercase px-2 pt-1">
+        <div className="lg:col-span-1 rounded-xl bg-white border border-slate-200/90 p-3 flex flex-col gap-3 overflow-hidden shadow-sm">
+          <div className="text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase px-2 pt-1">
             DESK SPECIALISTS ({AGENTS.length})
           </div>
 
@@ -130,25 +130,25 @@ export default function AgentChatPage() {
                   onClick={() => setSelectedAgent(agent)}
                   className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center gap-2.5 ${
                     isSelected
-                      ? 'bg-amber-500/15 border border-amber-500/40 text-white shadow-sm'
-                      : 'hover:bg-white/[0.03] border border-transparent text-slate-400 hover:text-white'
+                      ? 'bg-blue-50 border border-blue-200 text-blue-900 shadow-xs'
+                      : 'hover:bg-slate-50 border border-transparent text-slate-700 hover:text-slate-900'
                   }`}
                 >
                   <span className="text-lg">{agent.icon}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-bold truncate flex items-center justify-between">
-                      <span className={isSelected ? 'text-amber-300' : 'text-slate-200'}>{agent.name}</span>
-                      <span className="text-[9px] font-mono text-slate-500">#{agent.id}</span>
+                      <span className={isSelected ? 'text-blue-700' : 'text-slate-900'}>{agent.name}</span>
+                      <span className="text-[9px] font-mono text-slate-400">#{agent.id}</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 truncate">{agent.role}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{agent.role}</div>
                   </div>
                 </button>
               );
             })}
           </div>
 
-          <div className="pt-2 border-t border-white/[0.08]">
-            <div className="text-[10px] font-mono font-bold tracking-wider text-slate-400 uppercase px-2 mb-2">
+          <div className="pt-2 border-t border-slate-100">
+            <div className="text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase px-2 mb-2">
               TARGET TICKER
             </div>
             <div className="flex gap-1.5 flex-wrap px-1">
@@ -156,10 +156,10 @@ export default function AgentChatPage() {
                 <button
                   key={a}
                   onClick={() => setAsset(a)}
-                  className={`px-2 py-1 rounded text-xs font-mono transition-colors ${
+                  className={`px-2 py-1 rounded text-xs font-mono font-bold transition-colors ${
                     asset === a
-                      ? 'bg-amber-500 text-black font-bold'
-                      : 'bg-white/[0.04] text-slate-400 hover:text-white border border-white/[0.06]'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
                   }`}
                 >
                   {a}
@@ -170,19 +170,19 @@ export default function AgentChatPage() {
         </div>
 
         {/* Chat Console */}
-        <div className="lg:col-span-3 rounded-xl glass-panel bg-[#0B101D] flex flex-col overflow-hidden">
+        <div className="lg:col-span-3 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="p-3.5 border-b border-white/[0.08] flex items-center justify-between">
+          <div className="p-3.5 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-2xl">{selectedAgent.icon}</span>
               <div>
-                <div className="text-sm font-bold text-white flex items-center gap-2">
+                <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <span>{selectedAgent.name}</span>
-                  <span className="text-[10px] font-mono text-amber-400 font-semibold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                  <span className="text-[10px] font-mono text-blue-700 font-semibold px-2 py-0.5 rounded bg-blue-50 border border-blue-200">
                     {selectedAgent.role}
                   </span>
                 </div>
-                <div className="text-xs font-mono text-slate-400">Context: {asset} · Multi-Agent Debate Engine</div>
+                <div className="text-xs font-mono text-slate-500">Context: {asset} · Multi-Agent Debate Engine</div>
               </div>
             </div>
 
@@ -191,14 +191,14 @@ export default function AgentChatPage() {
               <button
                 onClick={() => sendQuery(`Give me your top technical thesis and high-frequency trade trigger for ${asset}.`)}
                 disabled={loading}
-                className="text-[11px] font-mono px-2.5 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-colors"
+                className="text-[11px] font-mono px-2.5 py-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors font-semibold"
               >
                 ⚡ Rapid Alpha Signal
               </button>
               <button
                 onClick={() => sendQuery(`What is the downside risk, optimal stop-loss, and Kelly fraction for ${asset}?`)}
                 disabled={loading}
-                className="text-[11px] font-mono px-2.5 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 border border-white/[0.08] transition-colors"
+                className="text-[11px] font-mono px-2.5 py-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors font-semibold"
               >
                 🛡️ Risk Guardrail Check
               </button>
@@ -206,7 +206,7 @@ export default function AgentChatPage() {
           </div>
 
           {/* Messages Stream */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs bg-slate-50/50">
             {messages.map((msg, i) => {
               const isUser = msg.role === 'user';
               return (
@@ -215,7 +215,7 @@ export default function AgentChatPage() {
                   className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
                 >
                   {!isUser && (
-                    <div className="w-7 h-7 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center flex-shrink-0 text-sm">
+                    <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center flex-shrink-0 text-sm shadow-xs">
                       {selectedAgent.icon}
                     </div>
                   )}
@@ -223,28 +223,28 @@ export default function AgentChatPage() {
                   <div
                     className={`max-w-[75%] p-3.5 rounded-xl border leading-relaxed whitespace-pre-wrap ${
                       isUser
-                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-100 rounded-tr-sm'
-                        : 'bg-black/35 border-white/[0.08] text-slate-200 rounded-tl-sm'
+                        ? 'bg-blue-600 border-blue-600 text-white rounded-tr-sm shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-900 rounded-tl-sm shadow-xs'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-4 mb-1 text-[10px] text-slate-400">
+                    <div className={`flex items-center justify-between gap-4 mb-1 text-[10px] ${isUser ? 'text-blue-100' : 'text-slate-400'}`}>
                       <span className="font-bold">{isUser ? 'PORTFOLIO MANAGER (YOU)' : selectedAgent.name}</span>
                       <span>{msg.timestamp}</span>
                     </div>
-                    <div>{msg.content}</div>
+                    <div className={isUser ? 'text-white' : 'text-slate-800'}>{msg.content}</div>
                   </div>
                 </div>
               );
             })}
 
             {loading && (
-              <div className="flex items-center gap-3 text-slate-400 text-xs">
-                <div className="w-7 h-7 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-sm">
+              <div className="flex items-center gap-3 text-slate-500 text-xs">
+                <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-sm shadow-xs">
                   {selectedAgent.icon}
                 </div>
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-black/30 border border-white/[0.06]">
-                  <Loader size={14} className="animate-spin text-amber-400" />
-                  <span>Synthesizing neural deliberation on {asset}...</span>
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-white border border-slate-200 shadow-xs">
+                  <Loader size={14} className="animate-spin text-blue-600" />
+                  <span className="text-slate-700">Synthesizing neural deliberation on {asset}...</span>
                 </div>
               </div>
             )}
@@ -252,18 +252,18 @@ export default function AgentChatPage() {
           </div>
 
           {/* Input Bar */}
-          <form onSubmit={handleSubmit} className="p-3 border-t border-white/[0.08] bg-[#090D17] flex items-center gap-2">
+          <form onSubmit={handleSubmit} className="p-3 border-t border-slate-200 bg-white flex items-center gap-2">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={`Message ${selectedAgent.name} on ${asset} (e.g. "Assess volume shelf breakout for NVDA")...`}
-              className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3.5 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+              className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-mono text-xs font-bold transition-all shadow-md shadow-amber-500/20 disabled:opacity-40 flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-40 flex items-center gap-1.5"
             >
               <span>SEND</span>
               <Send size={13} />
