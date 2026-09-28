@@ -19,7 +19,7 @@ export default function ActivePositions({ positions }: { positions?: Position[] 
         <div className="text-center py-8 font-mono text-xs text-slate-400">No active positions open</div>
       ) : (
         <div className="space-y-2.5">
-          {posList.map((pos) => {
+          {posList.map((pos: any) => {
             const livePrice = prices[pos.asset]?.price || pos.currentPrice;
             const livePnl = (livePrice - pos.entryPrice) * pos.quantity;
             const livePnlPct = ((livePrice - pos.entryPrice) / (pos.entryPrice || 1)) * 100;

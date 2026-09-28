@@ -60,3 +60,6 @@ out/
 **/*.db-wal
 **/*.db-shm
 **/data/*.db*
+
+# local paper-trading data (may contain a database)
+backend/.local-paper/
