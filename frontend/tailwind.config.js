@@ -18,6 +18,8 @@ export default {
           bg:            '#F8FAFC',
           bg2:           '#FFFFFF',
           surface:       '#FFFFFF',
+          'surface-2':   '#F1F5F9',
+          surface2:      '#F1F5F9',
           card:          '#FFFFFF',
           'card-hover':  '#F1F5F9',
           border:        '#E2E8F0',
