@@ -110,6 +110,10 @@ export async function boot(port: number = 3000) {
     await prisma.$connect();
     logger.info('✅ Database connected');
 
+    // Seed settings row / owner account (idempotent)
+    const { bootstrapDatabase } = await import('./utils/prisma');
+    await bootstrapDatabase();
+
     // Restore kill switch state before any scheduler can trade
     const { loadKillSwitchState } = await import('./agents/orchestrator');
     await loadKillSwitchState();

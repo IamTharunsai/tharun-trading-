@@ -15,7 +15,7 @@ export interface AuthRequest extends Request {
   user?: AuthenticatedUser;
 }
 
-// Persistent token revocation backed by SQLite database (survives process restart)
+// Persistent token revocation backed by the database (survives process restart)
 const memoryRevocationCache = new Set<string>();
 
 export async function revokeToken(token: string): Promise<void> {

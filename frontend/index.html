@@ -15,9 +15,8 @@
       * { box-sizing: border-box; }
       @media (max-width: 768px) {
         body { overflow-x: hidden; }
-        /* Sidebar collapses on mobile */
-        nav, aside { display: none !important; }
-        /* Main content takes full width */
+        /* Sidebar becomes a slide-in drawer on mobile (see Layout.tsx) — it
+           used to be display:none with no replacement, i.e. no navigation. */
         main, [style*="margin-left"] { margin-left: 0 !important; width: 100% !important; }
         /* Cards stack vertically */
         [style*="display: grid"], [style*="display:grid"] { display: flex !important; flex-direction: column !important; }

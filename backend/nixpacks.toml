@@ -1,5 +1,4 @@
 [phases.setup]
-# node:sqlite (the real datastore, utils/prisma.ts) needs Node >= 22.5
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
@@ -14,8 +13,6 @@ cmds = ["npm install --include=dev"]
 cmds = ["npm run build"]
 
 [start]
-# The app does NOT use Prisma/Postgres at runtime (utils/prisma.ts is a SQLite
-# layer). `prisma db push --accept-data-loss` only risked wiping a database.
-# Mount a Railway volume and set SQLITE_DB_PATH=/data/apex_trading.db so data
-# survives redeploys.
-cmd = "node dist/index.js"
+# Additive schema sync only: without --accept-data-loss, a destructive schema
+# change makes the deploy FAIL instead of silently dropping data.
+cmd = "npx prisma db push --schema=./prisma/schema.prisma --skip-generate && node dist/index.js"

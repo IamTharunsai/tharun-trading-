@@ -22,6 +22,7 @@ model User {
   lastLogin    DateTime?
   sessionToken String?
   ipWhitelist  Json     @default("[]")
+  role         String   @default("OWNER")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -48,11 +49,15 @@ model Trade {
   stopLossPrice    Float?
   takeProfitPrice  Float?
   exitReason       String?
+  reconciliationStatus String?   @default("RECONCILED")
+  fillLatencyMs    Float?
+  metadata         Json?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   @@index([asset])
   @@index([status])
+  @@index([closedAt])
   @@index([openedAt])
 }
 
@@ -62,10 +67,13 @@ enum TradeType {
 }
 
 enum TradeStatus {
+  PENDING
   OPEN
   CLOSED
   CANCELLED
   FAILED
+  REJECTED
+  LOCAL_SIMULATION
 }
 
 // AGENT DECISIONS
@@ -83,6 +91,8 @@ model AgentDecision {
   agentVotes      Json
   marketSnapshot  Json
   regime          String?
+  horizon         String?  @default("INTRADAY")
+  inputDataFreshnessMs Float?
   timestamp       DateTime @default(now())
   trades          Trade[]
 
@@ -121,6 +131,8 @@ model Position {
   takeProfitPrice Float
   unrealizedPnl  Float    @default(0)
   unrealizedPnlPct Float  @default(0)
+  protectionStatus String @default("APPLICATION_MONITORED")
+  brokerPositionId String?
   status         String   @default("OPEN")
   openedAt       DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -136,9 +148,11 @@ model PortfolioSnapshot {
   pnlDayPct   Float    @default(0)
   pnlTotal    Float    @default(0)
   pnlTotalPct Float    @default(0)
+  source      String   @default("VERIFIED_LEDGER")
   timestamp   DateTime @default(now())
 
   @@index([timestamp])
+  @@index([totalValue])
 }
 
 // NEWS FEED
@@ -177,11 +191,23 @@ model DailyJournal {
 model Prediction {
   id              String    @id @default(cuid())
   asset           String
-  direction       String
+  market          String?   @default("polymarket")
+  title           String?
+  category        String?
+  direction       String?
   confidence      Float
-  targetPrice     Float
-  currentPrice    Float
-  timeHorizon     String
+  yesPrice        Float?
+  noPrice         Float?
+  targetPrice     Float?
+  currentPrice    Float?
+  timeHorizon     String?
+  edge            Float?
+  recommendedBet  String?
+  expectedValue   Float?
+  kellyFraction   Float?
+  recommendedWager Float?
+  reasoning       String?
+  status          String?   @default("ACTIVE")
   keyRisks        String[]
   wasCorrect      Boolean?
   resolvedAt      DateTime?
@@ -496,4 +522,156 @@ model GeoRiskAssessment {
 
   @@index([timestamp])
   @@index([overallRisk])
+}
+
+
+// Added 2026-09-28: models the application uses that were previously only
+// in the (never-deployed) SQLite layer. All additive - safe for `db push`.
+
+model Settings {
+  id                 String   @id @default("settings-1")
+  tradingMode        String   @default("paper")
+  maxPositionSizePct Float    @default(15)
+  maxRiskPerTradePct Float    @default(2)
+  dailyLossLimitPct  Float    @default(3)
+  weeklyLossLimitPct Float    @default(6)
+  stopLossStocksPct  Float    @default(4)
+  stopLossCryptoPct  Float    @default(6)
+  takeProfitPct      Float    @default(10)
+  minAgentConfidence Float    @default(70)
+  minVotesToExecute  Int      @default(8)
+  cashReservePct     Float    @default(20)
+  killSwitchActive   Boolean  @default(false)
+  // Broker credentials entered in Settings, AES-256-GCM encrypted with ENCRYPTION_KEY
+  alpacaApiKeyEnc    String?
+  alpacaSecretKeyEnc String?
+  alpacaPaperMode    Boolean  @default(true)
+  polymarketAddress  String?
+  updatedAt          DateTime @default(now()) @updatedAt
+}
+
+model GuardrailLog {
+  id        String   @id @default(cuid())
+  rule      String
+  triggered Boolean  @default(false)
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model ProviderSyncRecord {
+  id                String   @id @default(cuid())
+  provider          String
+  feedType          String
+  totalSynchronized Int      @default(0)
+  totalEligible     Int      @default(0)
+  totalSkipped      Int      @default(0)
+  totalStale        Int      @default(0)
+  totalFailed       Int      @default(0)
+  latencyMs         Float    @default(0)
+  status            String   @default("SUCCESS")
+  lastSyncAt        DateTime @default(now())
+
+  @@index([provider, feedType])
+}
+
+model BrokerReconciliation {
+  id                  String   @id @default(cuid())
+  broker              String
+  brokerOrderId       String
+  localTradeId        String?
+  symbol              String
+  orderStatus         String
+  submittedQty        Float
+  filledQty           Float
+  avgPrice            Float?
+  discrepancyDetected Boolean  @default(false)
+  discrepancyDetails  String?
+  timestamp           DateTime @default(now())
+}
+
+model AuthAuditLog {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String?
+  action    String
+  success   Int
+  reason    String?
+  timestamp DateTime @default(now())
+
+  @@index([email])
+  @@index([timestamp])
+}
+
+model RevokedToken {
+  token     String    @id
+  revokedAt DateTime  @default(now())
+  expiresAt DateTime?
+}
+
+model TradeLifecycleAudit {
+  id                   String    @id @default(cuid())
+  correlationId        String
+  account              String?
+  provider             String?
+  environment          String?
+  strategy             String?
+  symbol               String?
+  previousState        String?
+  newState             String?
+  providerTimestamp    DateTime?
+  applicationTimestamp DateTime  @default(now())
+  sourceDataIds        Json?
+  reason               String?
+  errors               Json?
+  retryCount           Int       @default(0)
+  modelVersion         String?
+  configVersion        String?
+  metadata             Json?
+
+  @@index([correlationId])
+  @@index([symbol])
+}
+
+model InvestmentThesis {
+  id                     String   @id @default(cuid())
+  symbol                 String
+  version                Int      @default(1)
+  thesis                 String
+  targetHorizonDays      Int?
+  reviewConditions       Json?
+  invalidationConditions Json?
+  valuationMultiple      Float?
+  targetPrice            Float?
+  status                 String   @default("ACTIVE")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @default(now()) @updatedAt
+
+  @@index([symbol])
+}
+
+model EventIntelligence {
+  id                  String    @id @default(cuid())
+  provider            String
+  originalId          String?
+  url                 String?
+  publishedAt         DateTime
+  receivedAt          DateTime  @default(now())
+  symbols             Json?
+  headline            String
+  normalizedText      String?
+  duplicateGroup      String?
+  language            String    @default("en")
+  sentimentModel      String?
+  modelVersion        String?
+  sentimentScore      Float?
+  relevanceScore      Float?
+  noveltyScore        Float?
+  eventClassification String?
+  confidence          Float?
+  isScheduled         Boolean   @default(false)
+  expiration          DateTime?
+  licensingStatus     String    @default("VERIFIED_PUBLIC")
+  evidenceStatus      String    @default("VERIFIED")
+
+  @@index([publishedAt])
 }

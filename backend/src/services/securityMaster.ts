@@ -1,3 +1,4 @@
+import { secUserAgent } from '../utils/secUserAgent';
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
@@ -156,7 +157,7 @@ class SecurityMasterService {
           totalStale: record.totalStale,
           totalFailed: record.totalFailed,
           latencyMs: record.latencyMs,
-          lastSyncAt: record.lastSyncAt,
+          lastSyncAt: new Date(record.lastSyncAt).toISOString(),
           status: record.status as any,
         };
       }
@@ -210,7 +211,7 @@ class SecurityMasterService {
 
       // 2. Fetch authoritative SEC EDGAR directory of 10,000+ US publicly traded equities
       const secFeedResp = await axios.get('https://www.sec.gov/files/company_tickers.json', {
-        headers: { 'User-Agent': 'ApexTradingPlatform/2.0 (contact: admin@apex.local)' },
+        headers: { 'User-Agent': secUserAgent() },
         timeout: 20000
       }).catch((err) => {
         logger.warn('SEC directory fetch warning', { error: err.message });

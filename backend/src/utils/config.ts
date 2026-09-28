@@ -28,7 +28,6 @@ export interface ValidatedConfig {
   };
   DATABASE: {
     url?: string;
-    sqlitePath: string;
   };
   RISK: {
     maxPositionSizePct: number;
@@ -105,8 +104,13 @@ export function validateConfig(): ValidatedConfig {
   // Fail-closed safety rule: Never enable live mode simply because live credentials exist.
   // Live mode requires BOTH explicit TRADING_MODE=live AND verified live credentials.
   let activeMode: TradingMode = 'paper';
+  // A third, deliberate switch: live money needs LIVE_TRADING_CONFIRMED set to
+  // an exact phrase, so a copied .env or a typo in TRADING_MODE can't go live.
+  const liveConfirmed = cleanEnvValue(process.env.LIVE_TRADING_CONFIRMED) === 'I_ACCEPT_REAL_MONEY_RISK';
   if (tradingMode === 'live') {
-    if (isLiveConfigured) {
+    if (isLiveConfigured && !liveConfirmed) {
+      logger.warn('⚠️ TRADING_MODE=live but LIVE_TRADING_CONFIRMED is not set to I_ACCEPT_REAL_MONEY_RISK. Staying on PAPER.');
+    } else if (isLiveConfigured) {
       activeMode = 'live';
       logger.warn('⚠️ LIVE TRADING MODE ENABLED with authenticated Alpaca Live credentials.');
     } else {
@@ -145,7 +149,6 @@ export function validateConfig(): ValidatedConfig {
     },
     DATABASE: {
       url: cleanEnvValue(process.env.DATABASE_URL),
-      sqlitePath: process.env.SQLITE_DB_PATH || 'backend/data/apex_trading.db',
     },
     RISK: {
       maxPositionSizePct: Number(cleanEnvValue(process.env.MAX_POSITION_SIZE_PCT)) || 15,
@@ -181,7 +184,7 @@ export function getSafeProviderStatus() {
       gammaUrl: appConfig.POLYMARKET.gammaApiUrl,
     },
     persistence: {
-      engine: 'SQLite (node:sqlite WAL)',
+      engine: 'PostgreSQL (Prisma)',
       storageReady: true,
     }
   };

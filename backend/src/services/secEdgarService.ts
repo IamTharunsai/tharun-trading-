@@ -1,3 +1,4 @@
+import { secUserAgent } from '../utils/secUserAgent';
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
@@ -16,7 +17,7 @@ export interface SecFilingItem {
 }
 
 class SecEdgarService {
-  private userAgent = 'ApexTradingPlatform/2.0 (contact: admin@apex.local; compliant SEC EDGAR automated collector)';
+  private userAgent = secUserAgent();
   private lastRequestTime = 0;
   private minIntervalMs = 110; // Capped strictly to <= 9 requests/second (SEC limit is 10/sec)
   private cikToTickerMap = new Map<string, string>();
@@ -153,7 +154,7 @@ class SecEdgarService {
               noveltyScore: 1.0,
               eventClassification: formType === '8-K' ? 'MATERIAL_CORPORATE_EVENT' : (formType === '4' ? 'INSIDER_FILING' : 'SEC_FILING'),
               confidence: 0.95,
-              isScheduled: formType === '10-K' || formType === '10-Q' ? 1 : 0,
+              isScheduled: formType === '10-K' || formType === '10-Q',
               licensingStatus: 'VERIFIED_PUBLIC',
               evidenceStatus: 'VERIFIED'
             }

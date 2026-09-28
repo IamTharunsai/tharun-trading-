@@ -7,8 +7,8 @@ import { prisma } from '../utils/prisma';
 let KILL_SWITCH_ACTIVE = false;
 
 function persist(active: boolean) {
-  prisma.settings?.update?.({ data: { killSwitchActive: active } })
-    ?.catch?.((err: any) => logger.error('Failed to persist kill switch state', { error: err?.message }));
+  prisma.settings.upsert({ where: { id: 'settings-1' }, create: { id: 'settings-1', killSwitchActive: active }, update: { killSwitchActive: active } })
+    .catch((err: any) => logger.error('Failed to persist kill switch state', { error: err?.message }));
 }
 
 export async function loadKillSwitchState(): Promise<boolean> {

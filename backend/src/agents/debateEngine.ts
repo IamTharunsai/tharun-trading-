@@ -1061,7 +1061,7 @@ export async function loadDebateCheckpoint(
     return {
       status: checkpoint.status,
       round1Results: checkpoint.round1Results as any[],
-      round2Exchange: checkpoint.round2Exchange as CrossExam | null,
+      round2Exchange: checkpoint.round2Exchange as unknown as CrossExam | null,
     };
   } catch (err) {
     logger.warn('Failed to load debate checkpoint', { asset, err });

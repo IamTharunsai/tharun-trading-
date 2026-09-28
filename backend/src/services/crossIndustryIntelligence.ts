@@ -327,7 +327,7 @@ class CrossIndustryIntelligenceService {
 
         const headline = matchingArticle?.headline || `Macro Shock Active: ${model.triggerDescription}`;
         const source = matchingArticle?.source || 'SEC EDGAR / Macro Intelligence';
-        const publishedAt = matchingArticle?.publishedAt || new Date().toISOString();
+        const publishedAt = matchingArticle?.publishedAt ? new Date(matchingArticle.publishedAt).toISOString() : new Date().toISOString();
 
         for (const impact of model.impacts) {
           if (impact.impactType !== 'BENEFICIARY') continue; // Highlight the boom opportunities

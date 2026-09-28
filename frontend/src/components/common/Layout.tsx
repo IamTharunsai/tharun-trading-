@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
   TrendingUp, BookOpen, Newspaper, Settings, LogOut,
   Power, Zap, Eye, MessageSquare, Users, Globe2,
-  FileSpreadsheet, ShieldAlert, Cpu, Radio
+  FileSpreadsheet, ShieldAlert, Cpu, Radio, Menu, X
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 
@@ -54,6 +54,7 @@ const NAV_GROUPS = [
 export default function Layout() {
   const { killSwitchActive, setKillSwitch, logout } = useStore();
   const navigate = useNavigate();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [timeUtc, setTimeUtc] = useState('');
   const [timeEst, setTimeEst] = useState('');
 
@@ -124,8 +125,15 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
-      {/* ── Sidebar ──────────────────────────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-y-auto shadow-xs">
+      {/* Mobile: dimmed backdrop behind the slide-in menu */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
+      {/* ── Sidebar (slide-in drawer under 768px, fixed column above) ── */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 flex-shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-y-auto shadow-xs transform transition-transform duration-200 md:static md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setMobileNavOpen(false); }}
+      >
         {/* Brand header */}
         <div className="p-4 border-b border-slate-200">
           <div className="flex items-center gap-2.5 mb-2">
@@ -215,13 +223,20 @@ export default function Layout() {
         {/* Top Ticker Bar & Terminal Controls */}
         <div className="bg-white border-b border-slate-200 flex items-center justify-between px-4 py-1.5 text-xs font-mono shadow-xs">
           <div className="flex items-center gap-4">
-            <span className="text-blue-700 font-bold">TERMINAL FEED:</span>
+            <button
+              className="md:hidden p-1 -ml-1 rounded text-slate-700 hover:bg-slate-100"
+              aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+              onClick={() => setMobileNavOpen(o => !o)}
+            >
+              {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <span className="text-blue-700 font-bold hidden sm:inline">TERMINAL FEED:</span>
             <span className="text-slate-600">{timeEst}</span>
-            <span className="text-slate-300">|</span>
-            <span className="text-slate-600">{timeUtc}</span>
+            <span className="text-slate-300 hidden sm:inline">|</span>
+            <span className="text-slate-600 hidden sm:inline">{timeUtc}</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-3">
             <span className="text-emerald-600 font-bold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               SCHEDULER ONLINE
@@ -233,7 +248,7 @@ export default function Layout() {
 
         <LiveTicker />
 
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
           <Outlet />
         </main>
       </div>

@@ -294,7 +294,8 @@ portfolioRouter.get('/breakdown', async (_req: Request, res: Response) => {
 });
 
 portfolioRouter.get('/db-health', async (_req: Request, res: Response) => {
-  res.json(prisma.getDatabaseHealth ? prisma.getDatabaseHealth() : { healthy: true, engine: 'SQLite' });
+  const { checkDatabaseHealth } = await import('../utils/prisma');
+  res.json(await checkDatabaseHealth());
 });
 
 portfolioRouter.get('/snapshots', async (req: Request, res: Response) => {
@@ -526,6 +527,26 @@ marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
   }
 });
 
+// Polymarket US (regulated exchange) — account + market data. Owner-only.
+marketRouter.get('/polymarket-us/account', requireOwner, async (_req: Request, res: Response) => {
+  try {
+    const svc = await import('../services/polymarketUS');
+    if (!svc.isPolymarketUSConfigured()) return res.json({ connected: false, reason: 'POLYMARKET_KEY_ID / POLYMARKET_SECRET_KEY not set' });
+    res.json(await svc.getPolymarketUSAccount());
+  } catch (err: any) {
+    res.status(502).json({ connected: false, error: err?.message || 'Polymarket US request failed' });
+  }
+});
+
+marketRouter.get('/polymarket-us/events', async (req: Request, res: Response) => {
+  try {
+    const { listPolymarketUSEvents } = await import('../services/polymarketUS');
+    res.json(await listPolymarketUSEvents(Math.min(parseInt(String(req.query.limit || '20')) || 20, 100)));
+  } catch (err: any) {
+    res.status(502).json({ error: err?.message || 'Polymarket US request failed' });
+  }
+});
+
 marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: Response) => {
   try {
     const { predictionId, outcome = 'YES', amount = 10 } = req.body;
@@ -533,19 +554,22 @@ marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: 
     if (!pred) return res.status(404).json({ error: 'Prediction market not found' });
 
     const price = outcome === 'YES' ? pred.yesPrice : pred.noPrice;
+    if (!price || price <= 0 || price >= 1) return res.status(400).json({ error: 'Prediction has no valid price for that outcome' });
     const shares = parseFloat((amount / price).toFixed(2));
 
     const trade = await prisma.trade.create({
       data: {
         id: `poly-wager-${Date.now()}`,
-        asset: pred.title.slice(0, 30) + '...',
+        asset: 'POLYMARKET',
         market: 'polymarket',
         type: outcome === 'YES' ? 'BUY' : 'SELL',
         entryPrice: price,
         quantity: shares,
-        pnl: 0,
         status: 'OPEN',
+        stopLossPrice: 0,
+        takeProfitPrice: 1, // share-based accounting marker (see polymarket.ts)
         metadata: {
+          title: pred.title,
           predictionId: pred.id,
           expectedValue: pred.expectedValue,
           kellyFraction: pred.kellyFraction,
