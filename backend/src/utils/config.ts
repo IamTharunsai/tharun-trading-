@@ -79,8 +79,13 @@ export function validateConfig(): ValidatedConfig {
   const requireSecret = (name: string): string => {
     const v = cleanEnvValue(process.env[name]);
     if (v && v.length >= 32) return v;
+    if (v) {
+      // Set but short: keep working (an outage is worse), but say so loudly.
+      logger.error(`🔐 ${name} is only ${v.length} characters — replace it with 32+ random characters (openssl rand -hex 32)`);
+      return v;
+    }
     if (isProd) {
-      throw new Error(`${name} must be set to a random value of at least 32 characters in production`);
+      throw new Error(`${name} must be set in production (32+ random characters)`);
     }
     logger.warn(`⚠️ ${name} missing/short — using an ephemeral random value (dev only)`);
     return crypto.randomBytes(48).toString('hex');
