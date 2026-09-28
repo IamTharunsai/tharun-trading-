@@ -165,3 +165,13 @@ process.on('unhandledRejection', (reason: any) => {
 });
 
 export { app, server };
+
+// Standalone entrypoint (Railway runs `node dist/index.js`). Since the Sep 25
+// refactor, listen() only happened when the root server.ts called boot(), so
+// the deployed backend never opened its port and failed every healthcheck.
+if (typeof require !== "undefined" && typeof module !== "undefined" && require.main === module) {
+  boot(parseInt(process.env.PORT || '4000', 10)).catch((err) => {
+    logger.error('Fatal boot error', { error: err instanceof Error ? err.message : String(err) });
+    process.exit(1);
+  });
+}
