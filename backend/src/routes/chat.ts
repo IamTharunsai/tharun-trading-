@@ -127,7 +127,7 @@ chatRouter.get('/:agentId/history', async (req: AuthRequest, res: Response) => {
       orderBy: { timestamp: 'desc' },
       take: 50
     });
-    return res.json(history.map(h => ({ id: h.id, timestamp: h.timestamp, ...(h.metadata as any) })));
+    return res.json(history.map((h: any) => ({ id: h.id, timestamp: h.timestamp, ...(h.metadata as any) })));
   } catch (error) {
     return res.status(500).json({ error: 'Failed to load history' });
   }

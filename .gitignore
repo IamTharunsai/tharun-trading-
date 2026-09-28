@@ -54,3 +54,9 @@ out/
 !.env.example
 .claude/
 .superpowers/
+
+# SQLite anywhere in the tree (never commit trading data)
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/data/*.db*

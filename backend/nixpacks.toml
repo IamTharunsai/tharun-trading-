@@ -1,5 +1,6 @@
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+# node:sqlite (the real datastore, utils/prisma.ts) needs Node >= 22.5
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 # --include=dev forces devDependencies (typescript, prisma, etc.) to install
@@ -10,10 +11,11 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm install --include=dev"]
 
 [phases.build]
-cmds = [
-  "npx prisma generate --schema=./prisma/schema.prisma",
-  "npm run build"
-]
+cmds = ["npm run build"]
 
 [start]
-cmd = "npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss && node dist/index.js"
+# The app does NOT use Prisma/Postgres at runtime (utils/prisma.ts is a SQLite
+# layer). `prisma db push --accept-data-loss` only risked wiping a database.
+# Mount a Railway volume and set SQLITE_DB_PATH=/data/apex_trading.db so data
+# survives redeploys.
+cmd = "node dist/index.js"

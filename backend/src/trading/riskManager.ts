@@ -5,6 +5,8 @@ import { getIO } from '../websocket/server';
 import { activateKillSwitch } from '../agents/orchestrator';
 import { correlationService } from '../services/correlationService';
 import { LifecycleStateMachine, LifecycleState } from './lifecycleStateMachine';
+import { getTradingBroker } from './brokerRouter';
+import { confirmOrderFill } from './executionEngine';
 
 // ── RISK MANAGER ──────────────────────────────────────────────────────────────
 export async function validateTradeSignal(
@@ -49,10 +51,17 @@ export async function validateTradeSignal(
     return { approved: false, reason: `Daily trade limit: ${portfolio.tradesExecutedToday}` };
   }
 
-  // Cash reserve check
-  const cashPct = (portfolio.cashBalance / portfolio.totalValue) * 100;
+  // Fail closed on a broken/empty portfolio read — NaN comparisons are always
+  // false, which previously let every later check pass.
+  if (!Number.isFinite(portfolio.totalValue) || portfolio.totalValue <= 0 || !Number.isFinite(portfolio.cashBalance)) {
+    return { approved: false, reason: 'Portfolio value unavailable — refusing to trade blind' };
+  }
+
+  // Cash reserve check — measured AFTER this trade spends its cash.
+  const tradeValue = portfolio.totalValue * ((signal.positionSizePct || 0) / 100);
+  const cashPct = ((portfolio.cashBalance - tradeValue) / portfolio.totalValue) * 100;
   if (cashPct < cashReservePct) {
-    return { approved: false, reason: `Cash reserve too low: ${cashPct.toFixed(1)}% (min: ${cashReservePct}%)` };
+    return { approved: false, reason: `Cash reserve would drop to ${cashPct.toFixed(1)}% (min: ${cashReservePct}%)` };
   }
 
   // Position concentration check — signal.positionSizePct is already a
@@ -124,8 +133,40 @@ export async function checkStopLosses(currentPrices: Record<string, number>) {
   }
 }
 
-export async function closePosition(position: any, exitPrice: number, reason: string) {
+export async function closePosition(position: any, requestedExitPrice: number, reason: string) {
   const isShort = position.side === 'SELL';
+
+  // Find the trade that opened this position (broker-confirmed OPEN or a local simulation).
+  const openTrade = await prisma.trade.findFirst({ where: { asset: position.asset, status: 'OPEN' } })
+    || await prisma.trade.findFirst({ where: { asset: position.asset, status: 'LOCAL_SIMULATION' } });
+
+  // ── SEND THE EXIT TO THE BROKER ─────────────────────────────────────────────
+  // Previously this function only updated the local DB, so an app-monitored
+  // stop "closed" the position on screen while the real shares stayed open at
+  // Alpaca. Now: if the entry was broker-confirmed, flatten it at the broker
+  // (cancelling any bracket legs first) and use the real fill as exit price.
+  let exitPrice = requestedExitPrice;
+  if (openTrade?.brokerConfirmed && position.market === 'stocks') {
+    const broker = getTradingBroker();
+    if (!broker) {
+      logger.error(`🚨 Cannot close ${position.asset} at broker — no broker credentials. Position left OPEN for manual action.`);
+      getIO()?.emit('guardrail:triggered', { rule: 'EXIT_FAILED_NO_BROKER', asset: position.asset });
+      return { pnl: 0, pnlPct: 0, closed: false };
+    }
+    try {
+      const exitOrder = await broker.flattenSymbol(position.asset);
+      if (exitOrder?.id) {
+        const fill = await confirmOrderFill(broker, exitOrder.id).catch(() => null);
+        if (fill?.fillPrice) exitPrice = fill.fillPrice;
+      }
+      // exitOrder === null → broker already flat (bracket stop/target filled there).
+    } catch (err: any) {
+      logger.error(`🚨 Broker exit FAILED for ${position.asset} — position left OPEN, will retry`, { error: err?.response?.data?.message || err.message });
+      getIO()?.emit('guardrail:triggered', { rule: 'EXIT_FAILED', asset: position.asset });
+      return { pnl: 0, pnlPct: 0, closed: false };
+    }
+  }
+
   const pnl = isShort
     ? (position.entryPrice - exitPrice) * position.quantity
     : (exitPrice - position.entryPrice) * position.quantity;
@@ -134,10 +175,6 @@ export async function closePosition(position: any, exitPrice: number, reason: st
     : ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
 
   // Close the trade
-  const openTrade = await prisma.trade.findFirst({
-    where: { asset: position.asset, status: 'OPEN' }
-  });
-
   if (openTrade) {
     await prisma.trade.update({
       where: { id: openTrade.id },
@@ -217,5 +254,5 @@ export async function closePosition(position: any, exitPrice: number, reason: st
 
   getIO()?.emit('position:closed', { asset: position.asset, exitPrice, pnl, pnlPct, reason });
   logger.info(`Position closed: ${position.asset} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) | Reason: ${reason}`);
-  return { pnl, pnlPct };
+  return { pnl, pnlPct, closed: true };
 }

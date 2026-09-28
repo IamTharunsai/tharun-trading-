@@ -330,9 +330,10 @@ export async function analyzeChartIntelligence(symbol: string, market: 'stocks' 
   }
 
   // Calculate Relative Volume (RVol)
-  const lastVol = candles.length ? candles[candles.length - 1].volume : 1500000;
+  // No candles → no RVol (was a hard-coded 1,500,000 / 1 = "1500000x RVol").
+  const lastVol = candles.length ? candles[candles.length - 1].volume : 0;
   const avgVol = candles.slice(-20).reduce((acc, c) => acc + c.volume, 0) / (Math.min(20, candles.length) || 1);
-  const rvol = parseFloat((lastVol / (avgVol || 1)).toFixed(2));
+  const rvol = avgVol > 0 ? parseFloat((lastVol / avgVol).toFixed(2)) : 0;
   const isInstitutionalVolume = rvol >= 1.3;
 
   // OBV calculation

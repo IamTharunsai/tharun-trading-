@@ -245,6 +245,34 @@ export class AlpacaBroker {
     }
   }
 
+  /** Cancel every open order on the account (used by the kill switch). */
+  async cancelAllOrders(): Promise<void> {
+    await this.client.delete('/v2/orders');
+    logger.warn('🛑 Alpaca: all open orders cancelled');
+  }
+
+  /** Liquidate every position and cancel open orders (used by the kill switch). */
+  async closeAllPositions(): Promise<any[]> {
+    const response = await this.client.delete('/v2/positions', { params: { cancel_orders: true } });
+    logger.warn('🛑 Alpaca: all positions liquidated');
+    return response.data || [];
+  }
+
+  /**
+   * Flatten one symbol: cancel its open orders first (bracket legs would
+   * otherwise hold the shares and block the close), then liquidate what is
+   * left. Returns null when there was no position at the broker.
+   */
+  async flattenSymbol(symbol: string): Promise<AlpacaOrder | null> {
+    const open = await this.getOrders('open', 500);
+    for (const o of open.filter(o => o.symbol === symbol)) {
+      await this.cancelOrder(o.id).catch(() => {});
+    }
+    const pos = await this.getPosition(symbol);
+    if (!pos) return null;
+    return this.closePosition(symbol);
+  }
+
   /**
    * Close position (sell all)
    */

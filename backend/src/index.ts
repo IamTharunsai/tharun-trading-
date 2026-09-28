@@ -35,8 +35,14 @@ const server = http.createServer(app);
 app.use(helmet({ contentSecurityPolicy: false, frameguard: false }));
 app.use(compression() as any);
 
+const allowedOrigins = [
+  'http://localhost:3000', 'http://localhost:5173',
+  ...String(process.env.FRONTEND_URL || '').split(',').map(s => s.trim()).filter(Boolean),
+];
 app.use(cors({
-  origin: true,
+  // Reflecting every origin with credentials (origin: true) lets any website
+  // call the API from a logged-in browser. Only allow known frontends.
+  origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 }));
@@ -103,6 +109,10 @@ export async function boot(port: number = 3000) {
     // Test DB connection
     await prisma.$connect();
     logger.info('✅ Database connected');
+
+    // Restore kill switch state before any scheduler can trade
+    const { loadKillSwitchState } = await import('./agents/orchestrator');
+    await loadKillSwitchState();
 
     // Init WebSocket
     initWebSocket(server);

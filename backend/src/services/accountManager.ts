@@ -161,7 +161,8 @@ class AccountManager {
       }
 
       logger.info(`✅ Alpaca successfully connected! Account: ${acc.account_number} (${paperMode ? 'PAPER' : 'LIVE'}), Value: $${acc.portfolio_value}`);
-      return { success: true, account: this.alpacaState };
+      const { apiKey: _k, secretKey: _s, ...safeAccount } = this.alpacaState as any;
+      return { success: true, account: safeAccount };
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.message || 'Authentication failed';
       this.alpacaState = {

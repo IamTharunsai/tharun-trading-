@@ -4,66 +4,14 @@ import { TradeSignal, PortfolioState } from '../agents/types';
 import { getIO } from '../websocket/server';
 import { validateWithTopTraderRules } from '../services/topTraderRules';
 import { checkTradeViability, calculateMicroPosition, getAccountMode, EXCHANGE_FEES } from '../services/microAccountEngine';
-import { isPlaceholderKey } from '../utils/apiKeys';
 import { LifecycleStateMachine, LifecycleState } from './lifecycleStateMachine';
+import { getTradingBroker, getActiveMode } from './brokerRouter';
 
-// Conditional broker imports based on trading mode
-let alpacaClient: any = null;
-let binanceClient: any = null;
-
-async function getBrokerClient(market: string) {
-  if (market === 'crypto') {
-    if (isPlaceholderKey(process.env.BINANCE_API_KEY) || isPlaceholderKey(process.env.BINANCE_SECRET_KEY)) {
-      return null;
-    }
-    if (!binanceClient) {
-      try {
-        // @ts-ignore - Optional dependency
-        const binance = await import('@binance/connector');
-        const { Spot } = binance as any;
-        binanceClient = new Spot(process.env.BINANCE_API_KEY, process.env.BINANCE_SECRET_KEY, {
-          baseURL: 'https://api.binance.us'
-        });
-      } catch (err) {
-        logger.warn('Binance connector not available — using paper trading mode', { error: err });
-        return null;
-      }
-    }
-    return binanceClient;
-  } else {
-    if (isPlaceholderKey(process.env.ALPACA_API_KEY) || isPlaceholderKey(process.env.ALPACA_SECRET_KEY)) {
-      return null;
-    }
-    if (!alpacaClient) {
-      try {
-        const Alpaca = require('@alpacahq/alpaca-trade-api');
-        alpacaClient = new Alpaca({
-          keyId: process.env.ALPACA_API_KEY,
-          secretKey: process.env.ALPACA_SECRET_KEY,
-          baseUrl: process.env.ALPACA_BASE_URL,
-          paper: process.env.TRADING_MODE === 'paper'
-        });
-      } catch (err) {
-        logger.warn('Alpaca client not available — using paper trading mode', { error: err });
-        return null;
-      }
-    }
-    return alpacaClient;
-  }
-}
-
-// Polls a just-placed Alpaca order until it reaches the terminal 'filled'
-// status, then returns the REAL fill price/qty — never the pre-trade quote.
-// Must check status === 'filled' specifically, not just a truthy
-// filled_avg_price: Alpaca populates that field as soon as ANY shares fill,
-// while status stays 'partially_filled' until the rest finishes working.
-// Trusting the first partial fill would record e.g. 10-of-100 shares as the
-// whole (closed) position, leaving the other 90 live on Alpaca's book with
-// nothing tracking them locally. If the order never reaches 'filled' within
-// this window, throws rather than falling back to the stale quote — used to
-// be the exact root cause of a ~$204 phantom unrealized gain on a real NVDA
-// position, and (separately) a $1,060 fully-fabricated profit on an SDOT
-// order that Alpaca had actually rejected.
+// Polls a just-placed order until it reaches the terminal 'filled' status,
+// then returns the REAL fill price/qty — never the pre-trade quote.
+// status === 'filled' is required (not just a truthy filled_avg_price), because
+// Alpaca sets filled_avg_price on the first partial fill. Throws instead of
+// falling back to the quote (root cause of past phantom NVDA/SDOT P&L).
 export async function confirmOrderFill(client: any, orderId: string, attempts = 5, pollIntervalMs = 1000): Promise<{ fillPrice: number; fillQty: number }> {
   for (let attempt = 0; attempt < attempts; attempt++) {
     await new Promise(r => setTimeout(r, pollIntervalMs));
@@ -78,86 +26,135 @@ export async function confirmOrderFill(client: any, orderId: string, attempts = 
   throw new Error('Order did not reach a confirmed fill within the poll window — not tracking an unconfirmed quantity/price as real');
 }
 
+/**
+ * Builds the Alpaca order for a stock signal.
+ * - Whole-share quantity (>=1): bracket order (broker-hosted stop + target), GTC
+ *   so protection survives overnight.
+ * - Fractional quantity (<1 share, typical for a $100 account): Alpaca does not
+ *   allow bracket orders on fractional qty, so a plain DAY market order is sent
+ *   and the stop/target are monitored by the app (checkStopLosses).
+ * The old code forced qty up to at least 1 share (Math.max(1, …)), which could
+ * buy a $200 share with a $100 account.
+ */
+export function buildStockOrder(signal: TradeSignal, qty: number): { payload: any; protection: 'BROKER_HOSTED' | 'APPLICATION_MONITORED' } | null {
+  const side = signal.direction === 'BUY' ? 'buy' : 'sell';
+  const wholeShares = Math.floor(qty);
+  const validLevels = signal.stopLossPrice > 0 && signal.takeProfitPrice > 0;
+
+  if (wholeShares >= 1 && validLevels) {
+    return {
+      protection: 'BROKER_HOSTED',
+      payload: {
+        symbol: signal.asset,
+        qty: wholeShares,
+        side,
+        type: 'market',
+        time_in_force: 'gtc',
+        order_class: 'bracket',
+        take_profit: { limit_price: parseFloat(signal.takeProfitPrice.toFixed(2)) },
+        stop_loss: { stop_price: parseFloat(signal.stopLossPrice.toFixed(2)) },
+      },
+    };
+  }
+
+  const fractional = Math.floor(qty * 10000) / 10000;
+  if (fractional <= 0) return null;
+  // Fractional orders must be DAY market orders and cannot open shorts.
+  if (side === 'sell') return null;
+  return {
+    protection: 'APPLICATION_MONITORED',
+    payload: { symbol: signal.asset, qty: fractional, side, type: 'market', time_in_force: 'day' },
+  };
+}
+
+const LIFECYCLE_STEPS: Array<[LifecycleState, (c: any) => string]> = [
+  [LifecycleState.DATA_VALIDATED, () => 'Input quote and tick integrity validated'],
+  [LifecycleState.UNIVERSE_FILTERED, () => 'Security master eligibility and tradability confirmed'],
+  [LifecycleState.CANDIDATE_GENERATED, () => 'Trade candidate generated with R:R targets'],
+  [LifecycleState.STRATEGY_ANALYZED, () => 'Strategy gates and Top Trader Rules validated'],
+  [LifecycleState.AGENTS_EVALUATED, c => `AI agents consensus reached (${c.confidence}%)`],
+  [LifecycleState.RISK_CHECKED, () => 'Portfolio drawdown and fee viability verified'],
+  [LifecycleState.ORDER_PLANNED, c => `Order planned for ${c.qty} units`],
+  [LifecycleState.FRESH_DATA_REVALIDATED, () => 'Pre-flight quote freshness confirmed prior to dispatch'],
+  [LifecycleState.ORDER_SUBMITTED, c => `Order submitted (${c.orderId})`],
+  [LifecycleState.PROVIDER_ACCEPTED, c => `Order accepted (${c.reconciliation})`],
+  [LifecycleState.FILLED, c => `Filled ${c.fillQty} @ $${c.fillPrice}`],
+  [LifecycleState.PROTECTION_VERIFIED, c => `Protective levels: SL $${c.sl}, TP $${c.tp} (${c.protection})`],
+  [LifecycleState.POSITION_MONITORED, () => 'Position opened and active in portfolio monitoring'],
+];
+
+async function recordEntryLifecycle(tradeId: string, signal: TradeSignal, provider: string, ctx: any) {
+  try {
+    const corrId = `corr-${tradeId}`;
+    const base = { correlationId: corrId, provider, environment: getActiveMode(), strategy: 'INTRADAY', symbol: signal.asset } as any;
+    await LifecycleStateMachine.start({ ...base, sourceDataIds: [signal.asset, String(signal.entryPrice)], reason: `Initiating ${signal.direction} order flow` });
+    for (const [state, reason] of LIFECYCLE_STEPS) {
+      await LifecycleStateMachine.transition({ ...base, newState: state, reason: reason(ctx) });
+    }
+  } catch (err: any) {
+    logger.warn('Lifecycle transition warning', { error: err.message });
+  }
+}
+
 export async function executeTradeSignal(
   signal: TradeSignal,
   portfolioState: PortfolioState
 ): Promise<boolean> {
+  const mode = getActiveMode();
+  logger.info(`💰 Executing ${signal.direction} for ${signal.asset}`, { mode: mode.toUpperCase(), price: signal.entryPrice, confidence: signal.confidence });
 
-  const isPaper = process.env.TRADING_MODE !== 'live';
-  logger.info(`💰 Executing ${signal.direction} for ${signal.asset}`, {
-    mode: isPaper ? 'PAPER' : 'LIVE',
-    price: signal.entryPrice,
-    confidence: signal.confidence
-  });
+  // ── Hard gates that no amount of AI confidence can bypass ──────────────────
+  if (signal.market === 'stocks' && signal.direction === 'SELL' && process.env.ALLOW_SHORT_SELLING !== 'true') {
+    // Opening shorts needs a margin account (>$2,000 equity at Alpaca) and
+    // borrow availability; a SELL "entry" on a small cash account is always rejected.
+    logger.warn(`🚫 Short entry blocked for ${signal.asset} (set ALLOW_SHORT_SELLING=true on a margin account to enable)`);
+    return false;
+  }
+  if (mode === 'live' && signal.market !== 'stocks') {
+    logger.warn(`🚫 Live ${signal.market} execution is not implemented safely (no fill confirmation / position tracking). Skipping ${signal.asset}.`);
+    return false;
+  }
 
-  // ── TOP TRADER RULES VALIDATION (25 laws) ─────────────────────────────────
-  const exchange = signal.market === 'stocks' ? 'alpaca_stocks' : 'bybit_spot';
+  // ── TOP TRADER RULES VALIDATION ────────────────────────────────────────────
+  const exchange = (signal.market === 'stocks' ? 'alpaca_stocks' : 'bybit_spot') as keyof typeof EXCHANGE_FEES;
   const stopDistancePct = Math.abs(signal.entryPrice - signal.stopLossPrice) / signal.entryPrice;
   const expectedReturnPct = Math.abs(signal.takeProfitPrice - signal.entryPrice) / signal.entryPrice;
   const positionSizeEst = portfolioState.totalValue * (signal.positionSizePct / 100 || 0.01);
 
   const topTraderCheck = await validateWithTopTraderRules(
-    signal,
-    portfolioState,
-    signal.confidence,
-    Math.round(signal.confidence * 0.25), // estimate vote count from confidence
-    25,
-    exchange,
-    expectedReturnPct
+    signal, portfolioState, signal.confidence, Math.round(signal.confidence * 0.25), 25, exchange, expectedReturnPct
   );
-
   if (!topTraderCheck.approved) {
     logger.warn(`🚫 TOP TRADER RULES BLOCKED trade on ${signal.asset}:`);
     topTraderCheck.violations.forEach(v => logger.warn(`   ${v}`));
     return false;
   }
 
-  // ── TRADE VIABILITY CHECK (fee analysis) ──────────────────────────────────
-  const viability = checkTradeViability(
-    portfolioState.totalValue,
-    positionSizeEst,
-    expectedReturnPct,
-    stopDistancePct,
-    exchange as keyof typeof EXCHANGE_FEES
-  );
-
+  const viability = checkTradeViability(portfolioState.totalValue, positionSizeEst, expectedReturnPct, stopDistancePct, exchange);
   if (!viability.viable) {
     logger.warn(`🚫 VIABILITY CHECK FAILED for ${signal.asset}: ${viability.reason}`);
     return false;
   }
 
-  // ── CALCULATE POSITION SIZE (micro-account optimized) ─────────────────────
   const accountMode = getAccountMode(portfolioState.drawdownFromPeak, portfolioState.pnlDayPct);
-  const microPos = calculateMicroPosition(
-    portfolioState.totalValue,
-    signal.entryPrice,
-    signal.stopLossPrice,
-    exchange as keyof typeof EXCHANGE_FEES,
-    signal.confidence,
-    accountMode.riskMultiplier
-  );
-
+  const microPos = calculateMicroPosition(portfolioState.totalValue, signal.entryPrice, signal.stopLossPrice, exchange, signal.confidence, accountMode.riskMultiplier);
   if (!microPos.isAboveMinimum) {
     logger.warn(`🚫 Position below exchange minimum for ${signal.asset}: ${microPos.recommendation}`);
     return false;
   }
-
-  const finalQty = microPos.shares;
-
-  if (finalQty <= 0) {
+  const plannedQty = microPos.shares;
+  if (!(plannedQty > 0)) {
     logger.warn(`Position size calculated as 0 for ${signal.asset} — skipping`);
     return false;
   }
+  // Never spend more cash than we have.
+  if (plannedQty * signal.entryPrice > portfolioState.cashBalance) {
+    logger.warn(`🚫 Insufficient cash for ${signal.asset}: need $${(plannedQty * signal.entryPrice).toFixed(2)}, have $${portfolioState.cashBalance.toFixed(2)}`);
+    return false;
+  }
 
-  // ── WRITE TO DB FIRST (before any order placement) ───────────────────────
-  // agentDecisionId is a nullable FK in the schema, but TradeSignal types it
-  // as a required string — force-trade (no real debate behind it) satisfied
-  // that by passing '', which Prisma then tried to satisfy as a real foreign
-  // key reference instead of treating as absent, failing every force-trade
-  // with a foreign key violation and aborting before any order was placed
-  // (confirmed safe — no untracked Alpaca order resulted, but no trade
-  // executed either). Omit the field entirely when there's no real ID.
-  let tradeRecord;
+  // ── WRITE TO DB FIRST (before any order placement) ─────────────────────────
+  let tradeRecord: any;
   try {
     tradeRecord = await prisma.trade.create({
       data: {
@@ -165,8 +162,8 @@ export async function executeTradeSignal(
         market: signal.market,
         type: signal.direction as any,
         entryPrice: signal.entryPrice,
-        quantity: finalQty,
-        status: 'OPEN',
+        quantity: plannedQty,
+        status: 'PENDING',
         stopLossPrice: signal.stopLossPrice,
         takeProfitPrice: signal.takeProfitPrice,
         ...(signal.agentDecisionId ? { agentDecisionId: signal.agentDecisionId } : {}),
@@ -177,330 +174,85 @@ export async function executeTradeSignal(
     return false;
   }
 
-  // ── PAPER TRADING: save to DB + send to Alpaca paper API ─────────────────
-  if (isPaper) {
-    logger.info(`📄 PAPER TRADE: ${signal.direction} ${finalQty.toFixed(4)} ${signal.asset} @ $${signal.entryPrice}`);
-    let brokerOrderId = `PAPER-${Date.now()}`;
-    // signal.entryPrice is the pre-trade quote — a market order can fill at a
-    // meaningfully different price by the time it executes (confirmed live:
-    // NVDA quoted at $202.78, actually filled at $206.92, a ~$204 phantom
-    // unrealized gain baked into every P&L figure downstream until this was
-    // caught). Reconciled below against Alpaca's real filled_avg_price once
-    // the order actually fills.
-    let fillPrice = signal.entryPrice;
-    let fillQty = finalQty;
+  let brokerOrderId = `local-sim-${Date.now()}`;
+  let fillPrice = signal.entryPrice;
+  let fillQty = plannedQty;
+  let brokerConfirmed = false;
+  let reconciliationStatus = 'UNCONFIRMED_LOCAL_SIMULATION';
+  let protectionStatus: string = 'APPLICATION_MONITORED';
+  let provider = 'SIMULATION';
 
-    let isBrokerConfirmed = false;
-    let reconciliationStatus = 'LOCAL_SIMULATION';
-    let protectionStatus = 'APPLICATION_MONITORED';
-
-    if (signal.market === 'stocks') {
-      const client = await getBrokerClient(signal.market);
-      if (client) {
-        try {
-          // Place real Alpaca paper order with native bracket protective stops where applicable
-          const orderPayload: any = {
-            symbol: signal.asset,
-            qty: Math.max(1, Math.floor(finalQty * 100) / 100),
-            side: signal.direction.toLowerCase(),
-            type: 'market',
-            time_in_force: 'day'
-          };
-
-          // Attach native broker bracket protection if prices are valid
-          if (signal.stopLossPrice && signal.takeProfitPrice && signal.stopLossPrice > 0 && signal.takeProfitPrice > 0) {
-            orderPayload.order_class = 'bracket';
-            orderPayload.take_profit = {
-              limit_price: parseFloat(signal.takeProfitPrice.toFixed(2))
-            };
-            orderPayload.stop_loss = {
-              stop_price: parseFloat(signal.stopLossPrice.toFixed(2))
-            };
-          }
-
-          const order = await client.createOrder(orderPayload);
-          brokerOrderId = order.id || brokerOrderId;
-          logger.info(`✅ Alpaca paper order placed: ${order.id}`);
-
-          const fill = await confirmOrderFill(client, order.id);
-          fillPrice = fill.fillPrice;
-          fillQty = fill.fillQty;
-          isBrokerConfirmed = true;
-          reconciliationStatus = 'BROKER_RECONCILED';
-          protectionStatus = orderPayload.order_class === 'bracket' ? 'BROKER_HOSTED' : 'APPLICATION_MONITORED';
-          logger.info(`💵 Real fill: ${signal.asset} @ $${fillPrice} (quoted $${signal.entryPrice})`);
-        } catch (brokerErr: any) {
-          logger.error(`🚫 Alpaca paper order FAILED for ${signal.asset} — not tracking as confirmed`, { error: brokerErr.message });
-          await prisma.trade.update({
-            where: { id: tradeRecord.id },
-            data: { status: 'REJECTED', exitReason: `Broker rejected: ${brokerErr.message}`, brokerConfirmed: false }
-          });
-          return false;
-        }
-      } else {
-        // Explicitly label as local simulation — NEVER claim broker confirmation
-        brokerOrderId = `local-sim-${Date.now()}`;
-        isBrokerConfirmed = false;
-        reconciliationStatus = 'UNCONFIRMED_LOCAL_SIMULATION';
-        protectionStatus = 'APPLICATION_MONITORED';
-        logger.info(`📝 Local simulation for ${signal.asset} @ $${fillPrice} (Broker disconnected; unconfirmed)`);
+  if (signal.market === 'stocks') {
+    const broker = getTradingBroker();
+    if (!broker) {
+      if (mode === 'live') {
+        await prisma.trade.update({ where: { id: tradeRecord.id }, data: { status: 'FAILED', exitReason: 'Live mode but no live broker credentials' } });
+        logger.error('🚫 LIVE mode without ALPACA_LIVE_* credentials — refusing to simulate a live trade');
+        return false;
       }
-    }
-
-    await prisma.trade.update({
-      where: { id: tradeRecord.id },
-      data: {
-        brokerConfirmed: isBrokerConfirmed,
-        brokerOrderId,
-        entryPrice: fillPrice,
-        quantity: fillQty,
-        status: isBrokerConfirmed ? 'OPEN' : 'LOCAL_SIMULATION',
-        reconciliationStatus
-      }
-    });
-
-    // ── RECORD PERSISTENT LIFECYCLE AUDIT STATE MACHINE ───────────────────────
-    try {
-      const corrId = `corr-${tradeRecord.id}`;
-      await LifecycleStateMachine.start({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        sourceDataIds: [signal.asset, String(signal.entryPrice)],
-        reason: `Initiating ${signal.direction} order flow`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.DATA_VALIDATED,
-        reason: 'Input quote and tick integrity validated'
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.UNIVERSE_FILTERED,
-        reason: 'Security master eligibility and tradability confirmed'
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.CANDIDATE_GENERATED,
-        reason: 'Trade candidate generated with R:R targets'
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.STRATEGY_ANALYZED,
-        reason: 'Strategy gates and Top Trader Rules validated'
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.AGENTS_EVALUATED,
-        reason: `AI agents consensus reached (${signal.confidence}%)`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.RISK_CHECKED,
-        reason: 'Portfolio drawdown and fee viability verified'
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.ORDER_PLANNED,
-        reason: `Bracket order parameters planned for ${finalQty} shares`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.FRESH_DATA_REVALIDATED,
-        reason: 'Pre-flight quote freshness confirmed prior to broker dispatch'
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.ORDER_SUBMITTED,
-        reason: `Order submitted to broker endpoint (${brokerOrderId})`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.PROVIDER_ACCEPTED,
-        reason: `Order accepted by broker (${reconciliationStatus})`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.FILLED,
-        reason: `Filled ${fillQty} shares @ $${fillPrice}`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.PROTECTION_VERIFIED,
-        reason: `Protective stops confirmed: SL $${signal.stopLossPrice}, TP $${signal.takeProfitPrice} (${protectionStatus})`
-      });
-      await LifecycleStateMachine.transition({
-        correlationId: corrId,
-        provider: signal.market === 'stocks' ? 'ALPACA' : 'SIMULATION',
-        environment: isPaper ? 'paper' : 'live',
-        strategy: 'INTRADAY',
-        symbol: signal.asset,
-        newState: LifecycleState.POSITION_MONITORED,
-        reason: 'Position opened and active in portfolio monitoring'
-      });
-    } catch (lifecycleErr: any) {
-      logger.warn('Lifecycle transition warning', { error: lifecycleErr.message });
-    }
-
-    // Check if position already open — don't overwrite with duplicate
-    const existing = await prisma.position.findUnique({ where: { asset: signal.asset } });
-    if (!existing || existing.status === 'CLOSED') {
-      await prisma.position.upsert({
-        where: { asset: signal.asset },
-        create: {
-          asset: signal.asset,
-          market: signal.market,
-          side: signal.direction,
-          quantity: fillQty,
-          entryPrice: fillPrice,
-          currentPrice: fillPrice,
-          stopLossPrice: signal.stopLossPrice,
-          takeProfitPrice: signal.takeProfitPrice,
-          protectionStatus,
-          status: 'OPEN'
-        },
-        update: {
-          side: signal.direction,
-          quantity: fillQty,
-          entryPrice: fillPrice,
-          currentPrice: fillPrice,
-          stopLossPrice: signal.stopLossPrice,
-          takeProfitPrice: signal.takeProfitPrice,
-          protectionStatus,
-          status: 'OPEN'
-        }
-      });
-    }
-
-    if (signal.agentDecisionId) {
-      await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } }).catch(() => {});
-    }
-
-    const io = getIO();
-    io?.emit('trade:executed', { trade: tradeRecord, mode: 'paper', signal });
-    return true;
-  }
-
-  // ── LIVE TRADING MODE ─────────────────────────────────────────────────────
-  try {
-    const client = await getBrokerClient(signal.market);
-    let brokerOrderId: string;
-    let liveFillPrice = signal.entryPrice;
-    let liveFillQty = finalQty;
-
-    if (signal.market === 'crypto') {
-      const side = signal.direction === 'BUY' ? 'BUY' : 'SELL';
-      const order = await client.newOrder(signal.asset + 'USDT', side, 'MARKET', { quantity: finalQty.toFixed(6) });
-      brokerOrderId = String(order.data.orderId);
+      logger.info(`📝 Local simulation for ${signal.asset} @ $${fillPrice} (no broker connected; unconfirmed)`);
     } else {
-      const order = await client.createOrder({
-        symbol: signal.asset,
-        qty: Math.floor(finalQty * 100) / 100,
-        side: signal.direction.toLowerCase(),
-        type: 'market',
-        time_in_force: 'gtc'
-      });
-      brokerOrderId = order.id;
-      // Same reconciliation as paper mode — this is real money, an order
-      // that's accepted synchronously but rejected/never fills moments later
-      // must not be recorded as a confirmed position at the stale quoted
-      // price.
-      const fill = await confirmOrderFill(client, order.id);
-      liveFillPrice = fill.fillPrice;
-      liveFillQty = fill.fillQty;
-      logger.info(`💵 Real live fill: ${signal.asset} @ $${liveFillPrice} (quoted $${signal.entryPrice})`);
+      const order = buildStockOrder(signal, plannedQty);
+      if (!order) {
+        await prisma.trade.update({ where: { id: tradeRecord.id }, data: { status: 'REJECTED', exitReason: 'Order could not be built (fractional short or zero qty)' } });
+        return false;
+      }
+      try {
+        const placed = await broker.createOrder({ ...order.payload, client_order_id: tradeRecord.id });
+        brokerOrderId = placed.id;
+        const fill = await confirmOrderFill(broker, placed.id);
+        fillPrice = fill.fillPrice;
+        fillQty = fill.fillQty;
+        brokerConfirmed = true;
+        reconciliationStatus = 'BROKER_RECONCILED';
+        protectionStatus = order.protection;
+        provider = 'ALPACA';
+        logger.info(`💵 ${mode.toUpperCase()} fill: ${signal.asset} ${fillQty} @ $${fillPrice} (quoted $${signal.entryPrice})`);
+      } catch (brokerErr: any) {
+        const msg = brokerErr?.response?.data?.message || brokerErr.message;
+        logger.error(`🚫 Alpaca ${mode} order FAILED for ${signal.asset} — not tracking as confirmed`, { error: msg });
+        await prisma.trade.update({ where: { id: tradeRecord.id }, data: { status: 'REJECTED', exitReason: `Broker rejected: ${msg}`, brokerConfirmed: false, brokerOrderId } });
+        return false;
+      }
     }
-
-    // Confirm in DB
-    await prisma.trade.update({
-      where: { id: tradeRecord.id },
-      data: { brokerConfirmed: true, brokerOrderId, entryPrice: liveFillPrice, quantity: liveFillQty }
-    });
-
-    // Place stop-loss order
-    await placeStopLossOrder(signal, finalQty, client);
-
-    if (signal.agentDecisionId) {
-      await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } }).catch(() => {});
-    }
-
-    const io = getIO();
-    io?.emit('trade:executed', { trade: tradeRecord, mode: 'live', signal, brokerOrderId });
-
-    logger.info(`✅ LIVE ORDER placed: ${signal.direction} ${finalQty} ${signal.asset}`, { brokerOrderId });
-    return true;
-
-  } catch (brokerError: any) {
-    logger.error('Broker order failed', { error: brokerError.message, asset: signal.asset });
-    await prisma.trade.update({ where: { id: tradeRecord.id }, data: { status: 'FAILED', exitReason: `Broker error: ${brokerError.message}` } });
-    return false;
   }
-}
 
-async function placeStopLossOrder(signal: TradeSignal, qty: number, client: any) {
-  try {
-    if (signal.market !== 'crypto') {
-      await client.createOrder({
-        symbol: signal.asset,
-        qty: Math.floor(qty * 100) / 100,
-        side: signal.direction === 'BUY' ? 'sell' : 'buy',
-        type: 'stop',
-        stop_price: signal.stopLossPrice.toFixed(2),
-        time_in_force: 'gtc'
-      });
+  await prisma.trade.update({
+    where: { id: tradeRecord.id },
+    data: {
+      brokerConfirmed,
+      brokerOrderId,
+      entryPrice: fillPrice,
+      quantity: fillQty,
+      // Local simulations are still OPEN trades so the stop monitor can close them.
+      status: 'OPEN',
+      reconciliationStatus,
     }
-    logger.info(`🛑 Stop-loss placed at $${signal.stopLossPrice} for ${signal.asset}`);
-  } catch (err) {
-    logger.error('Stop-loss order failed', { err, asset: signal.asset });
+  });
+
+  await recordEntryLifecycle(tradeRecord.id, signal, provider, {
+    confidence: signal.confidence, qty: fillQty, orderId: brokerOrderId, reconciliation: reconciliationStatus,
+    fillQty, fillPrice, sl: signal.stopLossPrice, tp: signal.takeProfitPrice, protection: protectionStatus,
+  });
+
+  await prisma.position.upsert({
+    where: { asset: signal.asset },
+    create: {
+      asset: signal.asset, market: signal.market, side: signal.direction, quantity: fillQty,
+      entryPrice: fillPrice, currentPrice: fillPrice, stopLossPrice: signal.stopLossPrice,
+      takeProfitPrice: signal.takeProfitPrice, protectionStatus, status: 'OPEN',
+    },
+    update: {
+      side: signal.direction, quantity: fillQty, entryPrice: fillPrice, currentPrice: fillPrice,
+      stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice, protectionStatus, status: 'OPEN',
+    }
+  });
+
+  if (signal.agentDecisionId) {
+    await prisma.agentDecision.update({ where: { id: signal.agentDecisionId }, data: { executed: true } }).catch(() => {});
   }
+
+  getIO()?.emit('trade:executed', { trade: { ...tradeRecord, entryPrice: fillPrice, quantity: fillQty, status: 'OPEN' }, mode, signal, brokerOrderId });
+  logger.info(`✅ ${mode.toUpperCase()} ${brokerConfirmed ? 'BROKER' : 'SIMULATED'} ENTRY: ${signal.direction} ${fillQty} ${signal.asset} @ $${fillPrice}`);
+  return true;
 }

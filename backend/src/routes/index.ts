@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { prisma } from '../utils/prisma';
 import { redis } from '../utils/redis';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireOwner, AuthRequest } from '../middleware/auth';
 import { getPortfolioState } from '../services/portfolio';
 import { activateKillSwitch, deactivateKillSwitch, isKillSwitchActive } from '../agents/orchestrator';
 import backtestRoutes from './backtest';
@@ -120,6 +120,18 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
     return res.status(400).json({ error: 'Owner password must be at least 8 characters.' });
   }
 
+  // In production, first-run setup also needs OWNER_SETUP_TOKEN so a stranger
+  // cannot claim a freshly deployed instance before you do.
+  if (process.env.NODE_ENV === 'production') {
+    const expected = process.env.OWNER_SETUP_TOKEN;
+    if (!expected || req.headers['x-setup-token'] !== expected) {
+      return res.status(403).json({ error: 'Owner setup requires OWNER_SETUP_TOKEN (or provision via OWNER_EMAIL/OWNER_PASSWORD env).' });
+    }
+  }
+  if (password.length < 12) {
+    return res.status(400).json({ error: 'Owner password must be at least 12 characters.' });
+  }
+
   // Check if an OWNER user already exists in persistent database
   const existingOwner = await prisma.user.findFirst({ where: { role: 'OWNER' } });
   if (existingOwner) {
@@ -208,11 +220,11 @@ tradesRouter.get('/stats', async (req: Request, res: Response) => {
   if (market && market !== 'all') where.market = market;
 
   const all = await prisma.trade.findMany({ where });
-  const winners = all.filter(t => (t.pnl || 0) > 0);
-  const losers = all.filter(t => (t.pnl || 0) < 0);
-  const totalPnl = all.reduce((s, t) => s + (t.pnl || 0), 0);
-  const avgWin = winners.length ? winners.reduce((s, t) => s + (t.pnl || 0), 0) / winners.length : 0;
-  const avgLoss = losers.length ? losers.reduce((s, t) => s + (t.pnl || 0), 0) / losers.length : 0;
+  const winners = all.filter((t: any) => (t.pnl || 0) > 0);
+  const losers = all.filter((t: any) => (t.pnl || 0) < 0);
+  const totalPnl = all.reduce((s: any, t: any) => s + (t.pnl || 0), 0);
+  const avgWin = winners.length ? winners.reduce((s: any, t: any) => s + (t.pnl || 0), 0) / winners.length : 0;
+  const avgLoss = losers.length ? losers.reduce((s: any, t: any) => s + (t.pnl || 0), 0) / losers.length : 0;
 
   res.json({
     totalTrades: all.length,
@@ -220,13 +232,13 @@ tradesRouter.get('/stats', async (req: Request, res: Response) => {
     totalPnl: totalPnl.toFixed(2),
     avgWin: avgWin.toFixed(2),
     avgLoss: avgLoss.toFixed(2),
-    bestTrade: all.sort((a, b) => (b.pnl || 0) - (a.pnl || 0))[0],
-    worstTrade: all.sort((a, b) => (a.pnl || 0) - (b.pnl || 0))[0],
+    bestTrade: all.sort((a: any, b: any) => (b.pnl || 0) - (a.pnl || 0))[0],
+    worstTrade: all.sort((a: any, b: any) => (a.pnl || 0) - (b.pnl || 0))[0],
     profitFactor: Math.abs(avgLoss) > 0 ? (avgWin / Math.abs(avgLoss)).toFixed(2) : '∞'
   });
 });
 
-tradesRouter.post('/:id/close', async (req: Request, res: Response) => {
+tradesRouter.post('/:id/close', requireOwner, async (req: Request, res: Response) => {
   const trade = await prisma.trade.findUnique({ where: { id: req.params.id } });
   if (!trade || trade.status !== 'OPEN') {
     return res.status(404).json({ error: 'Open trade not found' });
@@ -235,8 +247,10 @@ tradesRouter.post('/:id/close', async (req: Request, res: Response) => {
   if (!position) {
     return res.status(404).json({ error: 'No open position for this trade\'s asset' });
   }
-  const exitPrice = req.body.price ?? getCurrentPrices()[trade.asset] ?? trade.entryPrice;
-  const result = await closePosition(position, exitPrice, 'manual_close');
+  // Never trust a client-supplied exit price (it let the caller write any P&L).
+  const exitPrice = getCurrentPrices()[trade.asset] ?? position.currentPrice ?? trade.entryPrice;
+  const result: any = await closePosition(position, exitPrice, 'manual_close');
+  if (result.closed === false) return res.status(502).json({ error: 'Broker exit failed — position still open' });
   res.json({ closed: true, pnl: result.pnl, pnlPct: result.pnlPct });
 });
 
@@ -321,14 +335,14 @@ agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
     const { asset = 'BTC', market = 'crypto' } = req.body;
     const { runDebateForAsset } = await import('../jobs/scheduler');
     res.json({ message: `Debate triggered for ${asset}`, asset, status: 'running' });
-    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex').catch(() => {});
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true }).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger debate' });
   }
 });
 
 // Force a paper trade immediately — bypasses debate, tests execution pipeline
-agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
+agentsRouter.post('/force-trade', requireOwner, async (req: Request, res: Response) => {
   try {
     const { asset = 'AAPL', market = 'stocks', direction = 'BUY' } = req.body;
     const { buildMarketSnapshot, getCurrentPrice } = await import('../services/marketData');
@@ -389,13 +403,13 @@ agentsRouter.post('/force-trade', async (req: Request, res: Response) => {
 });
 
 // Run full debate + execute trade if approved — used for immediate test
-agentsRouter.post('/run-and-trade', async (req: Request, res: Response) => {
+agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Response) => {
   try {
     const { asset = 'NVDA', market = 'stocks' } = req.body;
     const { runDebateForAsset } = await import('../jobs/scheduler');
     // Respond immediately, run debate in background
     res.json({ message: `🏛️ Full debate starting for ${asset} (${market}) — check DebateRoom for live updates`, asset, market, status: 'running' });
-    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex').catch((err: any) => {
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true }).catch((err: any) => {
       console.error('run-and-trade debate failed:', err?.message);
     });
   } catch (err: any) {
@@ -512,7 +526,7 @@ marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
   }
 });
 
-marketRouter.post('/predictions/wager', async (req: Request, res: Response) => {
+marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: Response) => {
   try {
     const { predictionId, outcome = 'YES', amount = 10 } = req.body;
     const pred = await prisma.prediction.findUnique({ where: { id: predictionId } });
@@ -897,7 +911,7 @@ settingsRouter.get('/', async (_req: Request, res: Response) => {
   });
 });
 
-settingsRouter.post('/connect-alpaca', async (req: Request, res: Response) => {
+settingsRouter.post('/connect-alpaca', requireOwner, async (req: Request, res: Response) => {
   try {
     const { apiKey, secretKey, paperMode = true } = req.body;
     if (!apiKey || !secretKey) {
@@ -912,7 +926,7 @@ settingsRouter.post('/connect-alpaca', async (req: Request, res: Response) => {
   }
 });
 
-settingsRouter.post('/connect-polymarket', async (req: Request, res: Response) => {
+settingsRouter.post('/connect-polymarket', requireOwner, async (req: Request, res: Response) => {
   try {
     const { address, privateKey } = req.body;
     if (!address) {
@@ -927,7 +941,7 @@ settingsRouter.post('/connect-polymarket', async (req: Request, res: Response) =
   }
 });
 
-settingsRouter.post('/disconnect', async (req: Request, res: Response) => {
+settingsRouter.post('/disconnect', requireOwner, async (req: Request, res: Response) => {
   try {
     const { type } = req.body;
     const { accountManager } = await import('../services/accountManager');
@@ -945,15 +959,38 @@ killSwitchRouter.use(requireAuth);
 
 killSwitchRouter.post('/activate', async (_req: Request, res: Response) => {
   activateKillSwitch();
-  // Cancel all open positions if in live mode
-  if (process.env.TRADING_MODE === 'live') {
-    // Close all open positions at market price
-    await prisma.position.updateMany({ where: { status: 'OPEN' }, data: { status: 'CLOSED' } });
+  // Actually flatten at the broker. The old version only flipped DB rows to
+  // CLOSED in live mode, leaving every real position and order open.
+  const result: any = { active: true, timestamp: new Date().toISOString(), broker: 'not-connected' };
+  try {
+    const { getTradingBroker } = await import('../trading/brokerRouter');
+    const broker = getTradingBroker();
+    if (broker) {
+      await broker.cancelAllOrders().catch(() => {});
+      const closed = await broker.closeAllPositions();
+      result.broker = 'flattened';
+      result.brokerOrders = closed.length;
+    }
+  } catch (err: any) {
+    result.broker = 'FLATTEN_FAILED — close positions manually in Alpaca';
+    result.error = err?.response?.data?.message || err.message;
   }
-  res.json({ active: true, timestamp: new Date().toISOString() });
+  const open = await prisma.position.findMany({ where: { status: 'OPEN' } });
+  const prices = getCurrentPrices();
+  for (const p of open) {
+    await prisma.position.update({ where: { id: p.id }, data: { status: 'CLOSED' } });
+    const t = await prisma.trade.findFirst({ where: { asset: p.asset, status: 'OPEN' } });
+    if (t) {
+      const px = prices[p.asset] ?? p.currentPrice;
+      const pnl = (p.side === 'SELL' ? p.entryPrice - px : px - p.entryPrice) * p.quantity;
+      await prisma.trade.update({ where: { id: t.id }, data: { status: 'CLOSED', exitPrice: px, pnl, pnlPct: (pnl / (p.entryPrice * p.quantity)) * 100, closedAt: new Date(), exitReason: 'kill_switch' } });
+    }
+  }
+  res.json(result);
 });
 
-killSwitchRouter.post('/deactivate', async (_req: Request, res: Response) => {
+// Resuming trading is owner-only.
+killSwitchRouter.post('/deactivate', requireOwner, async (_req: Request, res: Response) => {
   deactivateKillSwitch();
   res.json({ active: false, timestamp: new Date().toISOString() });
 });

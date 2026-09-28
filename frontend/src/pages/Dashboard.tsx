@@ -65,7 +65,7 @@ export default function DashboardPage() {
             <span>·</span>
             <span className="text-emerald-600 font-bold flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              1000-TRADE HFT & POLYMARKET ENGINE ARMED
+              Agent committee · stocks, crypto (paper) & Polymarket (paper)
             </span>
           </p>
         </div>
@@ -77,7 +77,7 @@ export default function DashboardPage() {
             </span>
           ) : (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 font-mono text-xs text-emerald-700 font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> ALGO EXECUTION ACTIVE
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> AUTO-TRADING ENABLED
             </span>
           )}
           {currentAnalysis && (

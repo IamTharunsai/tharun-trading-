@@ -2,10 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm install --include=dev && npx prisma generate --schema=./prisma/schema.prisma && npm run build"
+    "buildCommand": "npm install --include=dev && npm run build"
   },
   "deploy": {
-    "startCommand": "npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss && node dist/index.js",
+    "startCommand": "node dist/index.js",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",

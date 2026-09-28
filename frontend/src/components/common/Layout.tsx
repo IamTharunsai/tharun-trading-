@@ -224,10 +224,10 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             <span className="text-emerald-600 font-bold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              1000-TRADE ENGINE: ONLINE
+              SCHEDULER ONLINE
             </span>
             <span className="text-slate-300">·</span>
-            <span className="text-blue-600 font-semibold">POLYMARKET ARBITRAGE: LIVE</span>
+            <span className="text-blue-600 font-semibold">POLYMARKET: PAPER ONLY</span>
           </div>
         </div>
 

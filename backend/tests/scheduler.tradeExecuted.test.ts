@@ -71,13 +71,13 @@ import { runDebateForAsset } from '../src/jobs/scheduler';
 describe('runDebateForAsset — tradeExecuted reflects the real execution outcome', () => {
   it('sets tradeExecuted true when executeTradeSignal actually places the order', async () => {
     (executeTradeSignal as jest.Mock).mockResolvedValue(true);
-    const transcript = await runDebateForAsset('AAPL', 'stocks');
+    const transcript = await runDebateForAsset('AAPL', 'stocks', { bypassGate: true });
     expect(transcript?.tradeExecuted).toBe(true);
   });
 
   it('sets tradeExecuted false when executeTradeSignal is blocked/rejected, even though the debate approved', async () => {
     (executeTradeSignal as jest.Mock).mockResolvedValue(false);
-    const transcript = await runDebateForAsset('TCBK', 'stocks');
+    const transcript = await runDebateForAsset('TCBK', 'stocks', { bypassGate: true });
     expect(transcript?.executionApproved).toBe(true);
     expect(transcript?.tradeExecuted).toBe(false);
   });

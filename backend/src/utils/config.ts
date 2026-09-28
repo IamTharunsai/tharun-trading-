@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { logger } from './logger';
 
 export type TradingMode = 'paper' | 'live';
@@ -72,9 +73,22 @@ export function validateConfig(): ValidatedConfig {
   const tradingMode = parseTradingMode(process.env.TRADING_MODE);
 
   // Core security variables
-  const jwtSecret = cleanEnvValue(process.env.JWT_SECRET) || 'apex-trader-jwt-secret-key-production-32chars';
-  const encryptionKey = cleanEnvValue(process.env.ENCRYPTION_KEY) || 'apex-secure-encryption-key-production-32chars';
-  const ownerEmail = cleanEnvValue(process.env.OWNER_EMAIL) || 'tharunsai2081@gmail.com';
+  // SECURITY: no hard-coded fallback secrets. A public default JWT secret lets
+  // anyone forge an owner token. In production we refuse to boot without real
+  // secrets; in dev/test we use a random per-process secret (tokens die on restart).
+  const isProd = process.env.NODE_ENV === 'production';
+  const requireSecret = (name: string): string => {
+    const v = cleanEnvValue(process.env[name]);
+    if (v && v.length >= 32) return v;
+    if (isProd) {
+      throw new Error(`${name} must be set to a random value of at least 32 characters in production`);
+    }
+    logger.warn(`⚠️ ${name} missing/short — using an ephemeral random value (dev only)`);
+    return crypto.randomBytes(48).toString('hex');
+  };
+  const jwtSecret = requireSecret('JWT_SECRET');
+  const encryptionKey = requireSecret('ENCRYPTION_KEY');
+  const ownerEmail = cleanEnvValue(process.env.OWNER_EMAIL) || '';
 
   // Separate paper and live credentials cleanly
   const alpacaPaperKey = cleanEnvValue(process.env.ALPACA_PAPER_API_KEY || process.env.ALPACA_API_KEY);

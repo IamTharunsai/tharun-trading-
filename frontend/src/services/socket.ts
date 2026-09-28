@@ -12,6 +12,8 @@ export function connectSocket() {
     reconnection: true,
     reconnectionDelay: 2000,
     reconnectionAttempts: 10,
+    // Server rejects unauthenticated sockets.
+    auth: (cb: (data: object) => void) => cb({ token: useStore.getState().token }),
   });
 
   const store = useStore.getState();

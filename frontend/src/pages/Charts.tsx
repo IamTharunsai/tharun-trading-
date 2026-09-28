@@ -164,6 +164,9 @@ export default function ChartsPage() {
       const chart = createChart(chartRef.current, {
         width: chartRef.current.clientWidth,
         height: 480,
+        // Explicit locale: some browsers/OSes report tags like "en-US@posix"
+        // that Intl rejects, which crashed chart creation (blank chart).
+        localization: { locale: 'en-US' },
         layout: { background: { color: '#FFFFFF' }, textColor: '#475569' },
         grid: { vertLines: { color: '#F1F5F9' }, horzLines: { color: '#F1F5F9' } },
         crosshair: { mode: 1 },
@@ -362,7 +365,7 @@ export default function ChartsPage() {
               {cnn?.rawConfidence ? `${cnn.rawConfidence}%` : '62.0%'}
             </span>
             <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-              +{cnn?.edgePct ?? 12}% EV Edge
+              {cnn?.edgePct != null ? `+${cnn.edgePct}% (model claim)` : "edge n/a"}
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted">
@@ -380,7 +383,7 @@ export default function ChartsPage() {
               {regimeFilter?.regimeMultiplier ? `${regimeFilter.regimeMultiplier}x` : '1.35x'}
             </span>
             <span className="font-mono text-xs font-bold text-blue-600 bg-blue-500/10 px-1.5 py-0.5 rounded">
-              -40% False Signals
+              regime filter · unvalidated
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted">
@@ -398,7 +401,7 @@ export default function ChartsPage() {
               {confluence?.confluenceScore ? `${(confluence.confluenceScore * 100).toFixed(0)}%` : '85%'}
             </span>
             <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-              +{confluence?.winRateEdgeBonusPct ?? 28}% Win Rate
+              {confluence?.winRateEdgeBonusPct != null ? `+${confluence.winRateEdgeBonusPct}% (model claim)` : 'n/a'}
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted">
@@ -413,7 +416,7 @@ export default function ChartsPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-purple-600">
-              {volumeMicro?.relativeVolume?.rvol ? `${volumeMicro.relativeVolume.rvol}x RVol` : '1.6x RVol'}
+              {volumeMicro?.relativeVolume?.rvol ? `${volumeMicro.relativeVolume.rvol}x RVol` : 'RVol n/a'}
             </span>
             <span className="font-mono text-xs font-bold text-purple-600 bg-purple-500/10 px-1.5 py-0.5 rounded">
               {volumeMicro?.priceVsVwap?.status?.replace(/_/g, ' ') || 'ABOVE VWAP'}
@@ -831,7 +834,7 @@ export default function ChartsPage() {
               </div>
               <div className="text-right">
                 <div className="font-mono text-3xl font-bold text-apex-text">{cnn.rawConfidence}%</div>
-                <div className="font-mono text-xs text-emerald-600 font-bold">Predicted: {cnn.predictedDirection} (+12% Edge)</div>
+                <div className="font-mono text-xs text-emerald-600 font-bold">Predicted: {cnn.predictedDirection} (edge not yet measured)</div>
               </div>
             </div>
 
@@ -936,7 +939,7 @@ export default function ChartsPage() {
               <div>
                 <span className="font-mono text-xs text-blue-500 font-bold uppercase tracking-wider">CA-2 · Context Optimization</span>
                 <h2 className="font-sans font-bold text-xl text-apex-text mt-1">
-                  Regime-Context Pattern Filter (-40% False Signals)
+                  Regime-Context Pattern Filter (regime filter · unvalidated)
                 </h2>
                 <p className="font-sans text-xs text-apex-muted mt-1 max-w-3xl">
                   Key insight: The same pattern means completely different things in different regimes. A bullish engulfing in BULL_TREND has a 71% win rate. The same pattern in BEAR_TREND has only 38% win rate. This module eliminates 40% of false signals before orders hit the exchange.
@@ -1006,7 +1009,7 @@ export default function ChartsPage() {
               <div>
                 <span className="font-mono text-xs text-emerald-500 font-bold uppercase tracking-wider">CA-3 · Confluence Engine</span>
                 <h2 className="font-sans font-bold text-xl text-apex-text mt-1">
-                  Multi-Timeframe Confluence Detector (+28% Win Rate Edge)
+                  Multi-Timeframe Confluence Detector (claimed edge not yet measured)
                 </h2>
                 <p className="font-sans text-xs text-apex-muted mt-1 max-w-3xl">
                   Philosophy: One timeframe pattern is noise. Three timeframes pointing the same way is true statistical edge. Simultaneously analyzes 1h chart + 4h chart + daily chart. Eliminates 60% of false signals.

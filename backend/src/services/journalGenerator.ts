@@ -17,10 +17,10 @@ export async function generateDailyJournal() {
       prisma.portfolioSnapshot.findFirst({ orderBy: { timestamp: 'desc' } })
     ]);
 
-    const closedTrades = trades.filter(t => t.status === 'CLOSED');
-    const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-    const bestTrade = closedTrades.sort((a, b) => (b.pnl || 0) - (a.pnl || 0))[0];
-    const worstTrade = closedTrades.sort((a, b) => (a.pnl || 0) - (b.pnl || 0))[0];
+    const closedTrades = trades.filter((t: any) => t.status === 'CLOSED');
+    const totalPnl = closedTrades.reduce((sum: any, t: any) => sum + (t.pnl || 0), 0);
+    const bestTrade = closedTrades.sort((a: any, b: any) => (b.pnl || 0) - (a.pnl || 0))[0];
+    const worstTrade = closedTrades.sort((a: any, b: any) => (a.pnl || 0) - (b.pnl || 0))[0];
 
     const prompt = `You are a professional trading journal writer for an autonomous AI trading system called THARUN TRADING BOT.
 
@@ -33,7 +33,7 @@ DATA:
 - Best trade: ${bestTrade ? `${bestTrade.asset} +$${bestTrade.pnl?.toFixed(2)}` : 'None'}
 - Worst trade: ${worstTrade ? `${worstTrade.asset} $${worstTrade.pnl?.toFixed(2)}` : 'None'}
 - Agent council decisions: ${decisions.length}
-- Executed decisions: ${decisions.filter(d => d.executed).length}
+- Executed decisions: ${decisions.filter((d: any) => d.executed).length}
 
 Write a professional 2-3 paragraph journal entry covering:
 1. Overall performance summary

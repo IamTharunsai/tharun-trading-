@@ -58,6 +58,9 @@ export interface MirroredExecutionLog {
 // VERIFIED MASTER STRATEGIES IN APEX AUTONOMOUS ARCHITECTURE
 // ─────────────────────────────────────────────────────────────────────────────
 
+// NOTE: these stats were hard-coded marketing numbers (e.g. 64.5% "verified" win rate
+// over 142 trades) for strategies that never ran. Zeroed until real closed trades
+// exist; compute them from the trades table before displaying anything.
 export const MASTER_STRATEGIES: MasterStrategy[] = [
   {
     id: 'strat-intraday-momentum',
@@ -67,12 +70,12 @@ export const MASTER_STRATEGIES: MasterStrategy[] = [
     assetClass: 'US_EQUITIES',
     riskRating: 'CONSERVATIVE',
     minCapitalRequired: 100.0,
-    verifiedWinRate: 64.5,
-    profitFactor: 2.15,
-    maxDrawdownPct: 2.4,
-    totalCompletedTrades: 142,
+    verifiedWinRate: 0,
+    profitFactor: 0,
+    maxDrawdownPct: 0,
+    totalCompletedTrades: 0,
     avgHoldTimeMinutes: 48,
-    status: 'ACTIVE_TRANSMITTING'
+    status: 'CALIBRATING'
   },
   {
     id: 'strat-macro-swing',
@@ -82,12 +85,12 @@ export const MASTER_STRATEGIES: MasterStrategy[] = [
     assetClass: 'MACRO_SWING',
     riskRating: 'MODERATE',
     minCapitalRequired: 100.0,
-    verifiedWinRate: 58.2,
-    profitFactor: 2.38,
-    maxDrawdownPct: 3.8,
-    totalCompletedTrades: 86,
+    verifiedWinRate: 0,
+    profitFactor: 0,
+    maxDrawdownPct: 0,
+    totalCompletedTrades: 0,
     avgHoldTimeMinutes: 2880,
-    status: 'ACTIVE_TRANSMITTING'
+    status: 'CALIBRATING'
   },
   {
     id: 'strat-cross-industry-ripple',
@@ -97,12 +100,12 @@ export const MASTER_STRATEGIES: MasterStrategy[] = [
     assetClass: 'CROSS_INDUSTRY',
     riskRating: 'MODERATE',
     minCapitalRequired: 100.0,
-    verifiedWinRate: 68.0,
-    profitFactor: 2.62,
-    maxDrawdownPct: 3.1,
-    totalCompletedTrades: 54,
+    verifiedWinRate: 0,
+    profitFactor: 0,
+    maxDrawdownPct: 0,
+    totalCompletedTrades: 0,
     avgHoldTimeMinutes: 1440,
-    status: 'ACTIVE_TRANSMITTING'
+    status: 'CALIBRATING'
   },
   {
     id: 'strat-polymarket-alpha',
@@ -112,12 +115,12 @@ export const MASTER_STRATEGIES: MasterStrategy[] = [
     assetClass: 'POLYMARKET_ALPHA',
     riskRating: 'CONSERVATIVE',
     minCapitalRequired: 50.0,
-    verifiedWinRate: 71.4,
-    profitFactor: 2.85,
-    maxDrawdownPct: 1.9,
-    totalCompletedTrades: 119,
+    verifiedWinRate: 0,
+    profitFactor: 0,
+    maxDrawdownPct: 0,
+    totalCompletedTrades: 0,
     avgHoldTimeMinutes: 1200,
-    status: 'ACTIVE_TRANSMITTING'
+    status: 'CALIBRATING'
   }
 ];
 

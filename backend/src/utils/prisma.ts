@@ -514,7 +514,8 @@ export const prisma: any = {
       if (args?.where?.asset) { conditions.push('asset = ?'); params.push(args.where.asset); }
       if (args?.where?.status) { conditions.push('status = ?'); params.push(args.where.status); }
       if (args?.where?.market && args.where.market !== 'all') { conditions.push('market = ?'); params.push(args.where.market); }
-      if (args?.where?.openedAt?.gte) { conditions.push('openedAt >= ?'); params.push(new Date(args.where.openedAt.gte).toISOString()); }
+      if (args?.where?.openedAt?.gte) { conditions.push('julianday(openedAt) >= julianday(?)'); params.push(new Date(args.where.openedAt.gte).toISOString()); }
+      if (args?.where?.closedAt?.gte) { conditions.push('closedAt IS NOT NULL AND julianday(closedAt) >= julianday(?)'); params.push(new Date(args.where.closedAt.gte).toISOString()); }
 
       let sql = 'SELECT * FROM trades';
       if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
@@ -537,7 +538,8 @@ export const prisma: any = {
       if (args?.where?.asset) { conditions.push('asset = ?'); params.push(args.where.asset); }
       if (args?.where?.status) { conditions.push('status = ?'); params.push(args.where.status); }
       if (args?.where?.market && args.where.market !== 'all') { conditions.push('market = ?'); params.push(args.where.market); }
-      if (args?.where?.openedAt?.gte) { conditions.push('openedAt >= ?'); params.push(new Date(args.where.openedAt.gte).toISOString()); }
+      if (args?.where?.openedAt?.gte) { conditions.push('julianday(openedAt) >= julianday(?)'); params.push(new Date(args.where.openedAt.gte).toISOString()); }
+      if (args?.where?.closedAt?.gte) { conditions.push('closedAt IS NOT NULL AND julianday(closedAt) >= julianday(?)'); params.push(new Date(args.where.closedAt.gte).toISOString()); }
 
       let sql = 'SELECT COUNT(*) as count FROM trades';
       if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
@@ -606,6 +608,7 @@ export const prisma: any = {
       if (data.entryPrice !== undefined) { sets.push('entryPrice = ?'); vals.push(data.entryPrice); }
       if (data.quantity !== undefined) { sets.push('quantity = ?'); vals.push(data.quantity); }
       if (data.exitReason !== undefined) { sets.push('exitReason = ?'); vals.push(data.exitReason); }
+      if (data.reconciliationStatus !== undefined) { sets.push('reconciliationStatus = ?'); vals.push(data.reconciliationStatus); }
       if (data.closedAt !== undefined) { sets.push('closedAt = ?'); vals.push(data.closedAt ? new Date(data.closedAt).toISOString() : null); }
       sets.push('updatedAt = CURRENT_TIMESTAMP');
       vals.push(where.id);
@@ -615,6 +618,14 @@ export const prisma: any = {
   },
 
   position: {
+    count: async (args?: any) => {
+      const db = assertDb();
+      const status = args?.where?.status;
+      const row: any = status
+        ? db.prepare('SELECT COUNT(*) as c FROM positions WHERE status = ?').get(status)
+        : db.prepare('SELECT COUNT(*) as c FROM positions').get();
+      return Number(row?.c || 0);
+    },
     findMany: async (args?: any) => {
       const db = assertDb();
       const conditions: string[] = [];
@@ -679,6 +690,13 @@ export const prisma: any = {
       if (data.quantity !== undefined) { sets.push('quantity = ?'); vals.push(data.quantity); }
       if (data.stopLossPrice !== undefined) { sets.push('stopLossPrice = ?'); vals.push(data.stopLossPrice); }
       if (data.takeProfitPrice !== undefined) { sets.push('takeProfitPrice = ?'); vals.push(data.takeProfitPrice); }
+      // Re-opening a previously CLOSED asset row must overwrite side/entry —
+      // these were silently ignored before, so a new BUY inherited the old
+      // entry price and P&L was computed against the wrong basis.
+      if (data.side !== undefined) { sets.push('side = ?'); vals.push(data.side); }
+      if (data.entryPrice !== undefined) { sets.push('entryPrice = ?'); vals.push(data.entryPrice); sets.push('openedAt = CURRENT_TIMESTAMP'); }
+      if (data.market !== undefined) { sets.push('market = ?'); vals.push(data.market); }
+      if (data.protectionStatus !== undefined) { sets.push('protectionStatus = ?'); vals.push(data.protectionStatus); }
       sets.push('updatedAt = CURRENT_TIMESTAMP');
       
       const key = where.id ? 'id = ?' : 'asset = ?';
@@ -708,7 +726,7 @@ export const prisma: any = {
       const conditions: string[] = [];
       const params: any[] = [];
       if (args?.where?.timestamp?.gte) {
-        conditions.push('timestamp >= ?');
+        conditions.push('julianday(timestamp) >= julianday(?)');
         params.push(new Date(args.where.timestamp.gte).toISOString());
       }
       let sql = 'SELECT * FROM portfolio_snapshots';
@@ -725,16 +743,20 @@ export const prisma: any = {
       const conditions: string[] = [];
       const params: any[] = [];
       if (args?.where?.timestamp?.lt) {
-        conditions.push('timestamp < ?');
+        conditions.push('julianday(timestamp) < julianday(?)');
         params.push(new Date(args.where.timestamp.lt).toISOString());
       }
       if (args?.where?.timestamp?.gte) {
-        conditions.push('timestamp >= ?');
+        conditions.push('julianday(timestamp) >= julianday(?)');
         params.push(new Date(args.where.timestamp.gte).toISOString());
       }
       let sql = 'SELECT * FROM portfolio_snapshots';
       if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
-      if (args?.orderBy?.timestamp === 'desc') {
+      if (args?.orderBy?.totalValue === 'desc') {
+        // Used for peak equity / drawdown. Was ignored before, so "peak" was
+        // simply the oldest snapshot and drawdown was wrong.
+        sql += ' ORDER BY totalValue DESC';
+      } else if (args?.orderBy?.timestamp === 'desc') {
         sql += ' ORDER BY timestamp DESC';
       } else {
         sql += ' ORDER BY timestamp ASC';
@@ -766,6 +788,14 @@ export const prisma: any = {
   },
 
   agentDecision: {
+    count: async (args?: any) => {
+      const db = assertDb();
+      const gte = args?.where?.timestamp?.gte;
+      const row: any = gte
+        ? db.prepare('SELECT COUNT(*) as c FROM agent_decisions WHERE julianday(timestamp) >= julianday(?)').get(new Date(gte).toISOString())
+        : db.prepare('SELECT COUNT(*) as c FROM agent_decisions').get();
+      return Number(row?.c || 0);
+    },
     findMany: async (args?: any) => {
       const db = assertDb();
       const conditions: string[] = [];
