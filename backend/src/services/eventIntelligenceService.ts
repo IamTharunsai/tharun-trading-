@@ -84,7 +84,7 @@ export class EventIntelligenceService {
         noveltyScore: event.noveltyScore,
         eventClassification: event.eventClassification,
         confidence: event.confidence,
-        isScheduled: event.isScheduled ? 1 : 0,
+        isScheduled: Boolean(event.isScheduled),
         expiration: event.expiration ? new Date(event.expiration) : null,
         licensingStatus: event.licensingStatus || 'VERIFIED_PUBLIC',
         evidenceStatus: event.evidenceStatus

@@ -57,16 +57,14 @@ interface AppStore {
   setCurrentAnalysis: (asset: string | null) => void;
 }
 
-const DEFAULT_DEMO_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJvd25lci11c2VyLTEiLCJpYXQiOjE3OTAyNjIwMDIsImV4cCI6MTc5Mjg1NDAwMn0.5MVZV4Z-wA6uYnYsGGfnORfvRjlD1LQrTIPfCBsNzFs';
-const storedToken = typeof window !== 'undefined' ? localStorage.getItem('apex_token') : null;
-const activeToken = storedToken || DEFAULT_DEMO_TOKEN;
-if (typeof window !== 'undefined' && !storedToken) {
-  try { localStorage.setItem('apex_token', DEFAULT_DEMO_TOKEN); } catch {}
-}
+// SECURITY: never ship a pre-signed token or a hard-coded owner in the bundle.
+// A token is only ever obtained from /api/auth/login.
+let storedToken: string | null = null;
+try { storedToken = typeof window !== 'undefined' ? localStorage.getItem('apex_token') : null; } catch { storedToken = null; }
 
 export const useStore = create<AppStore>((set) => ({
-  token: activeToken,
-  user: { id: 'owner-user-1', email: 'tharunsai2081@gmail.com', name: 'Tharun Sai (Owner)', role: 'OWNER' },
+  token: storedToken,
+  user: null,
   setAuth: (token, user) => {
     localStorage.setItem('apex_token', token);
     set({ token, user });

@@ -152,7 +152,10 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   } else {
     // When no external broker keys are connected, report authentic ledger totals
     // Do not fabricate a fake $100k balance — report real cash deposits or zero
-    const deposits = Number(process.env.INITIAL_LEDGER_DEPOSIT) || 0;
+    // Same capital base as the risk engine (services/portfolio.ts) — the two
+    // used different env vars, so the dashboard showed $0 / negative cash
+    // while the risk manager sized trades off STARTING_CAPITAL.
+    const deposits = Number(process.env.INITIAL_LEDGER_DEPOSIT) || Number(process.env.STARTING_CAPITAL) || 0;
     cashBalance = round2(deposits + realizedPnl - investedCollateral);
     totalEquity = round2(cashBalance + investedCollateral + unrealizedPnl);
     buyingPower = cashBalance;

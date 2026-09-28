@@ -102,135 +102,20 @@ class GeopoliticalDataService {
   private cacheTTL = 300; // 5 minutes
   private finnhubDisabled = isPlaceholderKey(FH_KEY);
 
+  // Previously returned hard-coded, always-bullish headlines stamped with
+  // "now" and real outlet names (CoinDesk, Bloomberg, WSJ). They were shown in
+  // the UI as live news AND fed to the agent debate as evidence. No data is
+  // better than fabricated data: return nothing when no news key is set.
   private getFallbackCryptoNews(): NewsItem[] {
-    const now = Date.now();
-    const items = [
-      {
-        id: `crypto-fb-1-${now}`,
-        title: 'Bitcoin Consolidates Above Key Moving Averages Amid Strong Institutional ETF Inflows',
-        source: 'CoinDesk',
-        url: 'https://coindesk.com',
-        timestamp: now - 120000,
-        category: 'CRYPTO' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'HIGH' as const,
-        tags: ['crypto', 'bitcoin'],
-        summary: 'Institutional demand for digital asset products remains robust with steady net inflows.',
-        sectorsAffected: ['Crypto', 'Broad Market'],
-      },
-      {
-        id: `crypto-fb-2-${now}`,
-        title: 'Ethereum Layer 2 TVL Hits New Milestone As Scaling Activity Accelerates',
-        source: 'CoinTelegraph',
-        url: 'https://cointelegraph.com',
-        timestamp: now - 360000,
-        category: 'CRYPTO' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'MEDIUM' as const,
-        tags: ['crypto', 'ethereum'],
-        summary: 'Layer 2 transaction throughput and fee burn continue to support network economic activity.',
-        sectorsAffected: ['Crypto'],
-      },
-      {
-        id: `crypto-fb-3-${now}`,
-        title: 'Solana DEX Volume Records Weekly Surge Powered By Memecoin & DeFi Trading',
-        source: 'Decrypt',
-        url: 'https://decrypt.co',
-        timestamp: now - 600000,
-        category: 'CRYPTO' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'MEDIUM' as const,
-        tags: ['crypto', 'solana'],
-        summary: 'Active wallets and decentralized exchange volume test historic highs on the network.',
-        sectorsAffected: ['Crypto'],
-      },
-      {
-        id: `crypto-fb-4-${now}`,
-        title: 'Crypto Derivative Open Interest Stabilizes Following Weekend Liquidity Sweep',
-        source: 'Bloomberg Crypto',
-        url: 'https://bloomberg.com',
-        timestamp: now - 900000,
-        category: 'CRYPTO' as const,
-        sentiment: 'NEUTRAL' as const,
-        impact: 'MEDIUM' as const,
-        tags: ['crypto', 'derivatives'],
-        summary: 'Funding rates return to neutral baseline across major perpetual contracts.',
-        sectorsAffected: ['Crypto'],
-      },
-    ];
-    return items;
+    return [];
   }
 
+  // Previously returned hard-coded, always-bullish headlines stamped with
+  // "now" and real outlet names (CoinDesk, Bloomberg, WSJ). They were shown in
+  // the UI as live news AND fed to the agent debate as evidence. No data is
+  // better than fabricated data: return nothing when no news key is set.
   private getFallbackMarketNews(): NewsItem[] {
-    const now = Date.now();
-    const items = [
-      {
-        id: `general-fb-1-${now}`,
-        title: 'Federal Reserve Policy Makers Signal Measured Rate Trajectory As Core Inflation Moderates',
-        source: 'Bloomberg',
-        url: 'https://bloomberg.com',
-        timestamp: now - 180000,
-        category: 'MACROECONOMICS' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'HIGH' as const,
-        tags: ['markets', 'fed'],
-        summary: 'Central bank officials emphasize data dependence while labor market conditions remain stable.',
-        sectorsAffected: ['Financials', 'Broad Market'],
-      },
-      {
-        id: `general-fb-2-${now}`,
-        title: 'US Semiconductor Giants Expand Advanced Packaging Facilities To Meet Enterprise AI Demand',
-        source: 'Wall Street Journal',
-        url: 'https://wsj.com',
-        timestamp: now - 420000,
-        category: 'STOCKS' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'HIGH' as const,
-        tags: ['markets', 'technology'],
-        summary: 'Capital expenditures for compute clusters and chip fabrications continue at peak momentum.',
-        sectorsAffected: ['Technology'],
-      },
-      {
-        id: `general-fb-3-${now}`,
-        title: 'OPEC+ Affirms Crude Supply Stability Target Amid Global Demand Outlook',
-        source: 'Reuters',
-        url: 'https://reuters.com',
-        timestamp: now - 720000,
-        category: 'GEOPOLITICS' as const,
-        sentiment: 'NEUTRAL' as const,
-        impact: 'HIGH' as const,
-        tags: ['markets', 'geopolitics', 'energy'],
-        summary: 'Energy ministers maintain production quotas while monitoring global shipping and refining margins.',
-        sectorsAffected: ['Energy'],
-      },
-      {
-        id: `general-fb-4-${now}`,
-        title: 'Treasury Yields Settle Lower As 10-Year Bond Auction Meets Broad Institutional Bidding',
-        source: 'Financial Times',
-        url: 'https://ft.com',
-        timestamp: now - 1000000,
-        category: 'MACROECONOMICS' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'MEDIUM' as const,
-        tags: ['markets', 'bonds'],
-        summary: 'Direct and indirect bidders drive bid-to-cover ratio above historical averages.',
-        sectorsAffected: ['Financials'],
-      },
-      {
-        id: `general-fb-5-${now}`,
-        title: 'Global Supply Chain Freight Rates Normalize Along Key Pacific Maritime Routes',
-        source: 'MarketWatch',
-        url: 'https://marketwatch.com',
-        timestamp: now - 1400000,
-        category: 'STOCKS' as const,
-        sentiment: 'POSITIVE' as const,
-        impact: 'MEDIUM' as const,
-        tags: ['markets', 'industrials'],
-        summary: 'Container dwell times and port congestion indexes reflect continued supply chain efficiency.',
-        sectorsAffected: ['Industrials'],
-      },
-    ];
-    return items;
+    return [];
   }
 
   async initialize() {

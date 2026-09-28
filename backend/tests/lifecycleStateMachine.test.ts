@@ -1,8 +1,14 @@
+// Needs a real Postgres: TEST_DATABASE_URL=postgresql://... (skipped otherwise)
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 import { LifecycleStateMachine, LifecycleState } from '../src/trading/lifecycleStateMachine';
 import { prisma } from '../src/utils/prisma';
 import { revokeToken, isTokenRevoked } from '../src/middleware/auth';
 
-describe('Trading Lifecycle State Machine & Persistence', () => {
+const describeDb = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+
+describeDb('Trading Lifecycle State Machine & Persistence', () => {
+  afterAll(async () => { await prisma.$disconnect(); });
+
   it('enforces full 20-state lifecycle progression and audits each step', async () => {
     const correlationId = `test-corr-${Date.now()}`;
     const symbol = 'AAPL';
@@ -272,6 +278,6 @@ describe('Trading Lifecycle State Machine & Persistence', () => {
 
     const inDb = await prisma.revokedToken.findUnique({ where: { token: testToken } });
     expect(inDb).toBeTruthy();
-    expect(inDb.token).toBe(testToken);
+    expect(inDb!.token).toBe(testToken);
   });
 });

@@ -131,13 +131,13 @@ export class LifecycleStateMachine {
         previousState: null,
         newState: LifecycleState.DATA_RECEIVED,
         providerTimestamp: payload.providerTimestamp || null,
-        sourceDataIds: payload.sourceDataIds,
+        sourceDataIds: (payload.sourceDataIds ?? undefined) as any,
         reason: payload.reason || 'Lifecycle initialized',
-        errors: payload.errors || null,
+        errors: (payload.errors ?? undefined) as any,
         retryCount: payload.retryCount || 0,
         modelVersion: payload.modelVersion || '1.0.0',
         configVersion: payload.configVersion || '1.0.0',
-        metadata: payload.metadata || null
+        metadata: (payload.metadata ?? undefined) as any
       }
     });
 
@@ -226,11 +226,11 @@ export class LifecycleStateMachine {
         providerTimestamp: payload.providerTimestamp || null,
         sourceDataIds: payload.sourceDataIds || [],
         reason: payload.reason,
-        errors: payload.errors || null,
+        errors: (payload.errors ?? undefined) as any,
         retryCount: payload.retryCount || 0,
         modelVersion: payload.modelVersion || '1.0.0',
         configVersion: payload.configVersion || '1.0.0',
-        metadata: payload.metadata || null
+        metadata: (payload.metadata ?? undefined) as any
       }
     });
 

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { logger } from './logger';
 
 export type TradingMode = 'paper' | 'live';
@@ -27,7 +28,6 @@ export interface ValidatedConfig {
   };
   DATABASE: {
     url?: string;
-    sqlitePath: string;
   };
   RISK: {
     maxPositionSizePct: number;
@@ -72,9 +72,27 @@ export function validateConfig(): ValidatedConfig {
   const tradingMode = parseTradingMode(process.env.TRADING_MODE);
 
   // Core security variables
-  const jwtSecret = cleanEnvValue(process.env.JWT_SECRET) || 'apex-trader-jwt-secret-key-production-32chars';
-  const encryptionKey = cleanEnvValue(process.env.ENCRYPTION_KEY) || 'apex-secure-encryption-key-production-32chars';
-  const ownerEmail = cleanEnvValue(process.env.OWNER_EMAIL) || 'tharunsai2081@gmail.com';
+  // SECURITY: no hard-coded fallback secrets. A public default JWT secret lets
+  // anyone forge an owner token. In production we refuse to boot without real
+  // secrets; in dev/test we use a random per-process secret (tokens die on restart).
+  const isProd = process.env.NODE_ENV === 'production';
+  const requireSecret = (name: string): string => {
+    const v = cleanEnvValue(process.env[name]);
+    if (v && v.length >= 32) return v;
+    if (v) {
+      // Set but short: keep working (an outage is worse), but say so loudly.
+      logger.error(`🔐 ${name} is only ${v.length} characters — replace it with 32+ random characters (openssl rand -hex 32)`);
+      return v;
+    }
+    if (isProd) {
+      throw new Error(`${name} must be set in production (32+ random characters)`);
+    }
+    logger.warn(`⚠️ ${name} missing/short — using an ephemeral random value (dev only)`);
+    return crypto.randomBytes(48).toString('hex');
+  };
+  const jwtSecret = requireSecret('JWT_SECRET');
+  const encryptionKey = requireSecret('ENCRYPTION_KEY');
+  const ownerEmail = cleanEnvValue(process.env.OWNER_EMAIL) || '';
 
   // Separate paper and live credentials cleanly
   const alpacaPaperKey = cleanEnvValue(process.env.ALPACA_PAPER_API_KEY || process.env.ALPACA_API_KEY);
@@ -91,8 +109,13 @@ export function validateConfig(): ValidatedConfig {
   // Fail-closed safety rule: Never enable live mode simply because live credentials exist.
   // Live mode requires BOTH explicit TRADING_MODE=live AND verified live credentials.
   let activeMode: TradingMode = 'paper';
+  // A third, deliberate switch: live money needs LIVE_TRADING_CONFIRMED set to
+  // an exact phrase, so a copied .env or a typo in TRADING_MODE can't go live.
+  const liveConfirmed = cleanEnvValue(process.env.LIVE_TRADING_CONFIRMED) === 'I_ACCEPT_REAL_MONEY_RISK';
   if (tradingMode === 'live') {
-    if (isLiveConfigured) {
+    if (isLiveConfigured && !liveConfirmed) {
+      logger.warn('⚠️ TRADING_MODE=live but LIVE_TRADING_CONFIRMED is not set to I_ACCEPT_REAL_MONEY_RISK. Staying on PAPER.');
+    } else if (isLiveConfigured) {
       activeMode = 'live';
       logger.warn('⚠️ LIVE TRADING MODE ENABLED with authenticated Alpaca Live credentials.');
     } else {
@@ -131,7 +154,6 @@ export function validateConfig(): ValidatedConfig {
     },
     DATABASE: {
       url: cleanEnvValue(process.env.DATABASE_URL),
-      sqlitePath: process.env.SQLITE_DB_PATH || 'backend/data/apex_trading.db',
     },
     RISK: {
       maxPositionSizePct: Number(cleanEnvValue(process.env.MAX_POSITION_SIZE_PCT)) || 15,
@@ -167,7 +189,7 @@ export function getSafeProviderStatus() {
       gammaUrl: appConfig.POLYMARKET.gammaApiUrl,
     },
     persistence: {
-      engine: 'SQLite (node:sqlite WAL)',
+      engine: 'PostgreSQL (Prisma)',
       storageReady: true,
     }
   };

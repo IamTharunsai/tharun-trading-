@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
+import { encryptSecret, decryptSecret } from '../utils/secrets';
 import { prisma } from '../utils/prisma';
 
 // Polygon USDC Contract Addresses
@@ -75,6 +76,14 @@ class AccountManager {
     if (apiKey && secretKey && !apiKey.includes('XXXX') && apiKey !== 'dummy-key') {
       const isPaper = (process.env.ALPACA_BASE_URL || '').includes('paper') || process.env.TRADING_MODE !== 'live';
       await this.testAndSaveAlpaca(apiKey, secretKey, isPaper, false);
+    } else {
+      // Keys previously entered in Settings (encrypted at rest)
+      try {
+        const st = await prisma.settings.findUnique({ where: { id: 'settings-1' } });
+        const k = decryptSecret(st?.alpacaApiKeyEnc);
+        const sk = decryptSecret(st?.alpacaSecretKeyEnc);
+        if (k && sk) await this.testAndSaveAlpaca(k, sk, st?.alpacaPaperMode ?? true, false);
+      } catch { /* DB not ready yet — Settings keys load on next connect */ }
     }
 
     // Check if env has Polymarket keys
@@ -146,22 +155,23 @@ class AccountManager {
       };
 
       if (saveSettings) {
+        // Stored encrypted (AES-256-GCM, ENCRYPTION_KEY) so Settings-entered
+        // keys survive a restart without sitting in the DB in plaintext.
+        const enc = {
+          alpacaApiKeyEnc: encryptSecret(apiKey.trim()),
+          alpacaSecretKeyEnc: encryptSecret(secretKey.trim()),
+          alpacaPaperMode: paperMode,
+        };
         await prisma.settings.upsert({
-          create: {
-            alpacaApiKey: apiKey.trim(),
-            alpacaSecretKey: secretKey.trim(),
-            alpacaPaperMode: paperMode,
-          },
-          update: {
-            alpacaApiKey: apiKey.trim(),
-            alpacaSecretKey: secretKey.trim(),
-            alpacaPaperMode: paperMode,
-          }
-        }).catch(() => {});
+          where: { id: 'settings-1' },
+          create: { id: 'settings-1', ...enc },
+          update: enc,
+        }).catch((e: any) => logger.warn('Could not persist Alpaca keys', { error: e?.message }));
       }
 
       logger.info(`✅ Alpaca successfully connected! Account: ${acc.account_number} (${paperMode ? 'PAPER' : 'LIVE'}), Value: $${acc.portfolio_value}`);
-      return { success: true, account: this.alpacaState };
+      const { apiKey: _k, secretKey: _s, ...safeAccount } = this.alpacaState as any;
+      return { success: true, account: safeAccount };
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.message || 'Authentication failed';
       this.alpacaState = {
@@ -261,15 +271,12 @@ class AccountManager {
       };
 
       if (saveSettings) {
+        // Only the public address is stored. A wallet private key is never
+        // written to the database (live Polymarket trading is not implemented).
         await prisma.settings.upsert({
-          create: {
-            polymarketAddress: formattedAddress,
-            polymarketPrivateKey: privateKey || '',
-          },
-          update: {
-            polymarketAddress: formattedAddress,
-            polymarketPrivateKey: privateKey || '',
-          }
+          where: { id: 'settings-1' },
+          create: { id: 'settings-1', polymarketAddress: formattedAddress },
+          update: { polymarketAddress: formattedAddress },
         }).catch(() => {});
       }
 

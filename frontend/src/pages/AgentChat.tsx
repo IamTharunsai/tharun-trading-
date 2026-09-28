@@ -32,13 +32,13 @@ export default function AgentChatPage() {
   const prices = useStore(s => s.prices);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const currentPrice = prices[asset]?.price || (asset === 'NVDA' ? 128.74 : asset === 'BTC' ? 67450 : 232.10);
+  const currentPrice = prices[asset]?.price ?? null;
   const currentChange = prices[asset]?.change24h || 1.84;
 
   useEffect(() => {
     setMessages([{
       role: 'assistant',
-      content: `Instant Bloomberg (IB) channel open. I am ${selectedAgent.name}, ${selectedAgent.role}. Asset focus is set to [${asset} @ $${currentPrice.toFixed(2)}]. Ask me for real-time technical setups, liquidation clusters, or risk guardrails.`,
+      content: `Instant Bloomberg (IB) channel open. I am ${selectedAgent.name}, ${selectedAgent.role}. Asset focus is set to [${asset}${currentPrice != null ? ` @ $${currentPrice.toFixed(2)}` : ''}]. Ask me for real-time technical setups, liquidation clusters, or risk guardrails.`,
       timestamp: new Date().toLocaleTimeString(),
       agentId: selectedAgent.id
     }]);
@@ -106,7 +106,7 @@ export default function AgentChatPage() {
           <span className="text-slate-500 font-semibold">ACTIVE TICKER:</span>
           <div className="flex items-center gap-2">
             <span className="text-slate-900 font-bold">{asset}</span>
-            <span className="text-blue-700 font-bold tabular-nums">${currentPrice.toFixed(2)}</span>
+            <span className="text-blue-700 font-bold tabular-nums">{currentPrice != null ? `$${currentPrice.toFixed(2)}` : '—'}</span>
             <span className={`tabular-nums font-bold ${currentChange >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
               {currentChange >= 0 ? '+' : ''}{currentChange.toFixed(2)}%
             </span>

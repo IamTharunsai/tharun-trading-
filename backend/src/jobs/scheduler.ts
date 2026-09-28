@@ -14,12 +14,15 @@ import { generateDailyJournal } from '../services/journalGenerator';
 import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { TradeSignal } from '../agents/types';
+import { preDebateGate } from '../trading/preDebateGate';
 import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions } from '../services/polymarket';
+
+const analyzedTradeIds = new Set<string>();
 
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
 
-export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto') {
+export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean } = {}) {
   if (isKillSwitchActive()) return;
   const lockKey = `${asset}:${market}`;
   if (debateLocks.has(lockKey)) return;
@@ -36,6 +39,12 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
     logger.info(`\n🏛️ Investment Committee convening for ${asset}...`);
     const snapshot = await buildMarketSnapshot(asset, market);
     if (!snapshot) { logger.warn(`No snapshot for ${asset}`); return; }
+    const gate = opts.bypassGate ? { pass: true, setup: 'MANUAL', reason: 'manually triggered' } : preDebateGate(snapshot as any);
+    if (!gate.pass) {
+      logger.info(`⏭️ ${asset}: skipped before debate — ${gate.reason} (saved ~30 LLM calls)`);
+      return;
+    }
+    logger.info(`✅ ${asset}: ${gate.setup} — ${gate.reason}`);
     const bWidth = (snapshot.indicators.bollingerBands.upper - snapshot.indicators.bollingerBands.lower) / snapshot.indicators.bollingerBands.middle;
     const regime = await detectMarketRegime(asset, {
       price: snapshot.price, priceChange24h: snapshot.priceChangePct24h,
@@ -312,10 +321,11 @@ export function initScheduler() {
         select: { id: true }
       });
 
-      const analyzed = new Set<string>();
       for (const trade of recentlyClosed) {
-        if (!analyzed.has(trade.id)) {
-          analyzed.add(trade.id);
+        // Module-level memo: the 5-min lookback overlaps the 2-min cadence, so
+        // without this each closed trade was analysed (and billed) 2-3 times.
+        if (!analyzedTradeIds.has(trade.id)) {
+          analyzedTradeIds.add(trade.id);
           await runPostTradeAnalysis(trade.id).catch(err => logger.error(`Post-trade analysis failed for ${trade.id}`, { err }));
         }
       }

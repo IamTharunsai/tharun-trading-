@@ -34,7 +34,7 @@ export default function AlternativeDataPage() {
 
   const streams = altData?.streams || [];
   const jobVelocity = altData?.jobPostingVelocity;
-  const compositeScore = altData?.compositeAlphaScore ?? 78;
+  const compositeScore = altData?.compositeAlphaScore ?? 0;
   const compositeSignal = altData?.compositeSignal ?? 'STRONG_BUY';
 
   return (
@@ -110,12 +110,12 @@ export default function AlternativeDataPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-3xl font-bold text-apex-text">
-              {jobVelocity ? `${jobVelocity.jobVelocity > 0 ? '+' : ''}${(jobVelocity.jobVelocity * 100).toFixed(1)}%` : '+54.8%'}
+              {jobVelocity ? `${jobVelocity.jobVelocity > 0 ? '+' : ''}${(jobVelocity.jobVelocity * 100).toFixed(1)}%` : 'No data'}
             </span>
             <span className="font-mono text-xs text-emerald-600 font-semibold">4–8 Wk Lead</span>
           </div>
           <div className="mt-2 font-sans text-[11px] text-apex-muted">
-            {jobVelocity?.current30dPostings || 480} active hiring openings (64% AI/ML GPU roles)
+            {jobVelocity ? `${jobVelocity.current30dPostings} active hiring openings` : 'Job-posting feed not connected'}
           </div>
         </div>
 
@@ -125,7 +125,7 @@ export default function AlternativeDataPage() {
             <TrendingUp size={15} className="text-purple-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-mono text-3xl font-bold text-apex-text">71% Win Rate</span>
+            <span className="font-mono text-3xl font-bold text-apex-text">Not backtested</span>
             <span className="font-mono text-xs text-purple-600 font-semibold">IBKR Straddles</span>
           </div>
           <div className="mt-2 font-sans text-[11px] text-apex-muted">
@@ -139,8 +139,7 @@ export default function AlternativeDataPage() {
             <ShieldCheck size={15} className="text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-mono text-3xl font-bold text-emerald-600">$0 / $5M</span>
-            <span className="font-mono text-xs text-apex-muted">80% Moat Parity</span>
+            <span className="font-mono text-3xl font-bold text-emerald-600">Free feeds</span>
           </div>
           <div className="mt-2 font-sans text-[11px] text-apex-muted">
             Synthesized from GitHub, LinkedIn, SEC, iTunes & Freightos open pipelines

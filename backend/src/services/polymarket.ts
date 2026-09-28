@@ -228,7 +228,11 @@ function calculateBayesianEstimate(market: PolymarketMarket, portfolioValue: num
   const absEdge = Math.abs(edge);
 
   let recommendedSide: 'YES' | 'NO' | 'SKIP' = 'SKIP';
-  if (absEdge >= 0.08 && topicConfidence >= 60) {
+  // This keyword/sin() heuristic has NO information about the real-world
+  // event, so its "edge" is noise. It may be displayed, but it never bets
+  // unless you explicitly opt in for experiments.
+  const heuristicMayBet = process.env.POLYMARKET_ALLOW_HEURISTIC_BETS === 'true';
+  if (heuristicMayBet && absEdge >= 0.08 && topicConfidence >= 60) {
     recommendedSide = edge > 0 ? 'YES' : 'NO';
   }
 
@@ -306,11 +310,11 @@ Respond ONLY in valid JSON:
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const geminiPromise = ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json' }
       });
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000));
       const response = await Promise.race([geminiPromise, timeoutPromise]) as any;
       if (response?.text) {
         parsed = JSON.parse(response.text.trim());
@@ -327,11 +331,11 @@ Respond ONLY in valid JSON:
       const Anthropic = (await import('@anthropic-ai/sdk')).default;
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const anthropicPromise = anthropic.messages.create({
-        model: 'claude-sonnet-5',
+        model: process.env.LLM_MODEL_SMART || 'claude-sonnet-5',
         max_tokens: 600,
         messages: [{ role: 'user', content: prompt }]
       });
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000));
       const response = await Promise.race([anthropicPromise, timeoutPromise]) as any;
       const content = response?.content?.find((c: any) => c.type === 'text');
       if (content && content.type === 'text') {
@@ -452,16 +456,24 @@ export async function placePolymarketBet(
 
   if (isPaper) {
     logger.info(`📄 PAPER BET: ${analysis.recommendedSide} $${analysis.betSizeUSD} on "${analysis.question.slice(0, 50)}..."`);
+    // Book the bet the way Polymarket does: you buy SHARES of one outcome at
+    // that outcome's price; each share pays $1 if it wins, $0 if it loses.
+    // (Old code stored the YES price for NO bets and quantity = dollars, so
+    // every NO bet and every loss had the wrong P&L.)
+    const sidePrice = analysis.recommendedSide === 'YES'
+      ? analysis.marketImpliedProbability
+      : 1 - analysis.marketImpliedProbability;
+    const shares = sidePrice > 0 ? analysis.betSizeUSD / sidePrice : 0;
     await prisma.trade.create({
       data: {
         asset: 'POLYMARKET',
         market: 'prediction',
         type: analysis.recommendedSide === 'YES' ? 'BUY' : 'SELL',
-        entryPrice: analysis.marketImpliedProbability,
-        quantity: analysis.betSizeUSD,
+        entryPrice: sidePrice,
+        quantity: shares,
         status: 'OPEN',
-        stopLossPrice: 0.01, // 1 cent = minimum
-        takeProfitPrice: analysis.recommendedSide === 'YES' ? 0.99 : 0.01,
+        stopLossPrice: 0,
+        takeProfitPrice: 1, // marker: share-based accounting (v2)
         brokerOrderId: analysis.conditionId,
       }
     }).catch(() => {});
@@ -521,12 +533,19 @@ export async function pollPolymarketResolutions(): Promise<void> {
     // Trade.type BUY == bet YES, SELL == bet NO (matches placePolymarketBet's mapping)
     const won = trade.type === 'BUY' ? yesResolvedTrue : !yesResolvedTrue;
     const exitPrice = won ? 1 : 0;
-    const pnl = won
-      ? (1 - trade.entryPrice) * trade.quantity
-      : -trade.entryPrice * trade.quantity;
-    const pnlPct = won
-      ? ((1 - trade.entryPrice) / trade.entryPrice) * 100
-      : -100;
+    let pnl: number;
+    let pnlPct: number;
+    if (trade.takeProfitPrice === 1) {
+      // v2: quantity = shares, entryPrice = price paid per share of our side
+      pnl = (exitPrice - trade.entryPrice) * trade.quantity;
+      pnlPct = trade.entryPrice > 0 ? ((exitPrice - trade.entryPrice) / trade.entryPrice) * 100 : 0;
+    } else {
+      // legacy rows: quantity = USD stake, entryPrice = YES price for both sides
+      const sidePrice = trade.type === 'BUY' ? trade.entryPrice : 1 - trade.entryPrice;
+      const stake = trade.quantity;
+      pnl = won ? stake * (1 - sidePrice) / Math.max(sidePrice, 0.01) : -stake;
+      pnlPct = stake > 0 ? (pnl / stake) * 100 : 0;
+    }
 
     await prisma.trade.update({
       where: { id: trade.id },

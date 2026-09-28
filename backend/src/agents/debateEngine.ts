@@ -13,6 +13,7 @@ import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
+import { routedMessagesCreate } from '../utils/llmRouter';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
@@ -62,12 +63,38 @@ function extractJSON(text: string): any {
   return JSON.parse(stripped.slice(start)); // unterminated — throws with a clear position
 }
 
-// Call Anthropic with automatic retry on 429 rate limit
+// ── DAILY LLM BUDGET (survival rule) ──────────────────────────────────────────
+// With a $100 account, LLM spend can easily exceed trading profit. Every paid
+// call is priced; once today's spend passes LLM_DAILY_BUDGET_USD (default $1)
+// calls throw, agents fall back to HOLD, and no trade is placed. Local Ollama
+// calls cost $0 and are never blocked.
+const PRICE_PER_MTOK: Record<string, [number, number]> = { haiku: [1, 5], sonnet: [3, 15], opus: [15, 75] };
+let spendDay = new Date().toISOString().slice(0, 10);
+let spendUsd = 0;
+export function estimateCallCostUsd(model: string, usage: any, provider?: string): number {
+  if (!usage || provider === 'ollama') return 0;
+  const key = Object.keys(PRICE_PER_MTOK).find(k => model.toLowerCase().includes(k));
+  const [inP, outP] = key ? PRICE_PER_MTOK[key] : [Number(process.env.LLM_PRICE_IN_PER_MTOK || 1), Number(process.env.LLM_PRICE_OUT_PER_MTOK || 5)];
+  const cachedIn = (usage.cache_read_input_tokens || 0) * 0.1;
+  return (((usage.input_tokens || 0) + cachedIn) * inP + (usage.output_tokens || 0) * outP) / 1e6;
+}
+export function getLlmSpendToday() { return { day: spendDay, usd: spendUsd, budget: Number(process.env.LLM_DAILY_BUDGET_USD || 1) }; }
+function assertBudget() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== spendDay) { spendDay = today; spendUsd = 0; }
+  const budget = Number(process.env.LLM_DAILY_BUDGET_USD || 1);
+  if (spendUsd >= budget) throw new Error(`LLM daily budget exhausted ($${spendUsd.toFixed(2)} / $${budget})`);
+}
+
+// Call the LLM with automatic retry on 429 rate limit
 async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await anthropic.messages.create(params);
-      logUsage(params.model, (response as any).usage);
+      assertBudget();
+      // Routed: Anthropic by default, or Ollama / NVIDIA NIM per LLM_PROVIDER_FAST/SMART.
+      const response = await routedMessagesCreate(params, (p) => anthropic.messages.create(p));
+      logUsage((response as any).model || params.model, (response as any).usage);
+      spendUsd += estimateCallCostUsd(String((response as any).model || params.model), (response as any).usage, (response as any).provider);
       return response;
     } catch (err: any) {
       if (err?.status === 429 && attempt < maxRetries) {
@@ -1034,7 +1061,7 @@ export async function loadDebateCheckpoint(
     return {
       status: checkpoint.status,
       round1Results: checkpoint.round1Results as any[],
-      round2Exchange: checkpoint.round2Exchange as CrossExam | null,
+      round2Exchange: checkpoint.round2Exchange as unknown as CrossExam | null,
     };
   } catch (err) {
     logger.warn('Failed to load debate checkpoint', { asset, err });

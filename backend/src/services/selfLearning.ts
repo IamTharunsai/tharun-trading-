@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { updateStockMemory } from './stockMemoryService';
 import { extractResponseText, withRetry } from '../utils/anthropicText';
+import { routedMessagesCreate } from '../utils/llmRouter';
 
 // Weight applied to a suspended agent's vote — reduced, not silenced, so a
 // single bad stretch can't create a no-quorum deadlock, but a persistently
@@ -67,11 +68,13 @@ export async function runPostTradeAnalysis(tradeId: string): Promise<void> {
       return;
     }
 
-    const outcome: 'WIN' | 'LOSS' | 'BREAKEVEN' =
-      (trade.pnl || 0) > 0.5 ? 'WIN' :
-      (trade.pnl || 0) < -0.5 ? 'LOSS' : 'BREAKEVEN';
-
+    // Classify by % return, not dollars: with a $100 account almost no trade
+    // makes or loses $0.50, so the old dollar threshold labelled nearly every
+    // trade BREAKEVEN and the agents never learned anything.
     const pnlPct = trade.pnlPct || 0;
+    const outcome: 'WIN' | 'LOSS' | 'BREAKEVEN' =
+      pnlPct > 0.25 ? 'WIN' :
+      pnlPct < -0.25 ? 'LOSS' : 'BREAKEVEN';
     const agentVotes = (trade.agentDecision?.agentVotes as any[]) || [];
     const marketSnapshot = trade.agentDecision?.marketSnapshot as any;
 
@@ -128,18 +131,21 @@ async function generateAgentLesson(
   const agentId = agentVote.agentId;
   const agentName = agentVote.agentName;
 
+  // Stored votes are Round-3 results ({ finalVote, initialVote }); older rows
+  // used { vote }. Reading only `.vote` made every agent "wrong" on every win.
+  const vote = agentVote.finalVote ?? agentVote.vote;
   const agentWasRight =
-    (outcome === 'WIN' && agentVote.vote === trade.type) ||
-    (outcome === 'LOSS' && agentVote.vote !== trade.type && agentVote.vote !== 'HOLD') ||
-    (outcome === 'LOSS' && agentVote.vote === 'HOLD');
+    (outcome === 'WIN' && vote === trade.type) ||
+    (outcome === 'LOSS' && vote !== trade.type && vote !== 'HOLD') ||
+    (outcome === 'LOSS' && vote === 'HOLD');
 
   try {
     const prompt = `You are ${agentName}, reviewing your prediction for learning.
 
 PREDICTION:
 Asset: ${trade.asset}
-Vote: ${agentVote.vote} (${agentVote.confidence}%)
-Reasoning: "${agentVote.reasoning}"
+Vote: ${vote} (${agentVote.confidence}%)
+Reasoning: "${agentVote.finalReason ?? agentVote.reasoning ?? agentVote.openingArgument ?? ''}"
 
 RESULT:
 Direction: ${trade.type}
@@ -158,11 +164,13 @@ Respond in JSON:
   "shouldFavorSetupIn": ["<condition>"]
 }`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-5',
+    // 14 lessons per closed trade: use the cheap "fast" tier (Ollama/NVIDIA/Haiku
+    // via LLM_PROVIDER_FAST), not the most expensive model.
+    const response = await routedMessagesCreate({
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
       messages: [{ role: 'user', content: prompt }]
-    });
+    }, (p) => anthropic.messages.create(p));
 
     const parsed = JSON.parse(extractResponseText(response.content).replace(/```json\n?|\n?```/g, '').trim());
 
@@ -171,7 +179,7 @@ Respond in JSON:
       agentName,
       tradeId: trade.id,
       asset: trade.asset,
-      originalVote: agentVote.vote,
+      originalVote: vote,
       originalConfidence: agentVote.confidence,
       originalReasoning: agentVote.reasoning,
       tradeOutcome: outcome,

@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 # --include=dev forces devDependencies (typescript, prisma, etc.) to install
@@ -10,10 +10,9 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm install --include=dev"]
 
 [phases.build]
-cmds = [
-  "npx prisma generate --schema=./prisma/schema.prisma",
-  "npm run build"
-]
+cmds = ["npm run build"]
 
 [start]
-cmd = "npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss && node dist/index.js"
+# Additive schema sync only: without --accept-data-loss, a destructive schema
+# change makes the deploy FAIL instead of silently dropping data.
+cmd = "npx prisma db push --schema=./prisma/schema.prisma --skip-generate && node dist/index.js"
