@@ -365,7 +365,7 @@ class GeopoliticalDataService {
         source: event.source,
         timestamp: new Date(event.timestamp),
       }
-    }).catch((err) => logger.error('Failed to persist GeopoliticalEvent', { err }));
+    }).catch((err: any) => logger.error('Failed to persist GeopoliticalEvent', { err }));
   }
 
   async persistNewsItem(item: NewsItem) {
@@ -381,7 +381,7 @@ class GeopoliticalDataService {
         summary: item.summary,
         publishedAt: new Date(item.timestamp),
       }
-    }).catch((err) => logger.error('Failed to persist NewsItem', { err }));
+    }).catch((err: any) => logger.error('Failed to persist NewsItem', { err }));
   }
 
   /**

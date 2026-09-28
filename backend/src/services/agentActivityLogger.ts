@@ -4,11 +4,9 @@
  * Provides complete transparency into what agents are doing and why
  */
 
+import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export interface AgentActivity {
   id: string;
@@ -44,7 +42,7 @@ export interface AgentActivityFeed {
  */
 export async function logAgentActivity(activity: Omit<AgentActivity, 'id' | 'timestamp'>): Promise<AgentActivity> {
   const now = new Date();
-  const id = `activity-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const id = `activity-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
   const fullActivity: AgentActivity = {
     id,
@@ -95,7 +93,7 @@ export async function getActivityFeed(): Promise<AgentActivityFeed> {
     });
 
     const parsedActivities: AgentActivity[] = activities
-      .map(log => {
+      .map((log: any) => {
         try {
           return typeof log.metadata === 'string'
             ? JSON.parse(log.metadata)
@@ -104,7 +102,7 @@ export async function getActivityFeed(): Promise<AgentActivityFeed> {
           return null;
         }
       })
-      .filter((a): a is AgentActivity => a !== null);
+      .filter((a: any): a is AgentActivity => a !== null);
 
     // Get recent votes
     const recentVotes = parsedActivities
@@ -166,7 +164,7 @@ export async function getAgentActivityTrace(agentId: number, hours: number = 24)
     });
 
     return logs
-      .map(log => {
+      .map((log: any) => {
         try {
           return typeof log.metadata === 'string'
             ? JSON.parse(log.metadata)
@@ -175,7 +173,7 @@ export async function getAgentActivityTrace(agentId: number, hours: number = 24)
           return null;
         }
       })
-      .filter((a): a is AgentActivity => a !== null);
+      .filter((a: any): a is AgentActivity => a !== null);
   } catch (err) {
     logger.error('Failed to get agent trace', { agentId, err });
     return [];
@@ -197,7 +195,7 @@ async function getAgentAccuracy(agentId: number): Promise<number> {
 
     if (lessons.length === 0) return 50;
 
-    const correct = lessons.filter(l => {
+    const correct = lessons.filter((l: any) => {
       const meta = typeof l.metadata === 'string' ? JSON.parse(l.metadata) : l.metadata;
       return meta.correct === true;
     }).length;

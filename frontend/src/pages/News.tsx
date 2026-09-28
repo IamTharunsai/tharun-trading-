@@ -38,6 +38,20 @@ interface MarketSentiment {
   criticalEvents: number;
 }
 
+function parseArray(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
 function MarketNewsTab() {
   const { data: news = [] } = useQuery({ queryKey: ['news'], queryFn: getNews, refetchInterval: 60000 });
 
@@ -48,33 +62,36 @@ function MarketNewsTab() {
 
   return (
     <div className="space-y-3">
-      {news.map((n: any) => (
-        <div key={n.id} className="card hover:border-apex-border/80 transition-colors">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                {n.assetsMentioned?.map((a: string) => (
-                  <span key={a} className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-apex-accent/10 text-apex-accent">{a}</span>
-                ))}
-                <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${sentimentColor(n.sentimentScore || 0)}`}>
-                  {n.sentimentLabel || 'NEUTRAL'} {n.sentimentScore ? `(${n.sentimentScore.toFixed(2)})` : ''}
-                </span>
+      {news.map((n: any) => {
+        const assets = parseArray(n.assetsMentioned);
+        return (
+          <div key={n.id} className="card hover:border-apex-border/80 transition-colors">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  {assets.map((a: string) => (
+                    <span key={a} className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-apex-accent/10 text-apex-accent">{a}</span>
+                  ))}
+                  <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${sentimentColor(n.sentimentScore || 0)}`}>
+                    {n.sentimentLabel || 'NEUTRAL'} {n.sentimentScore ? `(${n.sentimentScore.toFixed(2)})` : ''}
+                  </span>
+                </div>
+                <h3 className="font-sans font-semibold text-sm text-apex-text">{n.headline}</h3>
+                {n.summary && <p className="font-sans text-xs text-apex-muted mt-1 leading-relaxed">{n.summary}</p>}
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="font-mono text-[10px] text-apex-muted">{n.source}</span>
+                  <span className="font-mono text-[10px] text-apex-muted">{n.publishedAt ? format(new Date(n.publishedAt), 'MM/dd HH:mm') : ''}</span>
+                </div>
               </div>
-              <h3 className="font-sans font-semibold text-sm text-apex-text">{n.headline}</h3>
-              {n.summary && <p className="font-sans text-xs text-apex-muted mt-1 leading-relaxed">{n.summary}</p>}
-              <div className="flex items-center gap-3 mt-2">
-                <span className="font-mono text-[10px] text-apex-muted">{n.source}</span>
-                <span className="font-mono text-[10px] text-apex-muted">{n.publishedAt ? format(new Date(n.publishedAt), 'MM/dd HH:mm') : ''}</span>
-              </div>
+              {n.url && (
+                <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-apex-muted hover:text-apex-accent transition-colors flex-shrink-0">
+                  <ExternalLink size={14} />
+                </a>
+              )}
             </div>
-            {n.url && (
-              <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-apex-muted hover:text-apex-accent transition-colors flex-shrink-0">
-                <ExternalLink size={14} />
-              </a>
-            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
       {news.length === 0 && <div className="card text-center py-12 font-mono text-xs text-apex-muted">No news articles analyzed yet</div>}
     </div>
   );
@@ -247,7 +264,7 @@ function GeopoliticsTab() {
                     }}>
                       {item.impact} IMPACT
                     </span>
-                    {item.sectorsAffected?.map(sector => (
+                    {parseArray(item.sectorsAffected).map(sector => (
                       <span key={sector} style={{
                         background: 'rgba(91,100,114,0.12)', color: 'var(--apex-text)',
                         padding: '2px 6px', borderRadius: 3, fontFamily: 'Space Mono', fontSize: 8, fontWeight: 700
@@ -284,7 +301,7 @@ function GeopoliticsTab() {
                       {event.severity}
                     </span>
                     <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: 'var(--apex-muted)' }}>
-                      Affects: {event.affectedAssets.join(', ')}
+                      Affects: {parseArray(event.affectedAssets).join(', ') || 'Global'}
                     </span>
                   </div>
                 </div>

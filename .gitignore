@@ -37,8 +37,13 @@ Thumbs.db
 tmp/
 temp/
 
-# Database migrations lock (but track schema and migrations)
+# Database files & migrations
 prisma/migrations/.prisma
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+*.db
+*.db-journal
 
 # Development
 .turbo/

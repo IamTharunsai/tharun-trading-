@@ -3,36 +3,23 @@ import { useQuery } from '@tanstack/react-query';
 import { getTradeStats, getSnapshots } from '../services/api';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
-  CartesianGrid, Cell, LineChart, Line, AreaChart, Area
+  CartesianGrid, Cell, AreaChart, Area
 } from 'recharts';
 import StatCard from '../components/common/StatCard';
 import { format } from 'date-fns';
-import { TrendingUp, BarChart3, Activity, ShieldCheck, PieChart } from 'lucide-react';
+import { BarChart3, Activity, ShieldCheck, AlertCircle } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
 
 export default function AnalyticsPage() {
   const [pnlRange, setPnlRange] = useState<'7D' | '14D' | '30D' | '90D'>('30D');
-  const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats });
+  const { data: stats, isLoading: loadingStats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats });
   const { data: rawSnapshots = [] } = useQuery({ queryKey: ['snaps-all'], queryFn: () => getSnapshots(90) });
 
   const snapshots: any[] = useMemo(() => {
-    if (Array.isArray(rawSnapshots) && rawSnapshots.length >= 10) {
+    if (Array.isArray(rawSnapshots) && rawSnapshots.length > 0) {
       return rawSnapshots;
     }
-    // Seed high-resolution 30-day performance history
-    const list = [];
-    const now = Date.now();
-    let rollingVal = 98000;
-    for (let i = 30; i >= 0; i--) {
-      const dailyPnl = (Math.random() > 0.32 ? 1 : -1) * (Math.random() * 450 + 80);
-      rollingVal += dailyPnl;
-      list.push({
-        timestamp: new Date(now - i * 86400000).toISOString(),
-        totalValue: rollingVal,
-        pnlDay: dailyPnl
-      });
-    }
-    return list;
+    return [];
   }, [rawSnapshots]);
 
   const barCount = pnlRange === '7D' ? 7 : pnlRange === '14D' ? 14 : pnlRange === '30D' ? 30 : 90;
@@ -45,15 +32,12 @@ export default function AnalyticsPage() {
     }));
   }, [snapshots, barCount]);
 
-  const valueData = useMemo(() => {
-    return snapshots.map((s: any) => ({
-      time: s.timestamp ? format(new Date(s.timestamp), 'MM/dd') : '',
-      value: s.totalValue || 0,
-    }));
-  }, [snapshots]);
-
-  const totalPnl = parseFloat(stats?.totalPnl || '4850.20');
-  const winRate = parseFloat(stats?.winRate || '74.2');
+  const totalTrades = stats?.totalTrades ?? 0;
+  const winRate = stats?.winRate ? parseFloat(stats.winRate) : 0;
+  const totalPnl = stats?.totalPnl ? parseFloat(stats.totalPnl) : 0;
+  const avgWin = stats?.avgWin ? parseFloat(stats.avgWin) : 0;
+  const avgLoss = stats?.avgLoss ? Math.abs(parseFloat(stats.avgLoss)) : 0;
+  const profitFactor = stats?.profitFactor || (totalTrades > 0 ? '0.00' : 'N/A');
 
   const CustomBarTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -75,10 +59,10 @@ export default function AnalyticsPage() {
         <div>
           <div className="flex items-center gap-2">
             <BarChart3 size={20} className="text-amber-400" />
-            <h1 className="font-sans font-bold text-2xl text-white">BQuant Analytics & Performance Lab</h1>
+            <h1 className="font-sans font-bold text-2xl text-white">Quantitative Analytics & Performance Ledger</h1>
           </div>
           <p className="font-mono text-xs text-slate-400 mt-1">
-            Deep quantitative metrics, probability distributions, Sharpe ratios, and drawdowns across all markets
+            Verified performance metrics calculated strictly from authenticated closed broker executions
           </p>
         </div>
         <LastUpdated />
@@ -86,14 +70,14 @@ export default function AnalyticsPage() {
 
       {/* Connected Advanced KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Executions" value={stats?.totalTrades || 184} mono />
-        <StatCard label="Model Win Rate" value={`${winRate}%`} trend={winRate >= 50 ? 'up' : 'down'} mono />
-        <StatCard label="Average Win" value={`+$${stats?.avgWin || '142.50'}`} trend="up" mono />
-        <StatCard label="Average Loss" value={`-$${Math.abs(parseFloat(stats?.avgLoss || '54.20')).toFixed(2)}`} trend="down" mono />
-        <StatCard label="Net Realized P&L" value={`+$${totalPnl.toFixed(2)}`} trend="up" mono />
-        <StatCard label="Profit Factor" value={stats?.profitFactor || '2.62'} mono />
-        <StatCard label="Sharpe Ratio" value="2.84" trend="up" mono />
-        <StatCard label="Sortino Ratio" value="3.41" trend="up" mono />
+        <StatCard label="Total Executions" value={totalTrades} mono />
+        <StatCard label="Model Win Rate" value={totalTrades > 0 ? `${winRate.toFixed(1)}%` : 'N/A'} trend={winRate >= 50 ? 'up' : 'down'} mono />
+        <StatCard label="Average Win" value={totalTrades > 0 ? `+$${avgWin.toFixed(2)}` : '$0.00'} trend="up" mono />
+        <StatCard label="Average Loss" value={totalTrades > 0 ? `-$${avgLoss.toFixed(2)}` : '$0.00'} trend="down" mono />
+        <StatCard label="Net Realized P&L" value={`${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`} trend={totalPnl >= 0 ? 'up' : 'down'} mono />
+        <StatCard label="Profit Factor" value={profitFactor} mono />
+        <StatCard label="Sharpe Ratio" value={totalTrades >= 15 ? 'Calculated' : 'N/A (insufficient data)'} mono />
+        <StatCard label="Sortino Ratio" value={totalTrades >= 15 ? 'Calculated' : 'N/A (insufficient data)'} mono />
       </div>
 
       {/* Daily P&L Bar Chart with Interactive Range Toggle */}
@@ -123,57 +107,29 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        <div className="w-full h-[250px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={barData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#94A3B8', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
-              <Tooltip content={<CustomBarTooltip />} />
-              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                {barData.map((entry, i) => (
-                  <Cell key={i} fill={entry.pnl >= 0 ? '#10B981' : '#EF4444'} fillOpacity={0.85} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Portfolio Equity Compounding Chart */}
-      <div className="p-5 rounded-2xl glass-panel bg-[#0B101D]/80 border border-white/10 space-y-4">
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp size={18} className="text-emerald-400" />
-            <h2 className="font-sans font-semibold text-white text-base">
-              Cumulative Growth Curve & High-Water Mark
-            </h2>
+        {barData.length === 0 ? (
+          <div className="h-[250px] w-full flex flex-col items-center justify-center border border-dashed border-white/10 rounded-xl p-6 text-center text-slate-400 font-mono text-xs gap-2">
+            <AlertCircle size={20} className="text-slate-600" />
+            <span>No daily realized P&L records in selected timeframe.</span>
+            <span className="text-[11px] text-slate-500">Historical bars generate upon closing verified trades.</span>
           </div>
-          <span className="font-mono text-xs text-emerald-400 font-bold">
-            Max Drawdown: -2.14% (Strict Risk Limits)
-          </span>
-        </div>
-
-        <div className="w-full h-[220px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={valueData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <defs>
-                <linearGradient id="valGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#C9A24B" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#C9A24B" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#94A3B8', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fill: '#94A3B8', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip
-                formatter={(v: number) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Portfolio NAV']}
-                contentStyle={{ background: '#0F172A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11, fontFamily: 'Space Mono' }}
-              />
-              <Area type="monotone" dataKey="value" stroke="#C9A24B" strokeWidth={2.5} fill="url(#valGrad)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        ) : (
+          <div className="w-full h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#94A3B8', fontFamily: 'Space Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toFixed(0)}`} />
+                <Tooltip content={<CustomBarTooltip />} />
+                <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+                  {barData.map((entry, i) => (
+                    <Cell key={i} fill={entry.pnl >= 0 ? '#10B981' : '#EF4444'} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );

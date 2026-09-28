@@ -1,45 +1,39 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { login } from '../services/api';
 import toast from 'react-hot-toast';
-import { Zap, Lock, Mail, Shield } from 'lucide-react';
-
-const C = {
-  bg:     'var(--apex-bg)',
-  card:   'rgba(255, 255, 255, 0.6)',
-  border: 'var(--apex-border)',
-  accent: 'var(--apex-accent)',
-  gold:   'var(--apex-gold)',
-  text:   'var(--apex-text)',
-  muted:  'var(--apex-muted)',
-  green:  'var(--apex-green)',
-  yellow: 'var(--apex-yellow)',
-};
+import { Zap, Lock, Mail, Shield, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [totp, setTotp] = useState('');
   const [requireTotp, setRequireTotp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const { setAuth } = useStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg(null);
     setLoading(true);
+
     try {
       const data = await login(email, password, requireTotp ? totp : undefined);
       setAuth(data.token, data.user);
-      toast.success('Access granted');
+      toast.success('Access granted — Authenticated as Owner');
       navigate('/');
     } catch (err: any) {
       if (err.response?.data?.requireTotp) {
         setRequireTotp(true);
-        toast('Enter your 2FA code', { icon: '🔐' });
+        toast('Enter your Two-Factor Authentication (2FA) code', { icon: '🔐' });
       } else {
-        toast.error(err.response?.data?.error || 'Authentication failed');
+        const msg = err.response?.data?.error || 'Invalid email or password.';
+        setErrorMsg(msg);
+        toast.error(msg);
       }
     } finally {
       setLoading(false);
@@ -47,205 +41,143 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: C.bg,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 16,
-      fontFamily: 'Manrope, sans-serif',
-    }}>
-      {/* Subtle dot grid background */}
-      <div style={{
-        position: 'absolute', inset: 0, opacity: 0.35,
-        backgroundImage: 'radial-gradient(circle, #DCDFE6 1px, transparent 1px)',
-        backgroundSize: '28px 28px',
-        pointerEvents: 'none',
-      }} />
+    <div className="min-h-screen bg-[#060A12] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Subtle grid pattern background */}
+      <div
+        className="absolute inset-0 opacity-20 pointer-events-none"
+        style={{
+          backgroundImage: 'radial-gradient(circle, #334155 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      />
 
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 380 }}>
-
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 64, height: 64, borderRadius: 18,
-            background: `linear-gradient(135deg, ${C.accent}, #0A4636)`,
-            border: `1px solid ${C.gold}`,
-            marginBottom: 16, boxShadow: '0 8px 24px rgba(14,107,79,0.3)',
-          }}>
-            <Zap size={30} color="#fff" />
+      <div className="relative z-10 w-full max-w-md">
+        {/* Header Branding */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 via-emerald-500/20 to-cyan-500/20 border border-amber-500/40 shadow-xl mb-4">
+            <Zap size={32} className="text-amber-400" />
           </div>
-          <h1 style={{ fontFamily: 'Fraunces', fontWeight: 700, fontSize: 26, color: C.text, margin: '0 0 6px' }}>
-            THARUN TRADING BOT
+          <h1 className="font-bold text-2xl text-white tracking-tight">
+            APEX TRADING PLATFORM
           </h1>
-          <p style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, margin: 0, letterSpacing: '0.12em' }}>
-            AI-POWERED AUTONOMOUS TRADING
+          <p className="font-mono text-xs text-slate-400 mt-1 uppercase tracking-wider">
+            Owner Authentication Terminal
           </p>
         </div>
 
-        {/* Card */}
-        <div style={{
-          background: C.card,
-          backdropFilter: 'blur(18px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-          border: `1.5px solid ${C.border}`,
-          borderRadius: 16,
-          padding: 28,
-          boxShadow: '0 8px 32px rgba(20,30,50,0.08), inset 0 1px 0 rgba(255,255,255,0.5)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-            <Lock size={13} color={C.accent} />
-            <span style={{ fontFamily: 'Space Mono', fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>
-              SECURE ACCESS — OWNER ONLY
+        {/* Login Card */}
+        <div className="bg-[#0B101D]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex items-center gap-2 pb-4 border-b border-white/10">
+            <Lock size={14} className="text-amber-400" />
+            <span className="font-mono text-xs text-slate-300 font-bold uppercase tracking-wider">
+              Secure Owner Gateway
             </span>
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Email */}
-            <div>
-              <label style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted, display: 'block', marginBottom: 6, letterSpacing: '0.1em' }}>
+          {errorMsg && (
+            <div className="flex items-center gap-2.5 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
+              <AlertCircle size={16} className="shrink-0 text-rose-400" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {/* Email Field */}
+            <div className="space-y-1.5">
+              <label htmlFor="login-email" className="block font-mono text-xs text-slate-300 font-semibold tracking-wider">
                 EMAIL ADDRESS
               </label>
-              <div style={{ position: 'relative' }}>
-                <Mail size={13} color={C.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+              <div className="relative">
+                <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
-                  type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                  placeholder="your@email.com"
-                  style={{
-                    width: '100%', padding: '11px 12px 11px 36px',
-                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
-                    fontFamily: 'Space Mono', fontSize: 13, color: C.text,
-                    outline: 'none', boxSizing: 'border-box',
-                  }}
-                  onFocus={e => e.target.style.borderColor = C.accent}
-                  onBlur={e => e.target.style.borderColor = C.border}
+                  id="login-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  placeholder="owner@domain.com"
+                  className="w-full pl-10 pr-4 py-2.5 bg-black/50 border border-white/10 rounded-xl font-mono text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
                 />
               </div>
             </div>
 
-            {/* Password */}
-            <div>
-              <label style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.muted, display: 'block', marginBottom: 6, letterSpacing: '0.1em' }}>
+            {/* Password Field */}
+            <div className="space-y-1.5">
+              <label htmlFor="login-password" className="block font-mono text-xs text-slate-300 font-semibold tracking-wider">
                 PASSWORD
               </label>
-              <div style={{ position: 'relative' }}>
-                <Lock size={13} color={C.muted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+              <div className="relative">
+                <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
-                  type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
                   placeholder="••••••••••••"
-                  style={{
-                    width: '100%', padding: '11px 12px 11px 36px',
-                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
-                    fontFamily: 'Space Mono', fontSize: 13, color: C.text,
-                    outline: 'none', boxSizing: 'border-box',
-                  }}
-                  onFocus={e => e.target.style.borderColor = C.accent}
-                  onBlur={e => e.target.style.borderColor = C.border}
+                  className="w-full pl-10 pr-11 py-2.5 bg-black/50 border border-white/10 rounded-xl font-mono text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition p-1"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
-            {/* 2FA */}
+            {/* 2FA Field (conditionally required) */}
             {requireTotp && (
-              <div>
-                <label style={{ fontFamily: 'Space Mono', fontSize: 10, color: C.yellow, display: 'block', marginBottom: 6, letterSpacing: '0.1em' }}>
-                  2FA CODE
+              <div className="space-y-1.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-fadeIn">
+                <label htmlFor="login-totp" className="block font-mono text-xs text-amber-300 font-bold tracking-wider">
+                  2FA AUTHENTICATOR CODE
                 </label>
-                <div style={{ position: 'relative' }}>
-                  <Shield size={13} color={C.yellow} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                <div className="relative">
+                  <Shield size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400" />
                   <input
-                    type="text" value={totp} onChange={e => setTotp(e.target.value)}
-                    maxLength={6} pattern="[0-9]{6}" placeholder="000000"
-                    style={{
-                      width: '100%', padding: '11px 12px 11px 36px',
-                      background: '#FFFBEE', border: `1px solid ${C.yellow}`, borderRadius: 8,
-                      fontFamily: 'Space Mono', fontSize: 16, color: C.text,
-                      outline: 'none', letterSpacing: '0.3em', boxSizing: 'border-box',
-                    }}
+                    id="login-totp"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={totp}
+                    onChange={e => setTotp(e.target.value)}
+                    maxLength={6}
+                    pattern="[0-9]{6}"
+                    placeholder="000000"
+                    className="w-full pl-10 pr-4 py-2.5 bg-black/60 border border-amber-500/40 rounded-xl font-mono text-base tracking-[0.3em] text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition"
                   />
                 </div>
               </div>
             )}
 
-            {/* Submit */}
+            {/* Submit Button */}
             <button
-              type="submit" disabled={loading}
-              style={{
-                marginTop: 4,
-                padding: '13px 24px',
-                background: loading ? '#DCDFE6' : `linear-gradient(135deg, ${C.accent}, #0A4636)`,
-                border: loading ? 'none' : `1px solid ${C.gold}`,
-                borderRadius: 10,
-                fontFamily: 'Space Mono', fontWeight: 700, fontSize: 13,
-                color: loading ? C.muted : '#FFFFFF',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: loading ? 'none' : '0 4px 16px rgba(14,107,79,0.35)',
-                transition: 'all 0.2s ease',
-              }}
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-mono font-bold text-sm transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
-                <><span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span> Authenticating...</>
+                <>
+                  <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
               ) : (
-                <><Zap size={15} /> ACCESS SYSTEM</>
+                <>
+                  <Zap size={16} />
+                  <span>AUTHENTICATE & ENTER SYSTEM</span>
+                </>
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const res = await fetch('/api/auth/demo');
-                  const data = await res.json();
-                  if (data.token) {
-                    setAuth(data.token, data.user);
-                    toast.success('Welcome back, Tharun Sai (Owner)');
-                    navigate('/');
-                    return;
-                  }
-                } catch {}
-                navigate('/');
-              }}
-              style={{
-                padding: '12px 16px',
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: `1.5px solid #10B981`,
-                borderRadius: 8,
-                fontFamily: 'Space Mono', fontWeight: 700, fontSize: 12,
-                color: '#10B981',
-                cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)'
-              }}
-            >
-              🚀 ONE-CLICK OWNER ACCESS (PREVIEW ENTRY)
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('tharunsai2081@gmail.com');
-                setPassword('Tharunsai@2081as');
-              }}
-              style={{
-                padding: '8px 16px',
-                background: 'transparent',
-                border: `1px dashed ${C.border}`,
-                borderRadius: 8,
-                fontFamily: 'Space Mono', fontSize: 11,
-                color: C.accent,
-                cursor: 'pointer',
-              }}
-            >
-              ⚡ Fill Demo Credentials
             </button>
           </form>
         </div>
 
-        <p style={{ textAlign: 'center', fontFamily: 'Space Mono', fontSize: 10, color: C.muted, marginTop: 20, opacity: 0.7 }}>
-          Unauthorized access is logged and reported.
+        {/* Security Warning Notice */}
+        <p className="text-center font-mono text-[11px] text-slate-500 mt-6">
+          Access restricted to authorized account owners. All authentication attempts are logged and monitored.
         </p>
       </div>
     </div>

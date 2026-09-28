@@ -97,17 +97,17 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Zap className="text-amber-400 animate-pulse" size={18} />
-            <span className="font-mono text-xs font-bold text-amber-300">1000-TRADE DAY PACING:</span>
+            <span className="font-mono text-xs font-bold text-amber-300">DAILY EXECUTION PACING:</span>
             <span className="font-mono text-xs text-white font-bold bg-white/10 px-2 py-0.5 rounded">
-              {(portfolio?.tradesExecutedToday || 142)} / 1,000 EXECUTED
+              {(portfolio?.tradesExecutedToday ?? 0)} EXECUTED TODAY
             </span>
           </div>
           <div className="hidden md:flex items-center gap-3 text-xs font-mono text-slate-400">
-            <span>Latency: <strong className="text-emerald-400 font-mono">4.2ms</strong></span>
+            <span>Broker: <strong className="text-emerald-400 font-mono">{portfolio?.brokerConnected ? 'CONNECTED' : 'STANDBY'}</strong></span>
             <span>·</span>
-            <span>Win Rate: <strong className="text-emerald-400 font-mono">{stats?.winRate || 74.2}%</strong></span>
+            <span>Win Rate: <strong className="text-emerald-400 font-mono">{stats?.totalTrades ? `${stats.winRate}%` : 'N/A'}</strong></span>
             <span>·</span>
-            <span>Kelly Fraction: <strong className="text-amber-300 font-mono">0.38x</strong></span>
+            <span>Open Orders: <strong className="text-amber-300 font-mono">{positions?.length ?? 0}</strong></span>
           </div>
         </div>
 
@@ -165,10 +165,9 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Polymarket Micro Fund"
-          value="$128.40"
-          sub="Started $100 · +28.4% Net ROI"
+          value={portfolio?.polymarketBalance ? `$${portfolio.polymarketBalance.toFixed(2)}` : '$0.00'}
+          sub={portfolio?.polymarketConnected ? "Polygon USDC Verified" : "Wallet Disconnected"}
           icon={<Activity size={16} />}
-          trend="up"
           mono
         />
         <StatCard

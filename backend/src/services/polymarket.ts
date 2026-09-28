@@ -13,7 +13,35 @@ import { getIO } from '../websocket/server';
 
 const POLYMARKET_CLOB_API = 'https://clob.polymarket.com';
 const POLYMARKET_GAMMA_API = 'https://gamma-api.polymarket.com';
+const POLYMARKET_DATA_API = 'https://data-api.polymarket.com';
 const POLYGON_RPC = 'https://polygon-rpc.com';
+
+export interface PolymarketAccountPosition {
+  asset: string;            // ERC1155 token ID
+  conditionId: string;
+  title: string;
+  outcome: 'YES' | 'NO';
+  size: number;             // Shares held
+  avgPrice: number;         // Average entry price (0.00 - 1.00)
+  currentPrice: number;     // Current market price
+  curValue: number;         // Current market value in USD
+  initialValue: number;     // Cost basis
+  cashPnl: number;          // Realized/unrealized P&L in USD
+  percentPnl: number;       // P&L %
+  redeemed: boolean;        // Settlement & redemption status
+}
+
+export interface PolymarketOrderBook {
+  tokenId: string;
+  bids: Array<{ price: number; size: number }>;
+  asks: Array<{ price: number; size: number }>;
+  spread: number;
+  bestBid: number;
+  bestAsk: number;
+  tickSize: number;
+  minSize: number;
+  timestamp: number;
+}
 
 // ── POLYMARKET CLIENT ─────────────────────────────────────────────────────────
 
@@ -471,7 +499,7 @@ export async function pollPolymarketResolutions(): Promise<void> {
   });
   if (openTrades.length === 0) return;
 
-  const conditionIds = openTrades.map(t => t.brokerOrderId).join(',');
+  const conditionIds = openTrades.map((t: any) => t.brokerOrderId).join(',');
   let markets: any[] = [];
   try {
     const response = await axios.get(`${POLYMARKET_GAMMA_API}/markets`, {
@@ -540,7 +568,7 @@ export async function getLongTermPositions(): Promise<LongTermPosition[]> {
     }
   });
 
-  return positions.map(p => ({
+  return positions.map((p: any) => ({
     id: p.id,
     platform: p.market as any,
     asset: p.asset,
@@ -558,4 +586,105 @@ export async function getLongTermPositions(): Promise<LongTermPosition[]> {
     exitConditions: ['Stop loss hit', 'Take profit hit', 'Thesis invalidated'],
     daysHeld: Math.floor((Date.now() - p.openedAt.getTime()) / 86400000)
   }));
+}
+
+/**
+ * Fetch authenticated, account-specific Polymarket positions from official Data API
+ * Replaces balance-inferred heuristics with authoritative contract positions
+ */
+export async function fetchAccountPositions(userAddress?: string): Promise<PolymarketAccountPosition[]> {
+  const address = userAddress || wallet?.address;
+  if (!address) {
+    logger.warn('No Polymarket account/wallet address configured for position query');
+    return [];
+  }
+
+  try {
+    const response = await axios.get(`${POLYMARKET_DATA_API}/positions`, {
+      params: { user: address },
+      timeout: 10000
+    });
+
+    const rawList = Array.isArray(response.data) ? response.data : [];
+    return rawList.map((item: any) => ({
+      asset: item.asset || item.tokenId || '',
+      conditionId: item.conditionId || '',
+      title: item.title || item.question || '',
+      outcome: (item.outcome || 'YES').toUpperCase() === 'YES' ? 'YES' : 'NO',
+      size: Number(item.size) || 0,
+      avgPrice: Number(item.avgPrice) || 0,
+      currentPrice: Number(item.curPrice) || Number(item.currentPrice) || 0,
+      curValue: Number(item.currentValue) || 0,
+      initialValue: Number(item.initialValue) || 0,
+      cashPnl: Number(item.cashPnl) || 0,
+      percentPnl: Number(item.percentPnl) || 0,
+      redeemed: Boolean(item.redeemed ?? false),
+    }));
+  } catch (err: any) {
+    logger.error('Failed to query account-specific positions from Polymarket Data API', { error: err.message, address });
+    return [];
+  }
+}
+
+/**
+ * Fetch authoritative level 2 order book from Polymarket CLOB
+ */
+export async function fetchOrderBook(tokenId: string): Promise<PolymarketOrderBook | null> {
+  try {
+    const response = await axios.get(`${POLYMARKET_CLOB_API}/book`, {
+      params: { token_id: tokenId },
+      timeout: 8000
+    });
+
+    const data = response.data;
+    const bids = (data.bids || []).map((b: any) => ({ price: parseFloat(b.price), size: parseFloat(b.size) }));
+    const asks = (data.asks || []).map((a: any) => ({ price: parseFloat(a.price), size: parseFloat(a.size) }));
+
+    const bestBid = bids.length > 0 ? Math.max(...bids.map((b: any) => b.price)) : 0;
+    const bestAsk = asks.length > 0 ? Math.min(...asks.map((a: any) => a.price)) : 1;
+    const spread = parseFloat((bestAsk - bestBid).toFixed(4));
+
+    return {
+      tokenId,
+      bids,
+      asks,
+      spread,
+      bestBid,
+      bestAsk,
+      tickSize: 0.001,
+      minSize: 1.0,
+      timestamp: Date.now()
+    };
+  } catch (err: any) {
+    logger.warn(`Failed to fetch CLOB order book for token ${tokenId}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Fetch resolution criteria and source from official Polymarket Gamma API
+ */
+export async function fetchMarketResolution(conditionId: string): Promise<{
+  resolved: boolean;
+  resolutionSource: string;
+  resolutionCriteria: string;
+  payoutNumerator?: number[];
+} | null> {
+  try {
+    const response = await axios.get(`${POLYMARKET_GAMMA_API}/markets`, {
+      params: { condition_ids: conditionId },
+      timeout: 8000
+    });
+    const market = response.data?.[0];
+    if (!market) return null;
+
+    return {
+      resolved: Boolean(market.closed),
+      resolutionSource: market.resolution_source || 'UMA Oracle / Decentralized Verification',
+      resolutionCriteria: market.description || market.resolution_criteria || 'Resolution per official terms',
+      payoutNumerator: market.outcomePrices ? JSON.parse(market.outcomePrices).map(Number) : undefined
+    };
+  } catch {
+    return null;
+  }
 }

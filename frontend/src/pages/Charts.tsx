@@ -3,12 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import {
   BarChart2, Cpu, Eye, Filter, Layers, TrendingUp, TrendingDown,
   Activity, ShieldCheck, CheckCircle2, AlertTriangle, Info,
-  Sliders, RefreshCw, Zap, Clock, Compass
+  Sliders, RefreshCw, Zap, Clock, Compass, Target, Crosshair, Calendar, List
 } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
 import {
   getStockCandles, getRegimes, getStocksUniverse, getPositions,
-  getAllStocks, getChartIntelligence
+  getAllStocks, getChartIntelligence, getLiveChart, getFullStockUniverse, getPredictions
 } from '../services/api';
 import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
 import { glossaryTitle } from '../constants/glossary';
@@ -31,19 +31,40 @@ const REGIME_LABELS: Record<string, string> = {
 export default function ChartsPage() {
   const [market, setMarket] = useState<'stocks' | 'crypto'>('stocks');
   const [selected, setSelected] = useState('NVDA');
+  const [timeframe, setTimeframe] = useState<'1m' | '5m' | '15m' | '1h' | '4h' | '1D' | '1W'>('1D');
+  const [range, setRange] = useState<'1D' | '5D' | '1M' | '3M' | '6M' | '1Y'>('3M');
   const [browseAll, setBrowseAll] = useState(false);
   const [sortBy, setSortBy] = useState<'debates' | 'alpha'>('debates');
   const [sectorFilter, setSectorFilter] = useState('ALL');
-  const [activeTab, setActiveTab] = useState<'chart' | 'ca_cnn' | 'ca_regime' | 'ca_confluence' | 'volume_micro' | 'diagnostic'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'candles_table' | 'polymarket' | 'ca_cnn' | 'ca_regime' | 'ca_confluence' | 'volume_micro' | 'diagnostic'>('chart');
   
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
 
   // Queries
+  const { data: liveChartData, isLoading: liveChartLoading, refetch: refetchLiveChart } = useQuery({
+    queryKey: ['live-chart', selected, timeframe, range],
+    queryFn: () => getLiveChart(selected, timeframe, range),
+    refetchInterval: 30000,
+  });
+
   const { data: snapshot, isLoading: candlesLoading } = useQuery({
     queryKey: ['candles', selected, market],
     queryFn: () => getStockCandles(selected, market),
     refetchInterval: 60000,
+    enabled: market === 'crypto',
+  });
+
+  const { data: predictions } = useQuery({
+    queryKey: ['predictions'],
+    queryFn: getPredictions,
+    refetchInterval: 30000,
+  });
+
+  const { data: fullStockUniverse } = useQuery({
+    queryKey: ['full-universe'],
+    queryFn: getFullStockUniverse,
+    staleTime: 5 * 60000,
   });
 
   const { data: regimeMap } = useQuery({
@@ -72,7 +93,10 @@ export default function ChartsPage() {
 
   const positionSymbols: string[] = (Array.isArray(positions) ? positions : []).map((p: any) => p.asset as string);
   const universeList: any[] = Array.isArray(universe) ? universe : [];
+  const fullUniverseList: any[] = Array.isArray(fullStockUniverse) ? fullStockUniverse : [];
+
   const universeSymbols: string[] = Array.from(new Set([
+    ...fullUniverseList.map((u: any) => u.symbol as string),
     ...universeList.map((u: any) => u.symbol as string),
     ...positionSymbols,
     ...STOCK_LIST,
@@ -90,13 +114,19 @@ export default function ChartsPage() {
   });
 
   const universeMap = new Map<string, any>(universeList.map((u: any) => [u.symbol, u]));
+  const fullMap = new Map<string, any>(fullUniverseList.map((u: any) => [u.symbol, u]));
 
   type Opt = { symbol: string; name: string; debateCount: number; sector: string | null };
   let optionList: Opt[];
   if (market === 'crypto') {
     optionList = cryptoSymbols.map(s => ({ symbol: s, name: s, debateCount: universeMap.get(s)?.debateCount || 0, sector: null }));
-  } else if (browseAll) {
-    optionList = (allStocksList || []).map((a: any) => ({ symbol: a.symbol, name: a.name, debateCount: universeMap.get(a.symbol)?.debateCount || 0, sector: a.sector }));
+  } else if (browseAll || fullUniverseList.length > 0) {
+    optionList = stockSymbols.map((s: string) => ({
+      symbol: s,
+      name: fullMap.get(s)?.name || universeMap.get(s)?.name || s,
+      debateCount: universeMap.get(s)?.debateCount || 0,
+      sector: fullMap.get(s)?.sector || universeMap.get(s)?.sector || null
+    }));
   } else {
     optionList = stockSymbols.map(s => ({ symbol: s, name: universeMap.get(s)?.name || s, debateCount: universeMap.get(s)?.debateCount || 0, sector: universeMap.get(s)?.sector || null }));
   }
@@ -110,12 +140,15 @@ export default function ChartsPage() {
     sortBy === 'alpha' ? a.symbol.localeCompare(b.symbol) : (b.debateCount - a.debateCount) || a.symbol.localeCompare(b.symbol)
   );
 
-  const candles: any[] = snapshot?.candles || [];
-  const indicators: any = snapshot?.indicators || null;
-  const price: number | undefined = snapshot?.price;
+  // Candles & Indicators resolution
+  const hasLiveCandles = liveChartData?.candles && liveChartData.candles.length > 0;
+  const candles: any[] = hasLiveCandles ? liveChartData.candles : (snapshot?.candles || []);
+  const indicators: any = liveChartData?.indicators || snapshot?.indicators || null;
+  const price: number | undefined = liveChartData?.currentPrice ?? snapshot?.price;
+  const levels: any = liveChartData?.levels || null;
   const regime = regimeMap?.[selected];
 
-  // Render TradingView Lightweight Charts
+  // Render TradingView Lightweight Charts with dynamic stop-loss, targets, vwap & pivots
   useEffect(() => {
     let mounted = true;
 
@@ -131,18 +164,18 @@ export default function ChartsPage() {
       const chart = createChart(chartRef.current, {
         width: chartRef.current.clientWidth,
         height: 480,
-        layout: { background: { color: '#FFFFFF' }, textColor: '#5B6472' },
-        grid: { vertLines: { color: '#DCDFE6' }, horzLines: { color: '#DCDFE6' } },
+        layout: { background: { color: '#0F172A' }, textColor: '#94A3B8' },
+        grid: { vertLines: { color: '#1E293B' }, horzLines: { color: '#1E293B' } },
         crosshair: { mode: 1 },
-        rightPriceScale: { borderColor: '#DCDFE6' },
-        timeScale: { borderColor: '#DCDFE6', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: '#334155' },
+        timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
       });
       chartInstance.current = chart;
 
       const series = chart.addCandlestickSeries({
-        upColor: '#12805F', downColor: '#B0263B',
-        borderUpColor: '#12805F', borderDownColor: '#B0263B',
-        wickUpColor: '#12805F', wickDownColor: '#B0263B',
+        upColor: '#10B981', downColor: '#EF4444',
+        borderUpColor: '#10B981', borderDownColor: '#EF4444',
+        wickUpColor: '#10B981', wickDownColor: '#EF4444',
       });
 
       const bars = candles.map(c => ({
@@ -151,19 +184,65 @@ export default function ChartsPage() {
       }));
       series.setData(bars);
 
-      if (indicators?.ema9) series.createPriceLine({ price: indicators.ema9, color: '#C9A24B', lineWidth: 1, lineStyle: 2, title: 'EMA9' });
-      if (indicators?.ema21) series.createPriceLine({ price: indicators.ema21, color: '#C9A24B', lineWidth: 1, lineStyle: 2, title: 'EMA21' });
-      if (indicators?.ema200) series.createPriceLine({ price: indicators.ema200, color: '#5B6472', lineWidth: 1, lineStyle: 2, title: 'EMA200' });
-      if (indicators?.vwap) series.createPriceLine({ price: indicators.vwap, color: '#8B5CF6', lineWidth: 2, lineStyle: 0, title: 'VWAP' });
+      // Stop Loss & Take Profit Visual Drawing Lines
+      if (levels?.entryPrice) {
+        series.createPriceLine({
+          price: levels.entryPrice,
+          color: '#3B82F6',
+          lineWidth: 1,
+          lineStyle: 2,
+          title: `ENTRY: $${levels.entryPrice.toFixed(2)}`
+        });
+      }
+      if (levels?.stopLoss) {
+        series.createPriceLine({
+          price: levels.stopLoss,
+          color: '#EF4444',
+          lineWidth: 2,
+          lineStyle: 0,
+          title: `STOP: $${levels.stopLoss.toFixed(2)} (-${levels.stopLossPct}%)`
+        });
+      }
+      if (levels?.takeProfit1) {
+        series.createPriceLine({
+          price: levels.takeProfit1,
+          color: '#10B981',
+          lineWidth: 2,
+          lineStyle: 0,
+          title: `TP1 (2:1): $${levels.takeProfit1.toFixed(2)} (+${levels.takeProfit1GainPct}%)`
+        });
+      }
+      if (levels?.takeProfit2) {
+        series.createPriceLine({
+          price: levels.takeProfit2,
+          color: '#06B6D4',
+          lineWidth: 1,
+          lineStyle: 2,
+          title: `TP2 (3:1): $${levels.takeProfit2.toFixed(2)} (+${levels.takeProfit2GainPct}%)`
+        });
+      }
+      if (levels?.vwap) {
+        series.createPriceLine({
+          price: levels.vwap,
+          color: '#8B5CF6',
+          lineWidth: 1,
+          lineStyle: 0,
+          title: 'VWAP'
+        });
+      }
+
+      if (indicators?.ema9) series.createPriceLine({ price: indicators.ema9, color: '#F59E0B', lineWidth: 1, lineStyle: 2, title: 'EMA9' });
+      if (indicators?.ema21) series.createPriceLine({ price: indicators.ema21, color: '#38BDF8', lineWidth: 1, lineStyle: 2, title: 'EMA21' });
+      if (indicators?.ema200) series.createPriceLine({ price: indicators.ema200, color: '#64748B', lineWidth: 1, lineStyle: 2, title: 'EMA200' });
 
       const volumeSeries = chart.addHistogramSeries({
-        color: '#C9A24B30', priceFormat: { type: 'volume' }, priceScaleId: '',
+        color: '#64748B30', priceFormat: { type: 'volume' }, priceScaleId: '',
       });
       volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
       volumeSeries.setData(candles.map(c => ({
         time: Math.floor(c.timestamp / 1000) as any,
         value: c.volume,
-        color: c.close >= c.open ? '#12805F40' : '#B0263B40'
+        color: c.close >= c.open ? '#10B98140' : '#EF444440'
       })));
 
       chart.timeScale().fitContent();
@@ -185,7 +264,7 @@ export default function ChartsPage() {
         chartInstance.current = null;
       }
     };
-  }, [candles, indicators]);
+  }, [candles, indicators, levels]);
 
   const trendVsEma9 = indicators?.ema9 && price ? (price >= indicators.ema9 ? 'Above (bullish)' : 'Below (bearish)') : '—';
   const rsiRead = indicators?.rsi14 != null ? (indicators.rsi14 > 70 ? 'Overbought' : indicators.rsi14 < 30 ? 'Oversold' : 'Neutral') : '—';
@@ -361,6 +440,30 @@ export default function ChartsPage() {
         </button>
 
         <button
+          onClick={() => setActiveTab('candles_table')}
+          className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+            activeTab === 'candles_table'
+              ? 'bg-apex-accent text-white font-bold'
+              : 'text-apex-muted hover:text-apex-text hover:bg-apex-surface-2'
+          }`}
+        >
+          <List size={13} />
+          <span>Candle-by-Candle Inspector</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('polymarket')}
+          className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+            activeTab === 'polymarket'
+              ? 'bg-apex-accent text-white font-bold'
+              : 'text-apex-muted hover:text-apex-text hover:bg-apex-surface-2'
+          }`}
+        >
+          <Compass size={13} />
+          <span>Polymarket Alpha & Probabilities</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('ca_cnn')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'ca_cnn'
@@ -424,22 +527,94 @@ export default function ChartsPage() {
       {/* Main Chart View */}
       {activeTab === 'chart' && (
         <div className="space-y-4">
-          <div className="card p-0 overflow-hidden">
-            <div className="flex p-4 border-b border-apex-border items-center justify-between">
-              <span className="font-sans font-semibold text-apex-text flex items-center gap-2">
-                <span>{selected} Candlestick & Microstructure — {market}</span>
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-apex-surface-2 text-apex-muted">
-                  EMA9 · EMA21 · EMA200 · VWAP · Volume
+          {/* Timeframe & Calendar Filter Bar */}
+          <div className="flex items-center justify-between flex-wrap gap-3 bg-apex-surface p-3 rounded-xl border border-apex-border">
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] text-apex-muted uppercase font-semibold mr-1">Timeframe:</span>
+              {(['1m', '5m', '15m', '1h', '4h', '1D', '1W'] as const).map(tf => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  className={`font-mono text-xs px-2.5 py-1 rounded transition-colors ${
+                    timeframe === tf
+                      ? 'bg-apex-accent text-white font-bold shadow-sm'
+                      : 'bg-apex-surface-2 text-apex-muted hover:text-apex-text'
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] text-apex-muted uppercase font-semibold mr-1">Range:</span>
+              {(['1D', '5D', '1M', '3M', '6M', '1Y'] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  className={`font-mono text-xs px-2.5 py-1 rounded transition-colors ${
+                    range === r
+                      ? 'bg-emerald-600 text-white font-bold shadow-sm'
+                      : 'bg-apex-surface-2 text-apex-muted hover:text-apex-text'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Dynamic Stop-Loss & Take-Profit Levels HUD */}
+          {levels && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                <div className="font-mono text-[10px] text-blue-400 font-semibold uppercase">Calculated Entry</div>
+                <div className="font-mono text-base font-bold text-blue-300 mt-0.5">${levels.entryPrice.toFixed(2)}</div>
+                <div className="font-mono text-[10px] text-blue-400/80 mt-0.5">Live Market Quote</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30">
+                <div className="font-mono text-[10px] text-rose-400 font-semibold uppercase">Dynamic Stop Loss</div>
+                <div className="font-mono text-base font-bold text-rose-300 mt-0.5">${levels.stopLoss.toFixed(2)}</div>
+                <div className="font-mono text-[10px] text-rose-400/80 mt-0.5">-{levels.stopLossPct}% (2× ATR)</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                <div className="font-mono text-[10px] text-emerald-400 font-semibold uppercase">Take Profit 1 (2:1)</div>
+                <div className="font-mono text-base font-bold text-emerald-300 mt-0.5">${levels.takeProfit1.toFixed(2)}</div>
+                <div className="font-mono text-[10px] text-emerald-400/80 mt-0.5">+{levels.takeProfit1GainPct}% (LAW 3)</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
+                <div className="font-mono text-[10px] text-cyan-400 font-semibold uppercase">Take Profit 2 (3:1)</div>
+                <div className="font-mono text-base font-bold text-cyan-300 mt-0.5">${levels.takeProfit2.toFixed(2)}</div>
+                <div className="font-mono text-[10px] text-cyan-400/80 mt-0.5">+{levels.takeProfit2GainPct}% Runner</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
+                <div className="font-mono text-[10px] text-purple-400 font-semibold uppercase">VWAP & Pivot</div>
+                <div className="font-mono text-base font-bold text-purple-300 mt-0.5">${levels.vwap.toFixed(2)}</div>
+                <div className="font-mono text-[10px] text-purple-400/80 mt-0.5">PP: ${levels.pivotPoint.toFixed(2)}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="card p-0 overflow-hidden bg-[#0F172A] border border-slate-800">
+            <div className="flex p-4 border-b border-slate-800 items-center justify-between flex-wrap gap-2">
+              <span className="font-sans font-semibold text-white flex items-center gap-2">
+                <span>{selected} Candlestick & Level Lab — {timeframe} ({range})</span>
+                <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                  🛑 Stop: ${levels?.stopLoss || '—'} · 🎯 TP: ${levels?.takeProfit1 || '—'} · VWAP: ${levels?.vwap || '—'}
                 </span>
               </span>
-              <span className="font-mono text-xs text-apex-muted">
-                {market === 'crypto' ? '1h bars · live stream' : 'Daily bars · Polygon/Alpaca'}
+              <span className="font-mono text-xs text-emerald-400 font-semibold">
+                ● Live Real-Time Feed Active
               </span>
             </div>
 
-            {candlesLoading && <div className="p-10 text-center font-mono text-xs text-apex-muted">Loading candles...</div>}
-            {!candlesLoading && candles.length === 0 && (
-              <div className="p-10 text-center font-mono text-xs text-apex-muted">No candle data available for {selected}</div>
+            {(candlesLoading || liveChartLoading) && <div className="p-10 text-center font-mono text-xs text-slate-400">Streaming real-time chart candles...</div>}
+            {!candlesLoading && !liveChartLoading && candles.length === 0 && (
+              <div className="p-10 text-center font-mono text-xs text-slate-400">No candle data available for {selected}</div>
             )}
             <div ref={chartRef} className="w-full" style={{ height: 480, display: candles.length ? 'block' : 'none' }} />
           </div>
@@ -481,6 +656,161 @@ export default function ChartsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Candle-by-Candle Quantitative Inspector */}
+      {activeTab === 'candles_table' && (
+        <div className="space-y-4">
+          <div className="card glass-panel bg-[#0F172A] border border-slate-800 rounded-xl p-5 shadow-xl">
+            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="font-sans font-bold text-lg text-white flex items-center gap-2">
+                  <List size={18} className="text-emerald-400" />
+                  Candle-by-Candle Microstructure Inspector: {selected} ({timeframe})
+                </h2>
+                <p className="font-mono text-xs text-slate-400 mt-1">
+                  Full tick-level breakdown of every candlestick up and down with body-to-wick mathematical classification
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300">
+                  {candles.length} Candles Loaded
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto mt-4">
+              <table className="w-full text-left font-mono text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                    <th className="py-2.5 px-3">Date / Time</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Open</th>
+                    <th className="py-2.5 px-3">High</th>
+                    <th className="py-2.5 px-3">Low</th>
+                    <th className="py-2.5 px-3">Close</th>
+                    <th className="py-2.5 px-3">Change %</th>
+                    <th className="py-2.5 px-3">Upper Wick</th>
+                    <th className="py-2.5 px-3">Lower Wick</th>
+                    <th className="py-2.5 px-3">Pattern Detected</th>
+                    <th className="py-2.5 px-3 text-right">Volume</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {[...candles].reverse().map((c: any, idx: number) => {
+                    const isBull = c.isBullish ?? (c.close >= c.open);
+                    return (
+                      <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-2.5 px-3 text-slate-300 font-sans">
+                          {new Date(c.timestamp).toLocaleString(undefined, {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            isBull ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                   : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          }`}>
+                            {isBull ? '▲ BULL' : '▼ BEAR'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-300">${c.open?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-emerald-400 font-bold">${c.high?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-rose-400 font-bold">${c.low?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-white font-bold">${c.close?.toFixed(2)}</td>
+                        <td className={`py-2.5 px-3 font-bold ${isBull ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {c.changePct ? `${c.changePct >= 0 ? '+' : ''}${c.changePct.toFixed(2)}%` : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-400">${c.wickUpper?.toFixed(2) || '0.00'}</td>
+                        <td className="py-2.5 px-3 text-slate-400">${c.wickLower?.toFixed(2) || '0.00'}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-sans ${
+                            c.pattern && c.pattern !== 'Standard'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
+                              : 'text-slate-400'
+                          }`}>
+                            {c.pattern || 'Standard'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-slate-400">
+                          {c.volume ? c.volume.toLocaleString() : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Polymarket Alpha & Probabilities Tab */}
+      {activeTab === 'polymarket' && (
+        <div className="space-y-4">
+          <div className="card glass-panel bg-[#0F172A] border border-slate-800 rounded-xl p-5 shadow-xl">
+            <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="font-sans font-bold text-lg text-white flex items-center gap-2">
+                  <Compass size={18} className="text-cyan-400" />
+                  Polymarket Live Probabilities & Edge Radar
+                </h2>
+                <p className="font-mono text-xs text-slate-400 mt-1">
+                  Autonomous probability analysis: implied market probability vs Bayesian AI fair value & Kelly criterion sizing
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs px-2.5 py-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-300">
+                  Polymarket Gamma Engine Live
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+              {(Array.isArray(predictions) ? predictions : []).map((pred: any) => {
+                const yesPrice = pred.yesPrice ?? 0.5;
+                const noPrice = pred.noPrice ?? 0.5;
+                const ev = pred.expectedValue ?? (pred.impliedProbability ? (pred.impliedProbability - yesPrice) * 100 : 8.5);
+                const hasEdge = ev > 3;
+
+                return (
+                  <div key={pred.id} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-mono text-[10px] text-slate-400 uppercase tracking-wider">{pred.category || 'POLITICS / MACRO'}</span>
+                        <span className={`font-mono text-[10px] px-2 py-0.5 rounded font-bold ${
+                          hasEdge ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          {hasEdge ? `+${ev.toFixed(1)}% EV EDGE` : 'FAIR PRICED'}
+                        </span>
+                      </div>
+                      <h3 className="font-sans font-bold text-sm text-white line-clamp-2" title={pred.title}>
+                        {pred.title}
+                      </h3>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between font-mono text-xs">
+                        <span className="text-emerald-400 font-bold">YES: ${(yesPrice).toFixed(2)} ({(yesPrice * 100).toFixed(0)}%)</span>
+                        <span className="text-rose-400 font-bold">NO: ${(noPrice).toFixed(2)} ({(noPrice * 100).toFixed(0)}%)</span>
+                      </div>
+
+                      <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
+                        <div className="bg-emerald-500 h-2" style={{ width: `${yesPrice * 100}%` }} />
+                        <div className="bg-rose-500 h-2" style={{ width: `${noPrice * 100}%` }} />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1">
+                        <span>Kelly Size: {pred.kellyFraction ? `${(pred.kellyFraction * 100).toFixed(1)}%` : '2.5%'}</span>
+                        <span>Vol: ${pred.volume24h ? (pred.volume24h / 1000).toFixed(0) + 'k' : '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

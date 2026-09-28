@@ -7,7 +7,7 @@ jest.mock('../src/utils/prisma', () => ({
   },
 }));
 jest.mock('axios', () => ({ get: jest.fn().mockResolvedValue({ data: {} }) }));
-jest.mock('../src/utils/redis', () => ({ redis: { get: jest.fn().mockResolvedValue(null), setex: jest.fn() } }));
+jest.mock('../src/utils/redis', () => ({ redis: { get: jest.fn().mockResolvedValue(null), setex: jest.fn().mockResolvedValue('OK') } }));
 
 describe('agentResourceLearning persistence', () => {
   it('buildAgentLearningState upserts AgentLearningState, not SystemLog', async () => {

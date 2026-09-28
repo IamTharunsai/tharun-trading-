@@ -289,39 +289,12 @@ export async function fetchLiveStockChart(
       }
     }
   } catch (err: any) {
-    logger.warn(`Live Yahoo chart query failed for ${cleanSymbol}: ${err.message}`);
+    logger.warn(`Live market chart query failed for ${cleanSymbol}: ${err.message}`);
   }
 
-  // Fallback synthetic generator if network fails
-  if (candles.length < 5) {
-    currentPrice = 120.0;
-    const count = 40;
-    const now = Date.now();
-    let price = currentPrice * 0.92;
-    for (let i = 0; i < count; i++) {
-      const step = (Math.random() - 0.48) * (price * 0.02);
-      const o = price;
-      const c = price + step;
-      const h = Math.max(o, c) + Math.random() * (price * 0.01);
-      const l = Math.min(o, c) - Math.random() * (price * 0.01);
-      candles.push({
-        timestamp: now - (count - i) * 86400000,
-        open: Number(o.toFixed(2)),
-        high: Number(h.toFixed(2)),
-        low: Number(l.toFixed(2)),
-        close: Number(c.toFixed(2)),
-        volume: Math.floor(2000000 + Math.random() * 5000000),
-        change: Number((c - o).toFixed(2)),
-        changePct: Number((((c - o) / o) * 100).toFixed(2)),
-        isBullish: c >= o,
-        bodySize: Number(Math.abs(c - o).toFixed(2)),
-        wickUpper: Number((h - Math.max(o, c)).toFixed(2)),
-        wickLower: Number((Math.min(o, c) - l).toFixed(2)),
-        pattern: 'Standard',
-      });
-      price = c;
-    }
-    currentPrice = Number(price.toFixed(2));
+  // Pure zero-mock policy: never fabricate random financial candles
+  if (candles.length === 0) {
+    logger.warn(`⚠️ Insufficient authentic bar data retrieved for ${cleanSymbol}; returning empty candle series with 0-state indicators`);
   }
 
   // ── Calculate Quantitative Technical Indicators ──────────────────────────────

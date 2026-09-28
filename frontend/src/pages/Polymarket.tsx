@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getPredictions, scanPredictions, wagerPrediction } from '../services/api';
+import { getPredictions, scanPredictions, wagerPrediction, getPortfolioBreakdown } from '../services/api';
 import toast from 'react-hot-toast';
 import {
   TrendingUp, TrendingDown, Zap, RefreshCw, Sliders, DollarSign,
@@ -56,18 +56,15 @@ export default function PolymarketPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [bankroll, setBankroll] = useState<number>(500);
+  const [bankroll, setBankroll] = useState<number>(0);
+  const [walletConnected, setWalletConnected] = useState<boolean>(false);
 
   // Auto-Trader State (24/7 Engine)
   const [autoTradeEnabled, setAutoTradeEnabled] = useState<boolean>(true);
   const [autoMinEdge, setAutoMinEdge] = useState<number>(12); // min 12% edge
   const [autoKellyScale, setAutoKellyScale] = useState<number>(0.15); // quarter-kelly
   const [autoMaxStake, setAutoMaxStake] = useState<number>(50); // $50 max stake
-  const [autoLogs, setAutoLogs] = useState<{ id: string; time: string; msg: string; type: 'scan' | 'trade' | 'win' }[]>([
-    { id: '1', time: new Date(Date.now() - 1000 * 60 * 3).toLocaleTimeString(), msg: '24/7 Bayesian Oracle scanned 34 Polymarket CLOB books. Found 3 mispriced contracts.', type: 'scan' },
-    { id: '2', time: new Date(Date.now() - 1000 * 60 * 2).toLocaleTimeString(), msg: 'AUTO-ORDER: Placed $24.00 on YES "Fed cuts rates >=25bps" @ 68¢ (Model Edge: +14.0%)', type: 'trade' },
-    { id: '3', time: new Date(Date.now() - 1000 * 45).toLocaleTimeString(), msg: 'SETTLEMENT: Contract "Bitcoin ATH before Nov 1" closed in profit (+31.2% ROI). Bankroll updated.', type: 'win' },
-  ]);
+  const [autoLogs, setAutoLogs] = useState<{ id: string; time: string; msg: string; type: 'scan' | 'trade' | 'win' }[]>([]);
 
   // Wager Modal
   const [selectedPrediction, setSelectedPrediction] = useState<Prediction | null>(null);
@@ -85,232 +82,29 @@ export default function PolymarketPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Polymarket Dedicated Executed Trades & Ledger
-  const [polyTrades, setPolyTrades] = useState<PolymarketTrade[]>([
-    {
-      id: 'poly-trade-1',
-      title: 'Federal Reserve cuts Fed Funds rate by >=25bps at upcoming FOMC',
-      category: 'macro',
-      outcome: 'YES',
-      entryPrice: 0.68,
-      exitPrice: null,
-      amount: 25.0,
-      shares: 36.76,
-      currentPrice: 0.74,
-      currentValue: 27.20,
-      pnl: 2.20,
-      pnlPct: 8.80,
-      status: 'OPEN',
-      resolutionDate: new Date(Date.now() + 86400000 * 14).toISOString(),
-      edgeAtEntry: 0.14,
-      autoTraded: true,
-      executedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-    },
-    {
-      id: 'poly-trade-2',
-      title: 'US Headline CPI Year-over-Year prints strictly below 2.7%',
-      category: 'macro',
-      outcome: 'YES',
-      entryPrice: 0.34,
-      exitPrice: null,
-      amount: 20.0,
-      shares: 58.82,
-      currentPrice: 0.39,
-      currentValue: 22.94,
-      pnl: 2.94,
-      pnlPct: 14.70,
-      status: 'OPEN',
-      resolutionDate: new Date(Date.now() + 86400000 * 20).toISOString(),
-      edgeAtEntry: 0.17,
-      autoTraded: false,
-      executedAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-    },
-    {
-      id: 'poly-trade-3',
-      title: 'Solana breaks new All-Time High above $260 in Q3',
-      category: 'crypto',
-      outcome: 'YES',
-      entryPrice: 0.42,
-      exitPrice: 0.65,
-      amount: 30.0,
-      shares: 71.43,
-      currentPrice: 0.65,
-      currentValue: 46.43,
-      pnl: 16.43,
-      pnlPct: 54.77,
-      status: 'RESOLVED_WON',
-      resolutionDate: new Date(Date.now() - 3600000 * 12).toISOString(),
-      edgeAtEntry: 0.22,
-      autoTraded: true,
-      executedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    },
-    {
-      id: 'poly-trade-4',
-      title: 'SEC approves first Solana Staking ETF application',
-      category: 'crypto',
-      outcome: 'NO',
-      entryPrice: 0.72,
-      exitPrice: 0.95,
-      amount: 18.0,
-      shares: 25.0,
-      currentPrice: 0.95,
-      currentValue: 23.75,
-      pnl: 5.75,
-      pnlPct: 31.94,
-      status: 'RESOLVED_WON',
-      resolutionDate: new Date(Date.now() - 3600000 * 24).toISOString(),
-      edgeAtEntry: 0.15,
-      autoTraded: true,
-      executedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-    },
-    {
-      id: 'poly-trade-5',
-      title: 'Ethereum layer 2 TVL exceeds $60 Billion prior to end of month',
-      category: 'crypto',
-      outcome: 'YES',
-      entryPrice: 0.58,
-      exitPrice: 0.45,
-      amount: 25.0,
-      shares: 43.10,
-      currentPrice: 0.45,
-      currentValue: 19.40,
-      pnl: -5.60,
-      pnlPct: -22.40,
-      status: 'RESOLVED_LOST',
-      resolutionDate: new Date(Date.now() - 3600000 * 36).toISOString(),
-      edgeAtEntry: 0.11,
-      autoTraded: false,
-      executedAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-    },
-    {
-      id: 'poly-trade-6',
-      title: 'NVIDIA Market Cap remains strictly above Apple through monthly close',
-      category: 'tech',
-      outcome: 'YES',
-      entryPrice: 0.62,
-      exitPrice: 0.88,
-      amount: 35.0,
-      shares: 56.45,
-      currentPrice: 0.88,
-      currentValue: 49.68,
-      pnl: 14.68,
-      pnlPct: 41.94,
-      status: 'RESOLVED_WON',
-      resolutionDate: new Date(Date.now() - 3600000 * 48).toISOString(),
-      edgeAtEntry: 0.19,
-      autoTraded: true,
-      executedAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    },
-    {
-      id: 'poly-trade-7',
-      title: 'US Gross Domestic Product (GDP) Q2 revisions strictly above 3.1%',
-      category: 'macro',
-      outcome: 'NO',
-      entryPrice: 0.65,
-      exitPrice: 0.48,
-      amount: 20.0,
-      shares: 30.77,
-      currentPrice: 0.48,
-      currentValue: 14.77,
-      pnl: -5.23,
-      pnlPct: -26.15,
-      status: 'RESOLVED_LOST',
-      resolutionDate: new Date(Date.now() - 3600000 * 72).toISOString(),
-      edgeAtEntry: 0.13,
-      autoTraded: true,
-      executedAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-    }
-  ]);
+  // Polymarket Dedicated Executed Trades & Ledger: strictly authentic data
+  const [polyTrades, setPolyTrades] = useState<PolymarketTrade[]>([]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const data = await getPredictions();
-      if (Array.isArray(data) && data.length > 0) {
-        setPredictions(data);
+      const [preds, breakdown] = await Promise.all([
+        getPredictions().catch(() => []),
+        getPortfolioBreakdown().catch(() => null)
+      ]);
+
+      if (Array.isArray(preds) && preds.length > 0) {
+        setPredictions(preds);
       } else {
-        // High quality fallback predictions if backend is syncing
-        setPredictions([
-          {
-            id: 'poly-1',
-            title: 'Federal Reserve cuts Fed Funds rate by >=25bps at upcoming FOMC',
-            category: 'macro',
-            market: 'polymarket',
-            yesPrice: 0.68,
-            noPrice: 0.32,
-            volume24h: 3420000,
-            liquidity: 1850000,
-            resolutionDate: new Date(Date.now() + 86400000 * 18).toISOString(),
-            trueYesProbability: 0.82,
-            edge: 0.14,
-            recommendedBet: 'YES',
-            expectedValue: 20.6,
-            kellyFraction: 0.18,
-            recommendedWager: 24.0,
-            reasoning: 'US core PCE and retail sales deceleration validate neutral rate convergence. Taylor Rule model indicates terminal 4.25%.',
-            status: 'ACTIVE'
-          },
-          {
-            id: 'poly-2',
-            title: 'US Headline CPI Year-over-Year prints strictly below 2.7%',
-            category: 'macro',
-            market: 'polymarket',
-            yesPrice: 0.34,
-            noPrice: 0.66,
-            volume24h: 1890000,
-            liquidity: 920000,
-            resolutionDate: new Date(Date.now() + 86400000 * 24).toISOString(),
-            trueYesProbability: 0.51,
-            edge: 0.17,
-            recommendedBet: 'YES',
-            expectedValue: 50.0,
-            kellyFraction: 0.12,
-            recommendedWager: 18.0,
-            reasoning: 'Energy base effects + used vehicle index dropping sharply. Disparity between consensus and real-time Truflation index (+0.4% underpricing).',
-            status: 'ACTIVE'
-          },
-          {
-            id: 'poly-3',
-            title: 'Solana Mobile Chapter 2 surpasses 150,000 preorders before Q4',
-            category: 'tech',
-            market: 'polymarket',
-            yesPrice: 0.45,
-            noPrice: 0.55,
-            volume24h: 760000,
-            liquidity: 410000,
-            resolutionDate: new Date(Date.now() + 86400000 * 12).toISOString(),
-            trueYesProbability: 0.63,
-            edge: 0.18,
-            recommendedBet: 'YES',
-            expectedValue: 40.0,
-            kellyFraction: 0.14,
-            recommendedWager: 22.0,
-            reasoning: 'On-chain deposit address telemetry confirms 141,800 verified unique mints. Only 8.2k needed over 12 days to clear condition.',
-            status: 'ACTIVE'
-          },
-          {
-            id: 'poly-4',
-            title: 'ECB reduces Deposit Facility rate at next policy meeting',
-            category: 'macro',
-            market: 'polymarket',
-            yesPrice: 0.81,
-            noPrice: 0.19,
-            volume24h: 1240000,
-            liquidity: 890000,
-            resolutionDate: new Date(Date.now() + 86400000 * 9).toISOString(),
-            trueYesProbability: 0.94,
-            edge: 0.13,
-            recommendedBet: 'YES',
-            expectedValue: 16.0,
-            kellyFraction: 0.20,
-            recommendedWager: 30.0,
-            reasoning: 'Eurozone PMI contraction in German manufacturing cements easing path. Market underpricing rate cut certainty.',
-            status: 'ACTIVE'
-          }
-        ]);
+        setPredictions([]);
+      }
+
+      if (breakdown?.polymarket) {
+        setBankroll(breakdown.polymarket.equity || 0);
+        setWalletConnected(Boolean(breakdown.polymarket.connected));
       }
     } catch {
-      // Graceful fallback
+      setPredictions([]);
     } finally {
       setLoading(false);
     }
@@ -320,23 +114,13 @@ export default function PolymarketPage() {
     loadData();
   }, []);
 
-  // 24/7 background simulated auto-trader ticker
+  // Real-time auto-trader telemetry: logs updated via scan operations and WebSocket events
   useEffect(() => {
     if (!autoTradeEnabled) return;
-    const interval = setInterval(() => {
-      const msgs = [
-        'CLOB Heartbeat: Polymarket orderbook liquidity verified (Average Spread 0.8¢)',
-        'Bayesian Model check: Updated Truflation prior (+0.02 delta). No rebalance needed.',
-        'Oracle check: Monitored Fed fund futures CME Watch tool. Probability steady at 82%.',
-        '24/7 Risk Check: Max Polymarket portfolio exposure within 25% risk boundary.',
-      ];
-      const randomMsg = msgs[Math.floor(Math.random() * msgs.length)];
-      setAutoLogs(prev => [
-        { id: `log-${Date.now()}`, time: new Date().toLocaleTimeString(), msg: randomMsg, type: 'scan' },
-        ...prev.slice(0, 19)
-      ]);
-    }, 12000);
-    return () => clearInterval(interval);
+    setAutoLogs(prev => [
+      { id: `log-${Date.now()}`, time: new Date().toLocaleTimeString(), msg: 'Polymarket autonomous engine monitoring active in paper mode.', type: 'scan' },
+      ...prev.slice(0, 19)
+    ]);
   }, [autoTradeEnabled]);
 
   const handleScan = async () => {
@@ -431,7 +215,7 @@ export default function PolymarketPage() {
 
     const winRate = closedWagers.length > 0
       ? ((winners.length / closedWagers.length) * 100).toFixed(1)
-      : '80.0';
+      : '0.0';
 
     const bestWager = polyTrades.reduce((max, t) => t.pnl > (max?.pnl || -Infinity) ? t : max, polyTrades[0]);
     const worstWager = polyTrades.reduce((min, t) => t.pnl < (min?.pnl || Infinity) ? t : min, polyTrades[0]);
@@ -521,8 +305,9 @@ export default function PolymarketPage() {
         <div className="p-4 rounded-xl glass-panel bg-[#0B101D]/70 border border-white/10">
           <div className="text-xs font-mono text-slate-400 mb-1">POLYMARKET BANKROLL</div>
           <div className="text-2xl font-mono font-bold text-white tabular-nums">${bankroll.toFixed(2)}</div>
-          <div className="text-xs text-amber-400 font-mono mt-1 flex items-center gap-1">
-            <Zap size={11} /> Micro-Compounding Sizing
+          <div className={`text-xs font-mono mt-1 flex items-center gap-1 ${walletConnected ? 'text-emerald-400' : 'text-slate-400'}`}>
+            <Zap size={11} className={walletConnected ? 'text-emerald-400' : 'text-slate-500'} />
+            {walletConnected ? 'Connected Wallet Balance' : 'Paper Mode Simulation ($0.00)'}
           </div>
         </div>
 

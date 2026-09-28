@@ -25,6 +25,7 @@ import chatRoutes from './routes/chat';
 import agentMonitorRoutes from './routes/agentMonitor';
 import backtestRoutes from './routes/backtest';
 import intelligenceRoutes from './routes/intelligence';
+import copyTradingRoutes from './routes/copyTrading';
 
 const app = express();
 const server = http.createServer(app);
@@ -63,15 +64,23 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/monitor', agentMonitorRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
+app.use('/api/copy-trading', copyTradingRoutes);
+
+import { appConfig } from './utils/config';
 
 // Health check
-app.get('/health', (_, res) => {
+app.get(['/health', '/api/health'], (_, res) => {
   res.json({
     status: 'OPERATIONAL',
-    mode: process.env.TRADING_MODE || 'paper',
+    mode: appConfig.TRADING_MODE,
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// Explicit 404 for unhandled API requests
+app.all('/api/*', (_req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
 });
 
 // ── ERROR HANDLER ─────────────────────────────────────────────────────────────

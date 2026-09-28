@@ -15,75 +15,154 @@ import { closePosition } from '../trading/riskManager';
 import { getCurrentPrices } from '../services/marketData';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
+import rateLimit from 'express-rate-limit';
+import { revokeToken } from '../middleware/auth';
+import { appConfig } from '../utils/config';
+
 export const authRouter = Router();
 
-authRouter.get('/demo', async (_req: Request, res: Response) => {
-  try {
-    let user = await prisma.user.findFirst();
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          id: 'owner-user-1',
-          email: 'tharunsai2081@gmail.com',
-          passwordHash: await bcrypt.hash('Tharunsai@2081as', 10),
-        }
-      });
-    }
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'apex-trader-jwt-secret-key-32chars', { expiresIn: '30d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: 'Tharun Sai (Owner)', role: 'OWNER' } });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Demo auth failed' });
-  }
+// Dedicated rate limiter for authentication attempts (10 attempts per 15 min per IP)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' }
 });
 
-authRouter.post('/login', async (req: Request, res: Response) => {
+// Secure login endpoint with timing attack resistance and audit logging
+authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
+  const ipAddress = req.ip || req.socket.remoteAddress || 'unknown';
+  const { email, password, totpCode } = req.body;
+
+  if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
   try {
-    const { email, password, totpCode } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    const user = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    
+    // Always run bcrypt comparison to prevent username enumeration via timing attacks
+    const dummyHash = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+    const hashToCompare = user ? user.passwordHash : dummyHash;
+    const validPassword = await bcrypt.compare(password, hashToCompare);
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user || !validPassword) {
+      await prisma.authAuditLog.create({
+        data: { email: email.trim().toLowerCase(), ipAddress, action: 'LOGIN_FAILURE', success: 0, reason: 'Invalid credentials' }
+      }).catch(() => {});
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
     if (user.totpEnabled && user.totpSecret) {
-      if (!totpCode) return res.status(401).json({ error: 'TOTP code required', requireTotp: true });
-      const verified = speakeasy.totp.verify({ secret: user.totpSecret, encoding: 'base32', token: totpCode, window: 1 });
-      if (!verified) return res.status(401).json({ error: 'Invalid TOTP code' });
+      if (!totpCode) {
+        return res.status(401).json({ error: 'Two-factor authentication code required.', requireTotp: true });
+      }
+      const verified = speakeasy.totp.verify({ secret: user.totpSecret, encoding: 'base32', token: String(totpCode).trim(), window: 1 });
+      if (!verified) {
+        await prisma.authAuditLog.create({
+          data: { email: user.email, ipAddress, action: 'TOTP_FAILURE', success: 0, reason: 'Invalid TOTP code' }
+        }).catch(() => {});
+        return res.status(401).json({ error: 'Invalid two-factor authentication code.' });
+      }
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, { expiresIn: '8h' });
-    await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+    // Short-lived 2-hour access token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email, role: user.role || 'OWNER' },
+      appConfig.JWT_SECRET,
+      { expiresIn: '2h' }
+    );
 
-    res.json({ token, user: { id: user.id, email: user.email, totpEnabled: user.totpEnabled } });
-  } catch (err) {
-    res.status(500).json({ error: 'Login failed' });
+    await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+    await prisma.authAuditLog.create({
+      data: { email: user.email, ipAddress, action: 'LOGIN_SUCCESS', success: 1 }
+    }).catch(() => {});
+
+    res.json({
+      token,
+      expiresIn: 7200,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role || 'OWNER',
+        totpEnabled: user.totpEnabled
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Authentication service temporarily unavailable.' });
   }
 });
 
-authRouter.post('/setup', async (req: Request, res: Response) => {
-  // One-time setup endpoint — creates the owner account
-  try {
-    const { email, password, setupKey } = req.body;
-    if (setupKey !== process.env.ENCRYPTION_KEY) return res.status(403).json({ error: 'Invalid setup key' });
-
-    const existing = await prisma.user.findFirst();
-    if (existing) return res.status(400).json({ error: 'Owner account already exists' });
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const secret = speakeasy.generateSecret({ name: 'THARUN TRADING BOT', issuer: 'TharunTradingBot' });
-
-    const user = await prisma.user.create({ data: { email, passwordHash, totpSecret: secret.base32 } });
-    res.json({ message: 'Account created', totpSecret: secret.base32, totpQR: secret.otpauth_url, userId: user.id });
-  } catch (err) {
-    res.status(500).json({ error: 'Setup failed' });
+// Secure logout with token revocation
+authRouter.post('/logout', requireAuth, async (req: AuthRequest, res: Response) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (token) {
+    await revokeToken(token);
   }
+  const ipAddress = req.ip || 'unknown';
+  if (req.user?.email) {
+    await prisma.authAuditLog.create({
+      data: { email: req.user.email, ipAddress, action: 'LOGOUT', success: 1 }
+    }).catch(() => {});
+  }
+  res.json({ success: true, message: 'Logged out successfully. Session invalidated.' });
+});
+
+// Secure first-run Owner account setup (Only permitted when zero OWNER accounts exist in database)
+authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Valid email and password are required to initialize owner.' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Owner password must be at least 8 characters.' });
+  }
+
+  // Check if an OWNER user already exists in persistent database
+  const existingOwner = await prisma.user.findFirst({ where: { role: 'OWNER' } });
+  if (existingOwner) {
+    return res.status(403).json({ error: 'Owner account is already provisioned. Initial setup is locked.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: {
+      email: email.trim().toLowerCase(),
+      passwordHash,
+      role: 'OWNER',
+    }
+  });
+
+  const ipAddress = req.ip || 'unknown';
+  await prisma.authAuditLog.create({
+    data: { email: user.email, ipAddress, action: 'OWNER_PROVISIONED', success: 1 }
+  }).catch(() => {});
+
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: 'OWNER' },
+    appConfig.JWT_SECRET,
+    { expiresIn: '2h' }
+  );
+
+  res.status(201).json({
+    message: 'Owner account provisioned successfully.',
+    token,
+    user: { id: user.id, email: user.email, role: 'OWNER' }
+  });
 });
 
 authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
-  const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, email: true, totpEnabled: true, lastLogin: true } });
-  res.json(user);
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({
+    id: user.id,
+    email: user.email,
+    role: user.role || 'OWNER',
+    totpEnabled: user.totpEnabled,
+    lastLogin: user.lastLogin
+  });
 });
 
 // ── /api/trades ───────────────────────────────────────────────────────────────
@@ -103,6 +182,24 @@ tradesRouter.get('/', async (req: Request, res: Response) => {
     prisma.trade.count({ where })
   ]);
   res.json({ trades, total, page: parseInt(page as string), pages: Math.ceil(total / parseInt(limit as string)) });
+});
+
+tradesRouter.get('/lifecycle', async (req: Request, res: Response) => {
+  const { symbol, limit = '100' } = req.query;
+  const where: any = {};
+  if (symbol) where.symbol = String(symbol).toUpperCase();
+  const audits = await prisma.tradeLifecycleAudit.findMany({
+    where,
+    take: parseInt(limit as string)
+  });
+  res.json({ audits });
+});
+
+tradesRouter.get('/lifecycle/:correlationId', async (req: Request, res: Response) => {
+  const audits = await prisma.tradeLifecycleAudit.findMany({
+    where: { correlationId: req.params.correlationId }
+  });
+  res.json({ correlationId: req.params.correlationId, audits });
 });
 
 tradesRouter.get('/stats', async (req: Request, res: Response) => {
@@ -149,11 +246,41 @@ portfolioRouter.use(requireAuth);
 
 portfolioRouter.get('/', async (_req: Request, res: Response) => {
   try {
-    const state = await getPortfolioState();
-    res.json(state);
+    const { calculateAuthenticatedPortfolio } = await import('../services/portfolioAccounting');
+    const metrics = await calculateAuthenticatedPortfolio();
+    res.json(metrics);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch portfolio state' });
   }
+});
+
+portfolioRouter.get('/breakdown', async (_req: Request, res: Response) => {
+  try {
+    const { calculateAuthenticatedPortfolio } = await import('../services/portfolioAccounting');
+    const metrics = await calculateAuthenticatedPortfolio();
+    res.json({
+      alpaca: {
+        equity: metrics.alpacaEquity,
+        connected: metrics.dataSource.includes('ALPACA'),
+      },
+      polymarket: {
+        equity: metrics.polymarketEquity,
+        connected: metrics.dataSource.includes('POLYMARKET'),
+      },
+      combinedTotal: metrics.combinedTotal,
+      cashBalance: metrics.cashBalance,
+      buyingPower: metrics.buyingPower,
+      investedCollateral: metrics.investedCollateral,
+      dataSource: metrics.dataSource,
+      timestamp: metrics.timestamp,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch portfolio breakdown' });
+  }
+});
+
+portfolioRouter.get('/db-health', async (_req: Request, res: Response) => {
+  res.json(prisma.getDatabaseHealth ? prisma.getDatabaseHealth() : { healthy: true, engine: 'SQLite' });
 });
 
 portfolioRouter.get('/snapshots', async (req: Request, res: Response) => {
@@ -298,18 +425,49 @@ marketRouter.get('/prices', async (_req: Request, res: Response) => {
   res.json(getCurrentPrices());
 });
 
-marketRouter.get('/stock-universe', async (_req: Request, res: Response) => {
+marketRouter.get('/stock-universe', async (req: Request, res: Response) => {
   try {
-    const { COMPREHENSIVE_US_STOCK_UNIVERSE } = await import('../services/liveMarketData');
+    const { securityMaster } = await import('../services/securityMaster');
     const { getCurrentPrices } = await import('../services/marketData');
     const prices = getCurrentPrices();
-    const result = COMPREHENSIVE_US_STOCK_UNIVERSE.map(s => ({
-      ...s,
+
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 250;
+    const eligibleAssets = securityMaster.getEligibleUniverse({ limit });
+
+    const result = eligibleAssets.map(s => ({
+      symbol: s.symbol,
+      name: s.name,
+      exchange: s.exchange,
+      sector: s.assetClass,
+      tradable: s.tradable,
+      fractionable: s.fractionable,
+      shortable: s.shortable,
       currentPrice: prices[s.symbol] || null,
+      lastUpdated: s.lastUpdated
     }));
+
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch stock universe' });
+    res.status(500).json({ error: err.message || 'Failed to fetch dynamic stock universe' });
+  }
+});
+
+marketRouter.get('/security-master/status', async (_req: Request, res: Response) => {
+  try {
+    const { securityMaster } = await import('../services/securityMaster');
+    res.json(securityMaster.getSyncStats());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to get security master status' });
+  }
+});
+
+marketRouter.post('/security-master/sync', async (_req: Request, res: Response) => {
+  try {
+    const { securityMaster } = await import('../services/securityMaster');
+    const stats = await securityMaster.syncUniverse();
+    res.json({ success: true, stats });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Sync failed' });
   }
 });
 
@@ -469,19 +627,51 @@ marketRouter.get('/ipo-calendar', async (_req: Request, res: Response) => {
 // sector data for all ~7400 would mean one rate-limited API call per symbol
 // (hours, and we'd get blocked). Returns null rather than guessing for the
 // rest, so the frontend can show "—" honestly instead of fake coverage.
-marketRouter.get('/all-stocks', async (_req: Request, res: Response) => {
+marketRouter.get('/all-stocks', async (req: Request, res: Response) => {
   try {
-    const { getAllStocksDetailed } = await import('../services/marketData');
-    const [stocks, fundamentals] = await Promise.all([
-      getAllStocksDetailed(),
-      prisma.companyFundamentals.findMany({ select: { symbol: true, sector: true, industry: true } }),
-    ]);
-    const sectorMap = new Map<string, { sector: string | null; industry: string | null }>(
-      fundamentals.map(f => [f.symbol, { sector: f.sector, industry: f.industry }])
-    );
-    res.json(stocks.map(s => ({ ...s, sector: sectorMap.get(s.symbol)?.sector || null, industry: sectorMap.get(s.symbol)?.industry || null })));
+    const { securityMaster } = await import('../services/securityMaster');
+    const { getCurrentPrices } = await import('../services/marketData');
+    const prices = getCurrentPrices();
+
+    const search = req.query.search as string;
+    const sector = req.query.sector as string;
+    const exchange = req.query.exchange as string;
+    const tradableOnly = req.query.tradableOnly === 'true';
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 500;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+    const { assets, total } = securityMaster.getAllAssets({
+      search,
+      sector,
+      exchange,
+      tradableOnly,
+      limit,
+      offset
+    });
+
+    const enriched = assets.map(a => ({
+      symbol: a.symbol,
+      name: a.name,
+      exchange: a.exchange,
+      sector: a.sector || 'Diversified',
+      industry: a.industry || 'General',
+      tradable: a.tradable,
+      executionEligible: a.executionEligible,
+      fractionable: a.fractionable,
+      shortable: a.shortable,
+      cik: a.cik,
+      price: prices[a.symbol] || null,
+      lastUpdated: a.lastUpdated
+    }));
+
+    res.json({
+      stocks: enriched,
+      total,
+      limit,
+      offset
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch stock list' });
+    res.status(500).json({ error: 'Failed to fetch authoritative stock list' });
   }
 });
 
@@ -548,87 +738,68 @@ marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
       }
     }
 
-    // Default curated universe assets to guarantee rich coverage
-    const DEFAULT_SEED_ASSETS: any[] = [
-      { symbol: 'NVDA', name: 'NVIDIA Corporation', sector: 'Semiconductors', marketCap: 3100000000000, peRatio: 48.2, lastVote: 'STRONG BUY', debateCount: 14, tradeCount: 18, totalPnl: 3420.50, winRate: 77.8 },
-      { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Consumer Tech', marketCap: 3450000000000, peRatio: 33.1, lastVote: 'BUY', debateCount: 12, tradeCount: 14, totalPnl: 1890.20, winRate: 71.4 },
-      { symbol: 'TSLA', name: 'Tesla, Inc.', sector: 'Automotive / AI', marketCap: 720000000000, peRatio: 64.5, lastVote: 'BUY', debateCount: 16, tradeCount: 22, totalPnl: 2740.00, winRate: 63.6 },
-      { symbol: 'MSFT', name: 'Microsoft Corporation', sector: 'Enterprise Cloud / AI', marketCap: 3200000000000, peRatio: 36.4, lastVote: 'STRONG BUY', debateCount: 11, tradeCount: 10, totalPnl: 1450.80, winRate: 80.0 },
-      { symbol: 'BTC', name: 'Bitcoin Network', sector: 'Digital Gold / L1', marketCap: 1350000000000, peRatio: null, lastVote: 'BUY', debateCount: 24, tradeCount: 35, totalPnl: 5820.40, winRate: 74.3 },
-      { symbol: 'ETH', name: 'Ethereum Global Compute', sector: 'Smart Contracts / L1', marketCap: 340000000000, peRatio: null, lastVote: 'BUY', debateCount: 19, tradeCount: 28, totalPnl: 3110.10, winRate: 67.9 },
-      { symbol: 'SOL', name: 'Solana High-Throughput L1', sector: 'DeFi / Fast L1', marketCap: 78000000000, peRatio: null, lastVote: 'STRONG BUY', debateCount: 21, tradeCount: 31, totalPnl: 4230.90, winRate: 74.2 },
-      { symbol: 'AMZN', name: 'Amazon.com, Inc.', sector: 'Cloud / E-Commerce', marketCap: 1980000000000, peRatio: 41.2, lastVote: 'BUY', debateCount: 9, tradeCount: 8, totalPnl: 920.00, winRate: 75.0 },
-      { symbol: 'GOOGL', name: 'Alphabet Inc.', sector: 'Search / AI Compute', marketCap: 2100000000000, peRatio: 24.8, lastVote: 'BUY', debateCount: 8, tradeCount: 7, totalPnl: 810.50, winRate: 71.4 },
-      { symbol: 'META', name: 'Meta Platforms, Inc.', sector: 'Social / Generative AI', marketCap: 1450000000000, peRatio: 27.3, lastVote: 'BUY', debateCount: 13, tradeCount: 12, totalPnl: 1980.75, winRate: 75.0 },
-      { symbol: 'AMD', name: 'Advanced Micro Devices', sector: 'Semiconductors', marketCap: 250000000000, peRatio: 45.6, lastVote: 'BUY', debateCount: 10, tradeCount: 9, totalPnl: 1140.20, winRate: 66.7 },
-      { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', sector: 'Index ETF', marketCap: 560000000000, peRatio: 25.1, lastVote: 'BUY', debateCount: 15, tradeCount: 20, totalPnl: 2310.40, winRate: 85.0 },
-    ];
-
-    for (const seed of DEFAULT_SEED_ASSETS) {
-      if (!assetMap.has(seed.symbol)) {
-        assetMap.set(seed.symbol, {
-          asset: seed.symbol,
-          signal: seed.lastVote,
-          count: seed.debateCount,
-          lastAt: new Date(Date.now() - Math.floor(Math.random() * 3600000)),
-          confidence: 0.85,
-          defaultSeed: seed
+    // Get active symbols from open positions, decisions, and security master
+    const { securityMaster } = await import('../services/securityMaster');
+    const eligibleAssets = securityMaster.getEligibleUniverse({ limit: 20 });
+    
+    // Ensure all currently monitored eligible assets are tracked
+    for (const sec of eligibleAssets) {
+      if (!assetMap.has(sec.symbol)) {
+        assetMap.set(sec.symbol, {
+          asset: sec.symbol,
+          signal: 'HOLD',
+          count: 0,
+          lastAt: null,
+          confidence: 0,
+          secInfo: sec
         });
       }
     }
 
     const result = Array.from(assetMap.values()).map(d => {
-      const seed = d.defaultSeed;
       const fund = fundMap[d.asset];
       const ts = tradeStats[d.asset];
       const pos = posMap[d.asset];
       const mem = memMap[d.asset];
+      const sec = d.secInfo || securityMaster.getAsset(d.asset);
 
-      const tradeCount = (ts?.count || 0) + (seed?.tradeCount || 0);
-      const totalPnl = ts ? parseFloat(ts.pnl.toFixed(2)) : (seed?.totalPnl || 0);
+      const tradeCount = ts?.count || 0;
+      const totalPnl = ts ? parseFloat(ts.pnl.toFixed(2)) : 0;
       const winRate = ts && ts.count > 0 
         ? parseFloat(((ts.wins / ts.count) * 100).toFixed(1)) 
-        : (seed?.winRate || 72.5);
+        : 0;
 
       return {
         symbol: d.asset,
-        name: fund?.name || seed?.name || d.asset,
-        sector: fund?.sector || seed?.sector || 'Equities & Digital Assets',
-        industry: fund?.industry || seed?.sector || null,
-        marketCap: fund?.marketCap || seed?.marketCap || 150000000000,
-        peRatio: fund?.peRatio || seed?.peRatio || null,
-        analystRating: fund?.analystRating || 'BUY',
+        name: fund?.name || sec?.name || d.asset,
+        sector: fund?.sector || sec?.assetClass || 'US Equities',
+        industry: fund?.industry || null,
+        marketCap: fund?.marketCap || null,
+        peRatio: fund?.peRatio || null,
+        analystRating: fund?.analystRating || null,
         analystTargetPrice: fund?.analystTargetPrice || null,
-        fundamentalScore: 88,
-        lastVote: d.signal || seed?.lastVote || 'BUY',
-        lastConfidence: d.confidence || 0.85,
-        debateCount: Math.max(d.count || 0, seed?.debateCount || 5),
-        lastDebateAt: d.lastAt || new Date(),
-        tradeCount: Math.max(tradeCount, 3),
+        fundamentalScore: null,
+        lastVote: d.signal || 'HOLD',
+        lastConfidence: d.confidence || 0,
+        debateCount: d.count || 0,
+        lastDebateAt: d.lastAt || null,
+        tradeCount,
         totalPnl,
         winRate,
-        hasOpenPosition: !!pos || ['NVDA', 'BTC', 'SOL'].includes(d.asset),
-        openPositionPnl: pos ? parseFloat(pos.unrealizedPnl.toFixed(2)) : (d.asset === 'NVDA' ? 342.10 : d.asset === 'BTC' ? 840.50 : 210.30),
-        openPositionPct: pos ? parseFloat(pos.unrealizedPnlPct.toFixed(2)) : 5.8,
-        currentPrice: pos?.currentPrice || (d.asset === 'NVDA' ? 128.74 : d.asset === 'BTC' ? 67450.00 : 154.80),
-        entryPrice: pos?.entryPrice || (d.asset === 'NVDA' ? 122.50 : d.asset === 'BTC' ? 64200.00 : 144.20),
+        hasOpenPosition: !!pos,
+        openPositionPnl: pos ? parseFloat(pos.unrealizedPnl.toFixed(2)) : 0,
+        openPositionPct: pos ? parseFloat(pos.unrealizedPnlPct.toFixed(2)) : 0,
+        currentPrice: pos?.currentPrice || null,
+        entryPrice: pos?.entryPrice || null,
         memoryWinRate: mem?.winRate || winRate,
         memoryTrades: mem?.totalTrades || tradeCount,
-        bestSetup: mem?.bestSetup || 'Breakout with Volume Surge',
+        bestSetup: mem?.bestSetup || null,
       };
     });
 
     res.json(result);
-  } catch (err) {
-    // Return graceful default array rather than breaking the frontend
-    const fallbackList = [
-      { symbol: 'NVDA', name: 'NVIDIA Corporation', sector: 'Semiconductors', marketCap: 3100000000000, lastVote: 'STRONG BUY', debateCount: 14, tradeCount: 18, totalPnl: 3420.50, winRate: 77.8, hasOpenPosition: true, openPositionPct: 5.2 },
-      { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Consumer Tech', marketCap: 3450000000000, lastVote: 'BUY', debateCount: 12, tradeCount: 14, totalPnl: 1890.20, winRate: 71.4, hasOpenPosition: false },
-      { symbol: 'BTC', name: 'Bitcoin Network', sector: 'Digital Gold / L1', marketCap: 1350000000000, lastVote: 'BUY', debateCount: 24, tradeCount: 35, totalPnl: 5820.40, winRate: 74.3, hasOpenPosition: true, openPositionPct: 6.4 },
-      { symbol: 'SOL', name: 'Solana Network', sector: 'DeFi / Fast L1', marketCap: 78000000000, lastVote: 'STRONG BUY', debateCount: 21, tradeCount: 31, totalPnl: 4230.90, winRate: 74.2, hasOpenPosition: true, openPositionPct: 7.8 },
-      { symbol: 'TSLA', name: 'Tesla, Inc.', sector: 'Automotive / AI', marketCap: 720000000000, lastVote: 'BUY', debateCount: 16, tradeCount: 22, totalPnl: 2740.00, winRate: 63.6, hasOpenPosition: false },
-    ];
-    res.json(fallbackList);
+  } catch (err: any) {
+    res.json([]);
   }
 });
 

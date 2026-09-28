@@ -6,10 +6,22 @@ import toast from 'react-hot-toast';
 import { AGENTS } from '../constants/agents';
 
 const CRYPTO_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX', 'LINK'];
-const STOCK_ASSETS  = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'PLTR', 'SPY', 'QQQ'];
+
+export const SECTOR_CATEGORIES: Record<string, string[]> = {
+  'AI & Hyperscale Compute': ['NVDA', 'MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'AMD', 'PLTR', 'AVGO', 'MRVL'],
+  'Power & Nuclear (AI Boom)': ['CEG', 'VST', 'OKLO', 'CCJ', 'TLN', 'NEE', 'SO', 'DUK'],
+  'Grid Hardware & Cooling': ['ETN', 'PWR', 'GEV', 'VRT', 'HUBB'],
+  'Defense, Drones & Aerospace': ['LMT', 'RTX', 'NOC', 'GD', 'AVAV', 'KTOS', 'BA'],
+  'Healthcare & GLP-1 Therapeutics': ['LLY', 'NVO', 'WST', 'CTLS', 'JNJ', 'PFE', 'ISRG', 'MDT'],
+  'Energy, Tankers & Offshore': ['XOM', 'CVX', 'OXY', 'SLB', 'BKR', 'HAL', 'STNG', 'FRO'],
+  'Financials & Regional Banks': ['JPM', 'BAC', 'GS', 'MS', 'KRE', 'HBAN', 'CFG', 'V', 'MA'],
+  'Industrials, Steel & Infrastructure': ['CAT', 'DE', 'URI', 'NUE', 'STLD', 'ACM', 'FLR', 'VMC'],
+  'Broad Market & Liquid ETFs': ['SPY', 'QQQ', 'IWM', 'XBI', 'XLE', 'XLF', 'XLV', 'XLI'],
+  'Crypto Venues': ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX', 'LINK'],
+};
 
 function getMarket(asset: string): 'crypto' | 'stocks' {
-  return CRYPTO_ASSETS.includes(asset) ? 'crypto' : 'stocks';
+  return CRYPTO_ASSETS.includes(asset.toUpperCase()) ? 'crypto' : 'stocks';
 }
 
 interface AgentState {
@@ -187,25 +199,40 @@ export default function DebateRoomPage() {
 
         {/* Trigger controls */}
         <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={selectedAsset}
-            onChange={e => setSelectedAsset(e.target.value)}
-            disabled={isDebating}
-            className="px-3 py-2 border border-white/10 bg-black/40 text-white rounded-lg font-mono text-xs cursor-pointer focus:outline-none focus:border-amber-400"
-          >
-            <optgroup label="Stocks (HFT & Core)">
-              {STOCK_ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
-            </optgroup>
-            <optgroup label="Crypto">
-              {CRYPTO_ASSETS.map(a => <option key={a} value={a}>{a}</option>)}
-            </optgroup>
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedAsset}
+              onChange={e => setSelectedAsset(e.target.value.toUpperCase())}
+              disabled={isDebating}
+              className="px-3 py-2 border border-white/10 bg-black/40 text-white rounded-lg font-mono text-xs cursor-pointer focus:outline-none focus:border-amber-400"
+            >
+              {Object.entries(SECTOR_CATEGORIES).map(([cat, symbols]) => (
+                <optgroup key={cat} label={cat}>
+                  {symbols.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+
+            <span className="text-xs text-slate-500 font-mono">OR</span>
+
+            <input
+              type="text"
+              placeholder="ANY US TICKER (e.g. OKLO)"
+              value={selectedAsset}
+              onChange={e => setSelectedAsset(e.target.value.trim().toUpperCase())}
+              disabled={isDebating}
+              className="w-36 px-2.5 py-1.5 border border-white/10 bg-black/60 text-amber-300 font-mono text-xs rounded-lg uppercase placeholder:text-slate-600 focus:outline-none focus:border-amber-400"
+            />
+          </div>
+
           <span className="font-mono text-xs text-slate-400">
             [{getMarket(selectedAsset).toUpperCase()}]
           </span>
           <button
             onClick={triggerDebate}
-            disabled={triggering || isDebating}
+            disabled={triggering || isDebating || !selectedAsset}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-mono text-xs font-bold transition-all shadow-md shadow-amber-500/20 disabled:opacity-40"
           >
             {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Convening...' : `▶ CONVENE COMMITTEE ON ${selectedAsset}`}

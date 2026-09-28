@@ -105,6 +105,37 @@ export const getEarningsIvCrush = () =>
 export const getAiArsenal = () =>
   api.get('/intelligence/ai-arsenal').then(r => r.data?.data);
 
+export const getCrossIndustryRipple = () =>
+  api.get('/intelligence/cross-industry-ripple').then(r => r.data?.data);
+
+export const getAssetCrossIndustryRipple = (symbol: string) =>
+  api.get(`/intelligence/cross-industry-ripple/${symbol}`).then(r => r.data?.data);
+
+export const getAllStocksFiltered = (params?: { search?: string; sector?: string; exchange?: string; tradableOnly?: boolean; limit?: number; offset?: number }) =>
+  api.get('/market/all-stocks', { params }).then(r => r.data);
+
+export const getPortfolioBreakdown = () =>
+  api.get('/portfolio/breakdown').then(r => r.data);
+
+// ── COPY TRADING ─────────────────────────────────────────────────────────────
+export const getCopyTradingStrategies = () =>
+  api.get('/copy-trading/strategies').then(r => r.data?.strategies || []);
+
+export const getCopyTradingFollowers = () =>
+  api.get('/copy-trading/followers').then(r => r.data?.followers || []);
+
+export const createCopyFollower = (data: any) =>
+  api.post('/copy-trading/followers', data).then(r => r.data);
+
+export const toggleCopyFollower = (id: string) =>
+  api.post(`/copy-trading/followers/${id}/toggle`).then(r => r.data);
+
+export const deleteCopyFollower = (id: string) =>
+  api.delete(`/copy-trading/followers/${id}`).then(r => r.data);
+
+export const getCopyTradingAuditLog = (limit = 50) =>
+  api.get('/copy-trading/audit-log', { params: { limit } }).then(r => r.data?.logs || []);
+
 // ── KILL SWITCH ───────────────────────────────────────────────────────────────
 export const activateKillSwitch = () => api.post('/kill-switch/activate').then(r => r.data);
 export const deactivateKillSwitch = () => api.post('/kill-switch/deactivate').then(r => r.data);

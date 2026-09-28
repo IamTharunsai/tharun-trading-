@@ -283,7 +283,7 @@ export async function buildAgentLearningState(
         learningSources: state.recentLearnings as any,
         recommendations: 'HOLD',
       },
-    }).catch((err) => logger.error('Failed to persist AgentLearningState', { err }));
+    }).catch((err: any) => logger.error('Failed to persist AgentLearningState', { err }));
 
     return state;
   } catch (err) {
@@ -323,8 +323,9 @@ function analyzeSentiment(text: string): 'bullish' | 'bearish' | 'neutral' {
  */
 function calculateFundamentalScore(fundamentals: LearningResource | null): number {
   if (!fundamentals) return 50;
-  if (fundamentals.sentiment === 'bullish') return 70 + Math.random() * 20;
-  if (fundamentals.sentiment === 'bearish') return 30 + Math.random() * 10;
+  const confidenceFactor = Math.min(1, Math.max(0, fundamentals.relevanceScore || 0.5));
+  if (fundamentals.sentiment === 'bullish') return Math.round(50 + confidenceFactor * 40);
+  if (fundamentals.sentiment === 'bearish') return Math.round(50 - confidenceFactor * 40);
   return 50;
 }
 

@@ -236,7 +236,7 @@ export async function updateAgentMetrics(agentId: string): Promise<void> {
     if (agentLessons.length === 0) return;
 
     const last20 = agentLessons.slice(0, 20);
-    const correctLast20 = last20.filter(l => l.correct).length;
+    const correctLast20 = last20.filter((l: any) => l.correct).length;
     const last20Accuracy = last20.length > 0 ? (correctLast20 / last20.length) * 100 : 50;
 
     // Brier score: mean squared error between stated confidence (as a
@@ -245,7 +245,7 @@ export async function updateAgentMetrics(agentId: string): Promise<void> {
     // 0.25 = no better than always guessing 50/50, 1 = maximally overconfident
     // and wrong. Converted to a 0-100 score where higher is better calibrated.
     const brierScore = last20.length > 0
-      ? last20.reduce((sum, l) => {
+      ? last20.reduce((sum: number, l: any) => {
           const statedProb = (l.confidenceScore || 50) / 100;
           return sum + Math.pow(statedProb - (l.correct ? 1 : 0), 2);
         }, 0) / last20.length
@@ -345,9 +345,9 @@ export async function generateWeeklyReport(): Promise<string> {
       prisma.agentDecision.findMany({ where: { timestamp: { gte: weekAgo } }, orderBy: { timestamp: 'desc' } })
     ]);
 
-    const closedTrades = trades.filter(t => t.status === 'CLOSED');
-    const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl || 0), 0);
-    const winners = closedTrades.filter(t => (t.pnl || 0) > 0);
+    const closedTrades = trades.filter((t: any) => t.status === 'CLOSED');
+    const totalPnl = closedTrades.reduce((s: number, t: any) => s + (t.pnl || 0), 0);
+    const winners = closedTrades.filter((t: any) => (t.pnl || 0) > 0);
     const winRate = closedTrades.length > 0 ? (winners.length / closedTrades.length * 100).toFixed(1) : '0';
 
     const reportPrompt = `Generate a weekly report.

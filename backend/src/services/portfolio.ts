@@ -37,7 +37,7 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   // realized-only, so it read exactly $0.00 forever until the first trade
   // closed even while open positions had real, visible gains/losses.
   const allTrades = await prisma.trade.findMany({ where: { status: 'CLOSED' } });
-  const realizedPnlTotal = allTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+  const realizedPnlTotal = allTrades.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0);
   const pnlTotal = realizedPnlTotal + unrealizedPnlTotal;
 
   let cashBalance = STARTING_CAPITAL + pnlTotal - invested;
@@ -48,8 +48,8 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   // (stop-loss/take-profit) without a matching local update, so prefer Alpaca's
   // reported cash/portfolio_value over the locally-computed estimate when available.
   const cryptoInvested = openPositions
-    .filter(p => p.market === 'crypto')
-    .reduce((sum, p) => sum + (prices[p.asset] || p.currentPrice) * p.quantity, 0);
+    .filter((p: any) => p.market === 'crypto')
+    .reduce((sum: number, p: any) => sum + (prices[p.asset] || p.currentPrice) * p.quantity, 0);
 
   // Ground-truth reconciliation against real live accounts (Alpaca + Polymarket)
   try {

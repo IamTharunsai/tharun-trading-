@@ -462,4 +462,34 @@ router.get('/ai-arsenal', requireAuth, async (_req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/intelligence/cross-industry-ripple
+ * Real-time alternative industry spillover & boom opportunities from macro news & catalysts
+ */
+router.get('/cross-industry-ripple', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const { crossIndustryService } = await import('../services/crossIndustryIntelligence');
+    const data = await crossIndustryService.getDailyRippleOpportunities();
+    res.json({ success: true, data });
+  } catch (err: any) {
+    logger.error('Cross-industry ripple error', { err: err?.message || err });
+    res.status(500).json({ success: false, error: 'Failed to fetch cross-industry ripple opportunities' });
+  }
+});
+
+/**
+ * GET /api/intelligence/cross-industry-ripple/:symbol
+ * Specific alternative plays and sector spillover intelligence for a debated stock
+ */
+router.get('/cross-industry-ripple/:symbol', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { crossIndustryService } = await import('../services/crossIndustryIntelligence');
+    const data = crossIndustryService.getSpilloverIntelligenceForAsset(req.params.symbol);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    logger.error('Symbol ripple error', { err: err?.message || err });
+    res.status(500).json({ success: false, error: 'Failed to fetch asset spillover intelligence' });
+  }
+});
+
 export default router;

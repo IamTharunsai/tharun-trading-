@@ -183,7 +183,7 @@ export function initScheduler() {
   cron.schedule('*/60 * * * * *', async () => {
     try {
       const openStockPositions = await prisma.position.findMany({ where: { status: 'OPEN', market: 'stocks' }, select: { asset: true } });
-      await refreshOpenPositionStockPrices(openStockPositions.map(p => p.asset));
+      await refreshOpenPositionStockPrices(openStockPositions.map((p: any) => p.asset));
     } catch (err) { logger.error('Open-position price refresh failed', { err }); }
   });
 
@@ -219,8 +219,8 @@ export function initScheduler() {
     // indefinitely, since the blind rotation could take weeks to reach them
     // out of the full ~7000-stock universe.
     const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true, market: true } });
-    const heldAssets = openPositions.map(p => ({ asset: p.asset, market: p.market as 'crypto' | 'stocks' }));
-    const heldSymbols = new Set(heldAssets.map(a => a.asset));
+    const heldAssets = openPositions.map((p: any) => ({ asset: p.asset, market: p.market as 'crypto' | 'stocks' }));
+    const heldSymbols = new Set(heldAssets.map((a: any) => a.asset));
 
     const cryptoAssets = CRYPTO_ASSETS.slice(0, 3).map(a => ({ asset: a, market: 'crypto' as const })).filter(a => !heldSymbols.has(a.asset));
     const stockAssets = getNextStockBatch(2).map(a => ({ asset: a, market: 'stocks' as const })).filter(a => !heldSymbols.has(a.asset));

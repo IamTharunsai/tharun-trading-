@@ -275,13 +275,20 @@ export function projectCompoundGrowth(
   // Monte Carlo simulation — 100 paths
   const finalValues: number[] = [];
 
+  // Deterministic Pseudo-Random Generator (LCG) for reproducible Monte Carlo paths
+  let seed = 42;
+  const nextRand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+
   for (let sim = 0; sim < 100; sim++) {
     let simValue = startingCapital;
     let simPeak = startingCapital;
     let simMaxDD = 0;
 
     for (let day = 0; day < days; day++) {
-      const isWin = Math.random() < dailyWinRate;
+      const isWin = nextRand() < dailyWinRate;
       if (isWin) {
         simValue *= (1 + avgWinDay);
       } else {

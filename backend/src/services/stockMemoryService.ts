@@ -117,7 +117,7 @@ export async function getRegimeMatchedLessons(symbol: string, regime: string): P
     });
     if (pastDecisions.length === 0) return '';
 
-    const lines = pastDecisions.map(d => {
+    const lines = pastDecisions.map((d: any) => {
       const date = d.timestamp.toISOString().split('T')[0];
       return `${date}: ${d.finalVote} (${d.avgConfidence.toFixed(0)}% confidence)${d.executed ? ', executed' : ', not executed'}`;
     });

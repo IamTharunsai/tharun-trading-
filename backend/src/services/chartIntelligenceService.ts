@@ -129,22 +129,8 @@ export async function analyzeChartIntelligence(symbol: string, market: 'stocks' 
       parseFloat(((c.close - minP) / range).toFixed(4)),
     ]);
   } else {
-    // Generate synthetic realistic matrix
-    let base = 0.5;
-    for (let i = 0; i < 30; i++) {
-      const delta = (Math.sin(i / 3) * 0.15) + (Math.random() * 0.08 - 0.04);
-      base = Math.max(0.1, Math.min(0.9, base + delta));
-      const o = base;
-      const h = Math.min(1.0, o + 0.04 + Math.random() * 0.03);
-      const l = Math.max(0.0, o - 0.04 - Math.random() * 0.03);
-      const c = l + Math.random() * (h - l);
-      normalizedMatrix.push([
-        parseFloat(o.toFixed(4)),
-        parseFloat(h.toFixed(4)),
-        parseFloat(l.toFixed(4)),
-        parseFloat(c.toFixed(4)),
-      ]);
-    }
+    // Insufficient historical candles: do not fabricate synthetic matrix
+    normalizedMatrix = [];
   }
 
   // CNN inference calculation based on price structure and momentum

@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { redis } from '../utils/redis';
 import { getIO } from '../websocket/server';
 import { MarketSnapshot, Candle, TechnicalIndicators } from '../agents/types';
+import { alpacaMarketStream } from './alpacaMarketStream';
 
 // Base crypto assets (Binance WebSocket streams)
 export const CRYPTO_ASSETS = [
@@ -237,14 +238,22 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
         askPrice: parseFloat(tickerRes.data.askPrice || tickerRes.data.lastPrice),
       };
     } else {
-      // Fetch real stock candles from Polygon (daily, last 60 days)
+      // Fetch real stock candles from Polygon (daily, last 60 days) if valid API key is present
       const toDate = new Date().toISOString().slice(0, 10);
       const fromDate = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-      const candleRes = await axios.get(
-        `https://api.polygon.io/v2/aggs/ticker/${asset}/range/1/day/${fromDate}/${toDate}`,
-        { params: { adjusted: true, sort: 'asc', limit: 60, apiKey: process.env.POLYGON_API_KEY }, timeout: 10000 }
-      );
-      if (candleRes.data?.results?.length > 5) {
+      let candleRes: any = null;
+      if (process.env.POLYGON_API_KEY && !process.env.POLYGON_API_KEY.includes('XXXX') && process.env.POLYGON_API_KEY !== 'dummy-key') {
+        try {
+          candleRes = await axios.get(
+            `https://api.polygon.io/v2/aggs/ticker/${asset}/range/1/day/${fromDate}/${toDate}`,
+            { params: { adjusted: true, sort: 'asc', limit: 60, apiKey: process.env.POLYGON_API_KEY }, timeout: 6000 }
+          );
+        } catch (polyErr: any) {
+          logger.debug(`Polygon candle fetch unavailable for ${asset}: ${polyErr?.message || polyErr}`);
+        }
+      }
+
+      if (candleRes?.data?.results?.length > 5) {
         candles = candleRes.data.results.map((r: any) => ({
           open: r.o, high: r.h, low: r.l, close: r.c, volume: r.v, timestamp: r.t
         }));
@@ -263,12 +272,25 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
         };
         latestPrices[asset] = last.close;
       } else {
-        // Fallback to cached price if candles unavailable
+        // Fallback to real-time Alpaca quotes stream or cached price
+        const alpacaQuote = alpacaMarketStream.getLatestQuote(asset);
         const cached = await redis.get(`price:${asset}`);
-        if (!cached && !latestPrices[asset]) return null;
-        const p = cached ? JSON.parse(cached) : { price: latestPrices[asset], change24h: 0 };
-        priceData = { price: p.price, priceChange24h: 0, priceChangePct24h: p.change24h || 0, volume24h: p.volume24h || 0, high24h: p.price, low24h: p.price, bidPrice: p.price, askPrice: p.price };
-        candles = generateMockCandles(priceData.price, 50);
+        const effectivePrice = alpacaQuote?.askPrice || latestPrices[asset] || (cached ? JSON.parse(cached).price : null);
+
+        if (!effectivePrice) return null;
+
+        priceData = {
+          price: effectivePrice,
+          priceChange24h: 0,
+          priceChangePct24h: 0,
+          volume24h: (alpacaQuote?.askSize || 100) * 100,
+          high24h: effectivePrice,
+          low24h: effectivePrice,
+          bidPrice: alpacaQuote?.bidPrice || effectivePrice,
+          askPrice: alpacaQuote?.askPrice || effectivePrice,
+        };
+        latestPrices[asset] = effectivePrice;
+        candles = [];
       }
     }
 
@@ -430,19 +452,4 @@ export function calculateStochastic(candles: Candle[], period: number): { k: num
   // as computeK's own "not enough data" 50 fallback for a single bar.
   const d = kValues.length === 0 ? k : calculateSMA(kValues, kValues.length);
   return { k, d };
-}
-
-function generateMockCandles(basePrice: number, count: number): Candle[] {
-  const candles: Candle[] = [];
-  let price = basePrice;
-  for (let i = 0; i < count; i++) {
-    const change = (Math.random() - 0.5) * price * 0.02;
-    const open = price;
-    const close = price + change;
-    const high = Math.max(open, close) * (1 + Math.random() * 0.005);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.005);
-    candles.push({ open, high, low, close, volume: Math.random() * 1000000, timestamp: Date.now() - (count - i) * 3600000 });
-    price = close;
-  }
-  return candles;
 }
