@@ -11,6 +11,7 @@ import agentActivityLogger from '../services/agentActivityLogger';
 import agentResourceLearning from '../services/agentResourceLearning';
 import geopoliticalIntelligence from '../services/geopoliticalIntelligence';
 import { intermarketService, IntermarketData } from '../services/intermarketService';
+import { getMacroSnapshot, MacroSnapshot } from '../services/fredService';
 
 const router = Router();
 
@@ -18,14 +19,21 @@ const router = Router();
  * Build macro data response from intermarket analysis
  * Extracts the response-shaping logic for testability
  */
-export function buildMacroData(analysis: IntermarketData) {
+export function buildMacroData(analysis: IntermarketData, fred?: MacroSnapshot | null) {
+  const live = fred && fred.source === 'FRED';
   return {
-    fedRate: null,
-    inflation: null,
-    unemployment: null,
+    fedRate: live ? fred!.fedFundsRate : null,
+    inflation: live ? fred!.cpiYoY : null,
+    unemployment: live ? fred!.unemploymentRate : null,
+    treasury10Y: live ? fred!.treasury10Y : null,
+    treasury2Y: live ? fred!.treasury2Y : null,
+    yieldCurve10Y2Y: live ? fred!.yieldCurve10Y2Y : null,
     vixLevel: analysis.assets.vix,
     usdEurRate: null,
-    note: 'fedRate/inflation/unemployment/usdEurRate pending FRED integration (Macro Intelligence panel plan) — vixLevel is real, derived from the VIXY ETF proxy'
+    asOf: live ? fred!.asOf : null,
+    note: live
+      ? 'Fed funds, CPI YoY, unemployment and Treasury yields from FRED; VIX level from the VIXY ETF proxy'
+      : 'FRED_API_KEY not configured — fed rate / inflation / unemployment unavailable; VIX level is real (VIXY proxy)'
   };
 }
 
@@ -289,7 +297,7 @@ router.get('/risk/events', requireAuth, async (req: Request, res: Response) => {
 router.get('/risk/macro', requireAuth, async (req: Request, res: Response) => {
   try {
     const analysis = await intermarketService.getIntermarketAnalysis();
-    const macroData = buildMacroData(analysis);
+    const macroData = buildMacroData(analysis, await getMacroSnapshot().catch(() => null));
 
     res.json({
       success: true,
@@ -405,7 +413,7 @@ router.post('/learning/log-activity', requireAuth, async (req: Request, res: Res
  */
 router.get('/chart-ai/:symbol', requireAuth, async (req: Request, res: Response) => {
   try {
-    const symbol = (req.params.symbol || 'NVDA').toUpperCase();
+    const symbol = String(req.params.symbol || '').toUpperCase();
     const market = (req.query.market as string || 'stocks') as 'stocks' | 'crypto';
     const { analyzeChartIntelligence } = await import('../services/chartIntelligenceService');
     const result = await analyzeChartIntelligence(symbol, market);
@@ -422,7 +430,7 @@ router.get('/chart-ai/:symbol', requireAuth, async (req: Request, res: Response)
  */
 router.get('/alternative-data/:symbol?', requireAuth, async (req: Request, res: Response) => {
   try {
-    const symbol = (req.params.symbol || (req.query.symbol as string) || 'NVDA').toUpperCase();
+    const symbol = String(req.params.symbol || (req.query.symbol as string) || '').toUpperCase();
     const { getSymbolAlternativeData } = await import('../services/alternativeDataService');
     const data = await getSymbolAlternativeData(symbol);
     res.json({ success: true, data });

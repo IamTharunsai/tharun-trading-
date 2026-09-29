@@ -7,19 +7,21 @@ import { useState } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { AGENTS as ALL_AGENTS } from '../constants/agents';
-import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
+import SymbolPicker from '../components/common/SymbolPicker';
+import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
+import { decisionVoteStats } from '../utils/votes';
 
 export default function AgentsPage() {
   const { data, refetch } = useQuery({ queryKey: ['decisions'], queryFn: () => getAgentDecisions(1), refetchInterval: 10000 });
   const { agentCouncil, currentAnalysis } = useStore();
-  const decisions = data || [];
+  const decisions: any[] = Array.isArray(data) ? data : Array.isArray((data as any)?.decisions) ? (data as any).decisions : [];
   const [running, setRunning] = useState(false);
   const [trading, setTrading] = useState(false);
-  const [symbol, setSymbol] = useState('NVDA');
-  const [market, setMarket] = useState<'stocks' | 'crypto'>('stocks');
+  const { symbol, market, setSymbol } = useSelectedSymbol('all');
 
   const runNow = async () => {
     if (running) return;
+    if (!symbol) { toast.error('Pick a symbol first'); return; }
     setRunning(true);
     try {
       await api.post('/agents/trigger-debate', { asset: symbol, market });
@@ -33,6 +35,7 @@ export default function AgentsPage() {
 
   const runAndTrade = async () => {
     if (trading) return;
+    if (!symbol) { toast.error('Pick a symbol first'); return; }
     setTrading(true);
     try {
       const r = await api.post('/agents/run-and-trade', { asset: symbol, market });
@@ -45,6 +48,7 @@ export default function AgentsPage() {
   };
 
   const forceBuy = async () => {
+    if (!symbol) { toast.error('Pick a symbol first'); return; }
     if (!confirm(`Place a real paper BUY order for ${symbol} right now, skipping the 13-agent debate? This executes immediately.`)) return;
     try {
       const r = await api.post('/agents/force-trade', { asset: symbol, market, direction: 'BUY' });
@@ -71,21 +75,11 @@ export default function AgentsPage() {
             </span>
           )}
 
-          {/* Market + Symbol selectors */}
-          <select value={market} onChange={e => { setMarket(e.target.value as any); setSymbol(e.target.value === 'crypto' ? 'BTC' : 'NVDA'); }}
-            style={{ fontFamily: 'JetBrains Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A' }}>
-            <option value="stocks">Stocks</option>
-            <option value="crypto">Crypto</option>
-          </select>
-          <select value={symbol} onChange={e => setSymbol(e.target.value)}
-            style={{ fontFamily: 'JetBrains Mono', fontSize: 11, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A' }}>
-            {(market === 'crypto' ? CRYPTO_LIST : STOCK_LIST).map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          {/* Symbol selector — server-side universe, no hardcoded tickers */}
+          <SymbolPicker value={symbol} onChange={(sym, meta) => setSymbol(sym, meta)} data-testid="symbol-picker" />
 
           {/* Run debate only */}
-          <button onClick={runNow} disabled={running || !!currentAnalysis}
+          <button data-testid="debate-trigger" onClick={runNow} disabled={running || !!currentAnalysis || !symbol}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
               background: (running || !!currentAnalysis) ? '#E2E8F0' : '#2563EB',
               border: 'none', color: (running || !!currentAnalysis) ? '#94A3B8' : '#fff',
@@ -95,7 +89,7 @@ export default function AgentsPage() {
           </button>
 
           {/* Run debate + auto-trade */}
-          <button onClick={runAndTrade} disabled={trading || !!currentAnalysis}
+          <button data-testid="debate-and-trade" onClick={runAndTrade} disabled={trading || !!currentAnalysis || !symbol}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
               background: (trading || !!currentAnalysis) ? '#E2E8F0' : '#059669',
               border: 'none', color: (trading || !!currentAnalysis) ? '#94A3B8' : '#fff',
@@ -105,7 +99,7 @@ export default function AgentsPage() {
           </button>
 
           {/* Force immediate buy */}
-          <button onClick={forceBuy}
+          <button data-testid="force-buy" onClick={forceBuy} disabled={!symbol}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
               background: '#FEE2E2', border: '1px solid #FCA5A5',
               color: '#DC2626', fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
@@ -172,31 +166,39 @@ export default function AgentsPage() {
         </div>
         <div className="space-y-3">
           {decisions.slice(0, 20).map((d: any) => {
-            const votes: any[] = d.agentVotes || [];
-            const buy  = votes.filter((v: any) => (v.finalVote || v.vote) === 'BUY').length;
-            const sell = votes.filter((v: any) => (v.finalVote || v.vote) === 'SELL').length;
-            const hold = votes.filter((v: any) => (v.finalVote || v.vote) === 'HOLD').length;
+            const st = decisionVoteStats(d);
             const decision = d.finalVote || d.signal;
+            let when = '—';
+            try { if (d.timestamp) when = format(new Date(d.timestamp), 'MM/dd HH:mm'); } catch { /* bad date */ }
             return (
-              <div key={d.id} className="p-3 rounded-lg bg-apex-surface border border-apex-border">
+              <div key={d.id} className="p-3 rounded-lg bg-apex-surface border border-apex-border" data-testid="decision-row">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="font-sans font-bold text-apex-text">{d.asset}</span>
-                    <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${decision === 'BUY' ? 'bg-apex-green/10 text-apex-green' : decision === 'SELL' ? 'bg-apex-red/10 text-apex-red' : 'bg-apex-surface text-apex-muted'}`}>
-                      {decision}
-                    </span>
+                    {st.allErrors ? (
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200" data-testid="decision-provider-error">
+                        AI provider error — no real vote
+                      </span>
+                    ) : (
+                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${decision === 'BUY' ? 'bg-apex-green/10 text-apex-green' : decision === 'SELL' ? 'bg-apex-red/10 text-apex-red' : 'bg-apex-surface text-apex-muted'}`}>
+                        {decision || '—'}
+                      </span>
+                    )}
                     <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${d.executed ? 'bg-apex-green/10 text-apex-green' : 'bg-apex-surface text-apex-muted'}`}>
                       {d.executed ? '✅ EXECUTED' : '⏸ HELD'}
                     </span>
                   </div>
-                  <span className="font-mono text-[10px] text-apex-muted">{format(new Date(d.timestamp), 'MM/dd HH:mm')}</span>
+                  <span className="font-mono text-[10px] text-apex-muted">{when}</span>
                 </div>
-                <div className="flex items-center gap-4 mt-2">
-                  <span className="font-mono text-xs text-apex-green">BUY: {buy}</span>
-                  <span className="font-mono text-xs text-apex-red">SELL: {sell}</span>
-                  <span className="font-mono text-xs text-apex-muted">HOLD: {hold}</span>
-                  <span className="font-mono text-xs text-apex-accent ml-auto">{d.avgConfidence?.toFixed(1)}% avg</span>
-                </div>
+                {!st.allErrors && (
+                  <div className="flex items-center gap-4 mt-2">
+                    <span className="font-mono text-xs text-apex-green">BUY: {st.buy}</span>
+                    <span className="font-mono text-xs text-apex-red">SELL: {st.sell}</span>
+                    <span className="font-mono text-xs text-apex-muted">HOLD: {st.hold}</span>
+                    {st.errors > 0 && <span className="font-mono text-xs text-red-600">ERRORS: {st.errors}</span>}
+                    <span className="font-mono text-xs text-apex-accent ml-auto">{st.avgConfidence === null ? '—' : `${st.avgConfidence.toFixed(1)}% avg`}</span>
+                  </div>
+                )}
                 {!d.executed && d.executionReason && (
                   <p className="font-mono text-[10px] text-apex-muted mt-1 opacity-70">⚠️ {d.executionReason}</p>
                 )}

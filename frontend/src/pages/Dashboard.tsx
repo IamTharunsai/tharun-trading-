@@ -1,6 +1,9 @@
-import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPortfolio, getTradeStats, getPositions, runDebate, scanPredictionMarkets } from '../services/api';
+import { getPortfolio, getTradeStats, getPositions, getLiveAccounts, runDebate, scanPredictionMarkets } from '../services/api';
+import SymbolPicker from '../components/common/SymbolPicker';
+import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
+import { useSystemStatus } from '../hooks/useSystemStatus';
+import { brokerEquity, fmtPct, fmtUsd, num, portfolioNav } from '../utils/format';
 import { useStore } from '../store';
 import StatCard from '../components/common/StatCard';
 import AgentCouncilPanel from '../components/agents/AgentCouncilPanel';
@@ -9,6 +12,7 @@ import PortfolioChart from '../components/charts/PortfolioChart';
 import ActivePositions from '../components/portfolio/ActivePositions';
 import RiskMonitor from '../components/portfolio/RiskMonitor';
 import TopMovers from '../components/dashboard/TopMovers';
+import IntradayCard from '../components/dashboard/IntradayCard';
 import AgentActivityTable from '../components/dashboard/AgentActivityTable';
 import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2, Zap, Play, Search } from 'lucide-react';
 import { format } from 'date-fns';
@@ -20,15 +24,26 @@ export default function DashboardPage() {
   const { data: portfolio, isLoading: loadingPortfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats, refetchInterval: 30000 });
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
+  const { data: liveAccounts } = useQuery({ queryKey: ['live-accounts'], queryFn: getLiveAccounts, refetchInterval: 30000, retry: false });
+  const { data: sysStatus } = useSystemStatus();
   const { killSwitchActive, currentAnalysis } = useStore();
-  const [selectedAsset, setSelectedAsset] = useState('NVDA');
+  const { symbol: selectedAsset, market: selectedMarket, setSymbol: setSelectedAsset } = useSelectedSymbol('all');
 
-  const pnlDayPos   = (portfolio?.pnlDayPct || 0) >= 0;
+  const nav = portfolioNav(portfolio);
+  const cash = num(portfolio?.cashBalance);
+  const brokerEq = brokerEquity(liveAccounts);
+  const pnlDay = num(portfolio?.pnlDay ?? portfolio?.dailyPnl);
+  const pnlDayPct = num(portfolio?.pnlDayPct ?? portfolio?.dailyPnlPct);
+  const pnlDayPos = (pnlDay ?? 0) >= 0;
+  const pmConnected = !!(portfolio?.polymarketConnected || liveAccounts?.polymarket?.connected);
+  const pmValue = num(portfolio?.polymarketBalance ?? portfolio?.polymarketEquity ?? (liveAccounts?.polymarket?.connected ? liveAccounts.polymarket.portfolioValue : null));
+  const positionsList: any[] = Array.isArray(positions) ? positions : [];
+  const tradingMode = sysStatus?.tradingMode ? String(sysStatus.tradingMode).toUpperCase() : null;
 
   const debateMutation = useMutation({
-    mutationFn: (asset: string) => runDebate(asset),
+    mutationFn: (asset: string) => runDebate(asset, selectedMarket),
     onSuccess: (data: any) => {
-      toast.success(`Council completed deliberation on ${selectedAsset}: ${data?.consensus?.action || 'HOLD'} (Confidence: ${data?.consensus?.confidence || 85}%)`);
+      toast.success(data?.message || `Council debate started for ${selectedAsset}. Watch the Debate Room for the result.`);
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['positions'] });
@@ -41,8 +56,12 @@ export default function DashboardPage() {
   const scanMutation = useMutation({
     mutationFn: () => scanPredictionMarkets(),
     onSuccess: (data: any) => {
-      toast.success(`Polymarket Alpha Scan complete: ${data?.opportunitiesFound || 4} mispricings detected!`);
+      const n = Array.isArray(data?.opportunities) ? data.opportunities.length : null;
+      toast.success(n === null ? 'Polymarket scan complete.' : `Polymarket scan complete: ${n} open market${n === 1 ? '' : 's'} evaluated.`);
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+    onError: (err: any) => {
+      toast.error('Polymarket scan failed: ' + (err?.response?.data?.error || err?.message || 'unknown error'));
     }
   });
 
@@ -63,30 +82,36 @@ export default function DashboardPage() {
           <p className="font-mono text-xs text-slate-500 mt-1 flex items-center gap-2">
             <span>{format(new Date(), 'EEEE, MMMM d yyyy')}</span>
             <span>·</span>
-            <span className="text-emerald-600 font-bold flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Agent committee · stocks, crypto (paper) & Polymarket (paper)
+            <span className="text-slate-600 font-bold flex items-center gap-1">
+              Agent committee · stocks, crypto & Polymarket
             </span>
           </p>
         </div>
         <LastUpdated />
         <div className="flex items-center gap-3 flex-wrap">
-          {killSwitchActive ? (
+          {killSwitchActive || sysStatus?.killSwitch ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 font-mono text-xs text-red-700 font-bold">
               <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" /> KILL SWITCH ACTIVE
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 font-mono text-xs text-emerald-700 font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> AUTO-TRADING ENABLED
-            </span>
+            sysStatus?.scheduler ? (
+              <span data-testid="autotrading-status" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono text-xs font-bold ${sysStatus.scheduler === 'online' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                <span className={`w-2 h-2 rounded-full ${sysStatus.scheduler === 'online' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                {sysStatus.scheduler === 'online' ? 'AUTO-TRADING SCHEDULER ONLINE' : 'SCHEDULER OFFLINE'}
+              </span>
+            ) : (
+              <span data-testid="autotrading-status" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-mono text-xs text-slate-500 font-bold">
+                <span className="w-2 h-2 rounded-full bg-slate-300" /> STATUS UNKNOWN
+              </span>
+            )
           )}
           {currentAnalysis && (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 font-mono text-xs text-blue-700 font-bold">
               ANALYZING {currentAnalysis}
             </span>
           )}
-          <span className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 font-mono text-xs text-slate-700 font-semibold">
-            {import.meta.env.VITE_TRADING_MODE || 'PAPER'} MODE
+          <span data-testid="trading-mode" className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 font-mono text-xs text-slate-700 font-semibold">
+            {tradingMode || import.meta.env.VITE_TRADING_MODE || 'UNKNOWN'} MODE
           </span>
         </div>
       </div>
@@ -98,43 +123,33 @@ export default function DashboardPage() {
             <Zap className="text-blue-600" size={18} />
             <span className="font-mono text-xs font-bold text-slate-800">DAILY EXECUTION PACING:</span>
             <span className="font-mono text-xs text-blue-800 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-              {(portfolio?.tradesExecutedToday ?? 0)} EXECUTED TODAY
+              {num(portfolio?.tradesExecutedToday) ?? '—'} EXECUTED TODAY
             </span>
           </div>
           <div className="hidden md:flex items-center gap-3 text-xs font-mono text-slate-500">
-            <span>Broker: <strong className="text-emerald-700 font-bold">{portfolio?.brokerConnected ? 'CONNECTED' : 'STANDBY'}</strong></span>
+            <span>Broker: <strong className={`font-bold ${liveAccounts?.alpaca?.connected || portfolio?.brokerConnected ? 'text-emerald-700' : 'text-slate-500'}`}>{liveAccounts?.alpaca?.connected || portfolio?.brokerConnected ? 'CONNECTED' : 'NOT CONNECTED'}</strong></span>
             <span>·</span>
-            <span>Win Rate: <strong className="text-emerald-700 font-bold">{stats?.totalTrades ? `${stats.winRate}%` : 'N/A'}</strong></span>
+            <span>Win Rate: <strong className="text-emerald-700 font-bold" data-testid="dashboard-winrate">{stats?.totalTrades && num(stats.winRate) !== null ? `${num(stats.winRate)!.toFixed(1)}%` : '—'}</strong></span>
             <span>·</span>
-            <span>Open Orders: <strong className="text-blue-700 font-bold">{Array.isArray(positions) ? positions.length : 0}</strong></span>
+            <span>Open Positions: <strong className="text-blue-700 font-bold">{positionsList.length}</strong></span>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={selectedAsset}
-            onChange={(e) => setSelectedAsset(e.target.value)}
-            className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-500"
-          >
-            <option value="NVDA">NVDA (NVIDIA)</option>
-            <option value="AAPL">AAPL (Apple)</option>
-            <option value="MSFT">MSFT (Microsoft)</option>
-            <option value="TSLA">TSLA (Tesla)</option>
-            <option value="BTC">BTC (Bitcoin)</option>
-            <option value="ETH">ETH (Ethereum)</option>
-            <option value="SOL">SOL (Solana)</option>
-          </select>
+          <SymbolPicker value={selectedAsset} onChange={(sym, meta) => setSelectedAsset(sym, meta)} data-testid="symbol-picker" />
 
           <button
-            onClick={() => debateMutation.mutate(selectedAsset)}
-            disabled={debateMutation.isPending || killSwitchActive}
+            data-testid="debate-trigger"
+            onClick={() => selectedAsset && debateMutation.mutate(selectedAsset)}
+            disabled={debateMutation.isPending || killSwitchActive || !selectedAsset}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
           >
             <Play size={13} />
-            <span>{debateMutation.isPending ? 'COUNCIL DEBATING...' : `TRIGGER COUNCIL ON ${selectedAsset}`}</span>
+            <span>{debateMutation.isPending ? 'STARTING COUNCIL...' : selectedAsset ? `TRIGGER COUNCIL ON ${selectedAsset}` : 'PICK A SYMBOL'}</span>
           </button>
 
           <button
+            data-testid="scan-polymarket"
             onClick={() => scanMutation.mutate()}
             disabled={scanMutation.isPending}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
@@ -148,37 +163,42 @@ export default function DashboardPage() {
       {/* Top Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label="Portfolio Value"
-          value={loadingPortfolio ? '...' : `$${(portfolio?.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          sub={`Cash: $${(portfolio?.cashBalance || 0).toFixed(2)}`}
+          testId="stat-nav"
+          label="Portfolio NAV"
+          value={loadingPortfolio ? '...' : fmtUsd(nav)}
+          sub={`Cash: ${fmtUsd(cash)}${brokerEq !== null ? ` · Broker equity (Alpaca): ${fmtUsd(brokerEq)}` : ''}`}
           icon={<DollarSign size={16} />}
           accent mono
         />
         <StatCard
+          testId="stat-pnl-day"
           label="Today's P&L"
-          value={`${pnlDayPos ? '+' : ''}$${(portfolio?.pnlDay || 0).toFixed(2)}`}
-          sub={`${pnlDayPos ? '+' : ''}${(portfolio?.pnlDayPct || 0).toFixed(2)}%`}
+          value={pnlDay === null ? '—' : `${pnlDayPos ? '+' : '-'}$${Math.abs(pnlDay).toFixed(2)}`}
+          sub={pnlDayPct === null ? undefined : fmtPct(pnlDayPct)}
           icon={pnlDayPos ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-          trend={pnlDayPos ? 'up' : 'down'}
+          trend={pnlDay === null ? undefined : pnlDayPos ? 'up' : 'down'}
           mono
         />
         <StatCard
-          label="Polymarket Micro Fund"
-          value={portfolio?.polymarketBalance ? `$${portfolio.polymarketBalance.toFixed(2)}` : '$0.00'}
-          sub={portfolio?.polymarketConnected ? "Polygon USDC Verified" : "Paper Mode Simulation ($0.00)"}
+          testId="stat-polymarket"
+          label="Polymarket"
+          value={pmConnected && pmValue !== null ? fmtUsd(pmValue) : '—'}
+          sub={pmConnected ? 'Connected account value' : 'Not connected'}
           icon={<Activity size={16} />}
           mono
         />
         <StatCard
+          testId="stat-open-positions"
           label="Open Positions"
-          value={Array.isArray(positions) ? positions.length : 0}
-          sub={`Trades Today: ${portfolio?.tradesExecutedToday || 0}`}
+          value={positionsList.length}
+          sub={num(portfolio?.tradesExecutedToday) !== null ? `Trades Today: ${num(portfolio?.tradesExecutedToday)}` : undefined}
           icon={<BarChart2 size={16} />}
           mono
         />
       </div>
 
-      {/* Top Movers */}
+      {/* Intraday fast lane + Top Movers */}
+      <IntradayCard />
       <TopMovers />
 
       {/* Portfolio Chart + Risk Monitor */}

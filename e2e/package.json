@@ -1,0 +1,14 @@
+{
+  "name": "tharun-terminal-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:sanity": "playwright test --grep @sanity",
+    "test:regression": "playwright test",
+    "test:live": "E2E_LIVE=1 playwright test --grep @live"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

@@ -1,6 +1,7 @@
 import { Shield, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getSettings } from '../../services/api';
+import { fmtUsd, num, portfolioInvested, portfolioNav } from '../../utils/format';
 
 export default function RiskMonitor({ portfolio }: { portfolio: any }) {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: getSettings, staleTime: 60000 });
@@ -11,9 +12,19 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
   const maxDrawdown = settings?.maxDrawdown ?? 10;
   const maxTradesPerDay = settings?.maxTradesPerDay ?? 1000;
 
-  const dailyUsed = Math.abs(Math.min(0, portfolio.pnlDayPct || 0));
-  const drawdown = portfolio.drawdownFromPeak || 0;
-  const tradesUsed = portfolio.tradesExecutedToday || 0;
+  const dailyUsed = Math.abs(Math.min(0, Number(portfolio.pnlDayPct ?? portfolio.dailyPnlPct) || 0));
+  const drawdown = Math.abs(Number(portfolio.drawdownFromPeak ?? portfolio.maxDrawdownPct) || 0);
+  const tradesUsed = Number(portfolio.tradesExecutedToday) || 0;
+  const cash = num(portfolio.cashBalance);
+  const invested = portfolioInvested(portfolio);
+  const nav = portfolioNav(portfolio);
+  // Derive invested from NAV − cash only when that is non-negative; never show a negative.
+  const investedShown = invested !== null ? invested : nav !== null && cash !== null ? Math.max(0, nav - cash) : null;
+  const pctOf = (u: number, l: number) => (u / (l || 1)) * 100;
+  const worst = Math.max(pctOf(dailyUsed, dailyLossLimit), pctOf(drawdown, maxDrawdown), pctOf(tradesUsed, maxTradesPerDay));
+  const overall = worst >= 90 ? { label: 'LIMIT CRITICAL', cls: 'text-red-700 bg-red-50 border-red-200' }
+    : worst >= 70 ? { label: 'NEAR LIMIT', cls: 'text-amber-700 bg-amber-50 border-amber-200' }
+    : { label: 'WITHIN LIMITS', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' };
 
   const RiskBar = ({ label, used, limit, unit = '%' }: { label: string; used: number; limit: number; unit?: string }) => {
     const pct = (used / (limit || 1)) * 100;
@@ -43,8 +54,8 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
           <Shield size={16} className="text-emerald-600" />
           <span className="font-semibold text-slate-900 text-sm">Risk Commander</span>
         </div>
-        <span className="text-xs font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-          ALL INVARIANTS PASS
+        <span data-testid="risk-status" className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${overall.cls}`}>
+          {overall.label}
         </span>
       </div>
 
@@ -58,11 +69,11 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
       <div className="pt-3 border-t border-slate-100 space-y-1.5 font-mono text-xs">
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Cash Reserve</span>
-          <span className="font-bold text-slate-900">${(portfolio?.cashBalance || 0).toFixed(2)}</span>
+          <span className="font-bold text-slate-900" data-testid="risk-cash">{fmtUsd(cash)}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-500">Invested Capital</span>
-          <span className="font-bold text-slate-900">${((portfolio?.totalValue || 0) - (portfolio?.cashBalance || 0)).toFixed(2)}</span>
+          <span className="text-slate-500">Invested Capital (open positions)</span>
+          <span className="font-bold text-slate-900" data-testid="risk-invested">{fmtUsd(investedShown)}</span>
         </div>
       </div>
     </div>

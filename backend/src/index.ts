@@ -26,6 +26,7 @@ import agentMonitorRoutes from './routes/agentMonitor';
 import backtestRoutes from './routes/backtest';
 import intelligenceRoutes from './routes/intelligence';
 import copyTradingRoutes from './routes/copyTrading';
+import systemRoutes from './routes/system';
 
 const app = express();
 const server = http.createServer(app);
@@ -51,7 +52,9 @@ app.use(express.json({ limit: '10mb' }));
 // Global rate limiter
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500,
+  // The dashboard polls ~15 endpoints; 500/15min throttled a single logged-in
+  // user into 429s ("page not loading"). Login has its own stricter limiter.
+  max: Number(process.env.API_RATE_LIMIT_PER_15MIN || 6000),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' }
@@ -71,6 +74,7 @@ app.use('/api/monitor', agentMonitorRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 app.use('/api/copy-trading', copyTradingRoutes);
+app.use('/api/system', systemRoutes);
 
 import { appConfig } from './utils/config';
 
@@ -121,6 +125,16 @@ export async function boot(port: number = 3000) {
     // Init WebSocket
     initWebSocket(server);
     logger.info('✅ WebSocket server initialized');
+
+    // Dynamic universe (Nasdaq screener + Alpaca) and security master — used by
+    // every picker and scanner; nothing in the app carries a fixed ticker list.
+    import('./services/universeService').then(async ({ universe }) => {
+      const { CRYPTO_ASSETS, getCurrentPrices } = await import('./services/marketData');
+      universe.setCrypto(CRYPTO_ASSETS, getCurrentPrices);
+      universe.start();
+    }).catch(err => logger.warn('Universe service failed to start', { error: err?.message }));
+    import('./services/securityMaster').then(({ securityMaster }) => securityMaster.startScheduledSync())
+      .catch(err => logger.warn('Security master failed to start', { error: err?.message }));
 
     // Init market data feeds (optional, non-blocking)
     initMarketData().then(() => {

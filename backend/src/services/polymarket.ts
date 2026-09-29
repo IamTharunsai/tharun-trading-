@@ -325,22 +325,15 @@ Respond ONLY in valid JSON:
     }
   }
 
-  // 2. Try Anthropic API if key is explicitly configured and not dummy (with 2.5s timeout)
-  if (!parsed && process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.includes('dummy') && !process.env.ANTHROPIC_API_KEY.includes('placeholder')) {
+  // 2. Routed LLM (NVIDIA NIM / Anthropic / Ollama per env, with provider failover)
+  if (!parsed) {
     try {
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const anthropicPromise = anthropic.messages.create({
-        model: process.env.LLM_MODEL_SMART || 'claude-sonnet-5',
-        max_tokens: 600,
-        messages: [{ role: 'user', content: prompt }]
-      });
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000));
-      const response = await Promise.race([anthropicPromise, timeoutPromise]) as any;
-      const content = response?.content?.find((c: any) => c.type === 'text');
-      if (content && content.type === 'text') {
-        parsed = JSON.parse(content.text.replace(/```json\n?|\n?```/g, '').trim());
-      }
+      const { llmText, parseJsonLoose } = await import('../utils/llmRouter');
+      const text = await Promise.race([
+        llmText({ tier: 'smart', prompt, maxTokens: 700, temperature: 0.2 }),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 45000)),
+      ]);
+      parsed = parseJsonLoose<AnalysisResponse>(text);
     } catch {
       // Fallback silently to deterministic Bayesian estimator
     }

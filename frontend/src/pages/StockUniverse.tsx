@@ -6,6 +6,7 @@ import {
 } from '../services/api';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { isCryptoSymbol } from '../constants/assets';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis,
   Tooltip, CartesianGrid, ReferenceLine, Scatter
@@ -156,7 +157,7 @@ function StockChart({ symbol, market, trades }: { symbol: string; market: string
 
 // ── STOCK DETAIL DRAWER ───────────────────────────────────────────────────────
 function StockDetailDrawer({ stock, onClose }: { stock: any; onClose: () => void }) {
-  const market = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX'].includes(stock.symbol) ? 'crypto' : 'stocks';
+  const market = isCryptoSymbol(stock.symbol) ? 'crypto' : 'stocks';
   const { data, isLoading } = useQuery({
     queryKey: ['stock-detail', stock.symbol],
     queryFn: () => getStockDetail(stock.symbol, market),

@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { activateKillSwitch, deactivateKillSwitch, getTrades, getPortfolio } from '../../services/api';
@@ -10,6 +10,25 @@ import {
   FileSpreadsheet, ShieldAlert, Cpu, Radio, Menu, X
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
+import ErrorBoundary from './ErrorBoundary';
+import { useSystemStatus } from '../../hooks/useSystemStatus';
+
+const testIdForPath = (path: string) => `nav-${path === '/' ? 'home' : path.replace(/^\//, '').replace(/\//g, '-')}`;
+
+function StatusPill({ tone, label, testId, title }: { tone: 'ok' | 'warn' | 'bad' | 'unknown' | 'info'; label: string; testId: string; title?: string }) {
+  const cls = {
+    ok: 'text-emerald-600', warn: 'text-amber-600', bad: 'text-red-600', unknown: 'text-slate-400', info: 'text-blue-600',
+  }[tone];
+  const dot = {
+    ok: 'bg-emerald-500', warn: 'bg-amber-500', bad: 'bg-red-500', unknown: 'bg-slate-300', info: 'bg-blue-500',
+  }[tone];
+  return (
+    <span className={`${cls} font-bold flex items-center gap-1.5 whitespace-nowrap`} data-testid={testId} title={title}>
+      <span className={`w-2 h-2 rounded-full ${dot}`} />
+      {label}
+    </span>
+  );
+}
 
 const NAV_GROUPS = [
   {
@@ -57,6 +76,20 @@ export default function Layout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [timeUtc, setTimeUtc] = useState('');
   const [timeEst, setTimeEst] = useState('');
+  const location = useLocation();
+  const statusQ = useSystemStatus();
+  const status = statusQ.isError ? undefined : statusQ.data;
+  const statusKnown = !!status && typeof status === 'object' && !!status.scheduler;
+  const llmFast = status?.llm?.fast;
+  const llmSmart = status?.llm?.smart;
+  const llmHealthy = llmFast || llmSmart ? !!(llmFast?.healthy || llmSmart?.healthy) : null;
+  const llmProvider = (llmFast?.provider || llmSmart?.provider || '').toUpperCase();
+
+  // Keep the kill-switch button in sync with the server's real state.
+  useEffect(() => {
+    if (typeof status?.killSwitch === 'boolean' && status.killSwitch !== killSwitchActive) setKillSwitch(status.killSwitch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.killSwitch]);
 
   useEffect(() => {
     const updateTimes = () => {
@@ -70,15 +103,19 @@ export default function Layout() {
   }, []);
 
   const handleKillSwitch = async () => {
-    if (killSwitchActive) {
-      await deactivateKillSwitch();
-      setKillSwitch(false);
-      toast.success('Trading resumed');
-    } else {
-      if (!confirm('ACTIVATE EMERGENCY KILL SWITCH? This halts all algorithmic order execution immediately.')) return;
-      await activateKillSwitch();
-      setKillSwitch(true);
-      toast.error('EMERGENCY KILL SWITCH ACTIVATED — Trading Halted');
+    try {
+      if (killSwitchActive) {
+        await deactivateKillSwitch();
+        setKillSwitch(false);
+        toast.success('Trading resumed');
+      } else {
+        if (!confirm('ACTIVATE EMERGENCY KILL SWITCH? This halts all algorithmic order execution immediately.')) return;
+        await activateKillSwitch();
+        setKillSwitch(true);
+        toast.error('EMERGENCY KILL SWITCH ACTIVATED — Trading Halted');
+      }
+    } catch (e: any) {
+      toast.error('Kill switch request failed: ' + (e?.response?.data?.error || e?.message || 'unknown error'));
     }
   };
 
@@ -151,10 +188,19 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-slate-500">
-            <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              SYSTEM ACTIVE
-            </span>
+            {statusKnown ? (
+              killSwitchActive ? (
+                <StatusPill tone="bad" label="TRADING HALTED" testId="sidebar-system-status" />
+              ) : (
+                <StatusPill
+                  tone={status!.scheduler === 'online' ? 'ok' : 'bad'}
+                  label={`${String(status!.tradingMode || '').toUpperCase() || '—'} · ${status!.scheduler === 'online' ? 'RUNNING' : 'SCHEDULER OFF'}`}
+                  testId="sidebar-system-status"
+                />
+              )
+            ) : (
+              <StatusPill tone="unknown" label={statusQ.isLoading ? 'CHECKING…' : 'STATUS UNKNOWN'} testId="sidebar-system-status" />
+            )}
             <span className="text-slate-400">{timeEst.split(' ')[0]}</span>
           </div>
         </div>
@@ -170,6 +216,7 @@ export default function Layout() {
                 <NavLink
                   key={path}
                   to={path}
+                  data-testid={testIdForPath(path)}
                   end={path === '/'}
                   className={({ isActive }) => `
                     flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all
@@ -190,6 +237,7 @@ export default function Layout() {
         {/* Bottom controls */}
         <div className="p-3 border-t border-slate-200 space-y-2 bg-slate-50/50">
           <button
+            data-testid="export-csv"
             onClick={handleExportCsv}
             className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-xs font-medium transition-colors shadow-xs"
           >
@@ -198,6 +246,7 @@ export default function Layout() {
           </button>
 
           <button
+            data-testid="kill-switch"
             onClick={handleKillSwitch}
             className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-all shadow-xs ${
               killSwitchActive
@@ -210,6 +259,7 @@ export default function Layout() {
           </button>
 
           <button
+            data-testid="logout"
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-slate-500 hover:text-slate-800 text-xs font-mono transition-colors"
           >
@@ -224,6 +274,7 @@ export default function Layout() {
         <div className="bg-white border-b border-slate-200 flex items-center justify-between px-4 py-1.5 text-xs font-mono shadow-xs">
           <div className="flex items-center gap-4">
             <button
+              data-testid="mobile-nav-toggle"
               className="md:hidden p-1 -ml-1 rounded text-slate-700 hover:bg-slate-100"
               aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
               onClick={() => setMobileNavOpen(o => !o)}
@@ -236,20 +287,74 @@ export default function Layout() {
             <span className="text-slate-600 hidden sm:inline">{timeUtc}</span>
           </div>
 
-          <div className="hidden md:flex items-center gap-3">
-            <span className="text-emerald-600 font-bold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              SCHEDULER ONLINE
-            </span>
-            <span className="text-slate-300">·</span>
-            <span className="text-blue-600 font-semibold">POLYMARKET: PAPER ONLY</span>
+          <div className="hidden md:flex items-center gap-3" data-testid="system-status">
+            {!statusKnown ? (
+              <StatusPill
+                tone="unknown"
+                label={statusQ.isLoading ? 'CHECKING STATUS…' : 'STATUS UNKNOWN'}
+                testId="status-unknown"
+                title={statusQ.isError ? 'GET /api/system/status failed' : undefined}
+              />
+            ) : (
+              <>
+                <StatusPill
+                  tone={status!.scheduler === 'online' ? 'ok' : 'bad'}
+                  label={`SCHEDULER ${status!.scheduler === 'online' ? 'ONLINE' : 'OFFLINE'}`}
+                  testId="status-scheduler"
+                />
+                <span className="text-slate-300">·</span>
+                <StatusPill
+                  tone={status!.tradingMode === 'live' ? 'warn' : 'info'}
+                  label={`TRADING: ${String(status!.tradingMode || 'unknown').toUpperCase()}`}
+                  testId="status-trading-mode"
+                />
+                {status!.alpaca && (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <StatusPill
+                      tone={status!.alpaca.connected ? 'ok' : 'bad'}
+                      label={`ALPACA ${status!.alpaca.connected ? '✓' : '✗'}`}
+                      testId="status-alpaca"
+                      title={status!.alpaca.connected ? `Alpaca ${status!.alpaca.mode}` : 'Alpaca not connected'}
+                    />
+                  </>
+                )}
+                {status!.polymarket && (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <StatusPill
+                      tone={status!.polymarket.mode === 'live' ? 'warn' : 'info'}
+                      label={`POLYMARKET: ${String(status!.polymarket.mode || 'unknown').toUpperCase()}${status!.polymarket.usConnected ? ' · US ✓' : ''}`}
+                      testId="status-polymarket"
+                    />
+                  </>
+                )}
+                {llmHealthy !== null && (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <StatusPill
+                      tone={llmHealthy ? 'ok' : 'bad'}
+                      label={`AI: ${llmProvider || 'UNKNOWN'} ${llmHealthy ? '✓' : '✗'}`}
+                      testId="status-llm"
+                      title={[
+                        llmFast ? `fast: ${llmFast.provider}/${llmFast.model} ${llmFast.healthy ? 'healthy' : 'unhealthy'}${llmFast.lastError ? ` (${llmFast.lastError})` : ''}` : '',
+                        llmSmart ? `smart: ${llmSmart.provider}/${llmSmart.model} ${llmSmart.healthy ? 'healthy' : 'unhealthy'}` : '',
+                        typeof status!.llm?.spendTodayUsd === 'number' ? `spend today $${status!.llm.spendTodayUsd.toFixed(2)} / $${Number(status!.llm.budgetUsd || 0).toFixed(2)}` : '',
+                      ].filter(Boolean).join('\n')}
+                    />
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
 
         <LiveTicker />
 
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
-          <Outlet />
+          <ErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

@@ -63,3 +63,7 @@ out/
 
 # local paper-trading data (may contain a database)
 backend/.local-paper/
+# e2e artifacts
+e2e/node_modules/
+e2e/report/
+e2e/test-results/

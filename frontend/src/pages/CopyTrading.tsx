@@ -16,6 +16,13 @@ import {
 } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
 
+// The backend currently seeds demo audit rows / follower totals at startup. They are not real
+// fills, so the UI drops them and derives counts only from genuine audit records.
+const SEEDED_LOG_IDS = /^log-mirror-10[1-3]$/;
+const SEEDED_FOLLOWER_IDS = new Set(['follower-owner-paper-primary']);
+
+const n = (v: any): number | null => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+
 export default function CopyTradingPage() {
   const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -27,29 +34,34 @@ export default function CopyTradingPage() {
   const [maxAllocationPct, setMaxAllocationPct] = useState(20);
   const [slippageCeilingBps, setSlippageCeilingBps] = useState(15);
   const [dailyMaxLossUSD, setDailyMaxLossUSD] = useState(5.0);
-  const [selectedStrategies, setSelectedStrategies] = useState<string[]>([
-    'strat-intraday-momentum',
-    'strat-cross-industry-ripple'
-  ]);
+  const [selectedStrategies, setSelectedStrategies] = useState<string[]>([]);
 
   // Queries
-  const { data: strategies = [], isLoading: loadingStrats } = useQuery({
+  const { data: rawStrategies, isLoading: loadingStrats } = useQuery({
     queryKey: ['copy-trading-strategies'],
     queryFn: getCopyTradingStrategies,
     refetchInterval: 30000
   });
 
-  const { data: followers = [], isLoading: loadingFollowers } = useQuery({
+  const { data: rawFollowers, isLoading: loadingFollowers } = useQuery({
     queryKey: ['copy-trading-followers'],
     queryFn: getCopyTradingFollowers,
     refetchInterval: 10000
   });
 
-  const { data: auditLogs = [], isLoading: loadingLogs } = useQuery({
+  const { data: rawAuditLogs, isLoading: loadingLogs } = useQuery({
     queryKey: ['copy-trading-audit'],
     queryFn: () => getCopyTradingAuditLog(50),
     refetchInterval: 10000
   });
+
+  const strategies: any[] = Array.isArray(rawStrategies) ? rawStrategies : [];
+  const followers: any[] = Array.isArray(rawFollowers) ? rawFollowers : [];
+  const auditLogs: any[] = (Array.isArray(rawAuditLogs) ? rawAuditLogs : []).filter((l: any) => l && !SEEDED_LOG_IDS.test(String(l.id || '')));
+  const realFillsByFollower = auditLogs.reduce((m: Record<string, number>, l: any) => {
+    if (l.status === 'FILLED' && l.followerId) m[l.followerId] = (m[l.followerId] || 0) + 1;
+    return m;
+  }, {});
 
   // Mutations
   const toggleMutation = useMutation({
@@ -112,7 +124,7 @@ export default function CopyTradingPage() {
             <span className="text-slate-300">·</span>
             <span className="text-[11px] font-mono text-emerald-600 font-semibold flex items-center gap-1">
               <ShieldCheck size={13} />
-              INDEPENDENT RISK CHECKS ACTIVE
+              PAPER MIRRORING
             </span>
           </div>
           <h1 className="font-sans font-bold text-2xl text-slate-900 tracking-tight">
@@ -124,6 +136,7 @@ export default function CopyTradingPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            data-testid="copy-register-follower"
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition shadow-xs"
           >
@@ -139,18 +152,21 @@ export default function CopyTradingPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-blue-600" />
-            <h2 className="font-bold text-base text-slate-900">Verified Master Autonomous Strategies</h2>
+            <h2 className="font-bold text-base text-slate-900">Master Strategies</h2>
           </div>
-          <span className="text-xs font-mono text-slate-500">Live Mathematical Models & P&L Records</span>
+          <span className="text-xs font-mono text-slate-500">Stats appear only after real closed trades</span>
         </div>
 
         {loadingStrats ? (
           <div className="text-center py-10 font-mono text-xs text-slate-400">Loading strategy models…</div>
+        ) : strategies.length === 0 ? (
+          <div className="p-8 rounded-xl bg-white border border-slate-200 text-center font-mono text-xs text-slate-400">No strategies returned by the API.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {strategies.map((strat: any) => (
               <div
                 key={strat.id}
+                data-testid="copy-strategy"
                 className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between"
               >
                 <div>
@@ -173,31 +189,37 @@ export default function CopyTradingPage() {
                   <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100 font-mono text-xs">
                     <div>
                       <div className="text-[10px] text-slate-400">WIN RATE</div>
-                      <div className="text-emerald-600 font-bold text-sm">{strat.verifiedWinRate}%</div>
+                      <div className="text-emerald-600 font-bold text-sm">{n(strat.totalCompletedTrades) ? `${n(strat.verifiedWinRate) ?? '—'}%` : '—'}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">PROFIT FACTOR</div>
-                      <div className="text-slate-900 font-bold text-sm">{strat.profitFactor}x</div>
+                      <div className="text-slate-900 font-bold text-sm">{n(strat.totalCompletedTrades) && n(strat.profitFactor) ? `${strat.profitFactor}x` : '—'}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">MAX DRAWDOWN</div>
-                      <div className="text-slate-700 font-bold">-{strat.maxDrawdownPct}%</div>
+                      <div className="text-slate-700 font-bold">{n(strat.totalCompletedTrades) && n(strat.maxDrawdownPct) !== null ? `-${strat.maxDrawdownPct}%` : '—'}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">MIN CAPITAL</div>
-                      <div className="text-blue-700 font-bold">${strat.minCapitalRequired}</div>
+                      <div className="text-blue-700 font-bold">{n(strat.minCapitalRequired) !== null ? `$${strat.minCapitalRequired}` : '—'}</div>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-mono">
                   <span className="text-slate-400 text-[11px] flex items-center gap-1">
-                    <Clock size={12} /> {strat.avgHoldTimeMinutes >= 60 ? `${Math.round(strat.avgHoldTimeMinutes / 60)}h avg hold` : `${strat.avgHoldTimeMinutes}m avg hold`}
+                    <Clock size={12} /> {n(strat.totalCompletedTrades) ? `${n(strat.totalCompletedTrades)} trades` : 'target hold ' + (n(strat.avgHoldTimeMinutes) === null ? '—' : strat.avgHoldTimeMinutes >= 60 ? `${Math.round(strat.avgHoldTimeMinutes / 60)}h` : `${strat.avgHoldTimeMinutes}m`)}
                   </span>
-                  <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    TRANSMITTING
-                  </span>
+                  {n(strat.totalCompletedTrades) ? (
+                    <span data-testid="copy-strategy-status" className={`font-bold text-[10px] flex items-center gap-1 ${strat.status === 'ACTIVE_TRANSMITTING' ? 'text-emerald-600' : 'text-slate-500'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${strat.status === 'ACTIVE_TRANSMITTING' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      {String(strat.status || '—').replace(/_/g, ' ')}
+                    </span>
+                  ) : (
+                    <span data-testid="copy-strategy-status" className="font-bold text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                      NO TRADES YET
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
@@ -225,9 +247,16 @@ export default function CopyTradingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {followers.map((f: any) => {
               const isActive = f.status === 'ACTIVE_COPYING';
+              const realFills = realFillsByFollower[f.id] || 0;
+              const seeded = SEEDED_FOLLOWER_IDS.has(f.id);
+              const alloc = n(f.allocatedCapitalUSD);
+              const maxPct = n(f.maxAllocationPct);
+              const pnl = n(f.realizedPnlUSD);
+              const showPnl = realFills > 0 && !seeded && pnl !== null;
               return (
                 <div
                   key={f.id}
+                  data-testid="copy-follower"
                   className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm space-y-4"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -247,6 +276,7 @@ export default function CopyTradingPage() {
 
                     <div className="flex items-center gap-1.5">
                       <button
+                        data-testid="copy-follower-toggle"
                         onClick={() => toggleMutation.mutate(f.id)}
                         disabled={toggleMutation.isPending}
                         className={`p-1.5 rounded-lg border text-xs font-mono transition-colors ${
@@ -275,11 +305,11 @@ export default function CopyTradingPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-lg bg-slate-50 border border-slate-100 font-mono text-xs">
                     <div>
                       <div className="text-[10px] text-slate-400">ALLOCATION</div>
-                      <div className="font-bold text-slate-900">${f.allocatedCapitalUSD.toFixed(2)}</div>
+                      <div className="font-bold text-slate-900">{alloc === null ? '—' : `$${alloc.toFixed(2)}`}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">MAX / TRADE</div>
-                      <div className="font-bold text-slate-900">{f.maxAllocationPct}% (${(f.allocatedCapitalUSD * f.maxAllocationPct / 100).toFixed(2)})</div>
+                      <div className="font-bold text-slate-900">{maxPct === null ? '—' : `${maxPct}%${alloc !== null ? ` ($${(alloc * maxPct / 100).toFixed(2)})` : ''}`}</div>
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">MAX SLIPPAGE</div>
@@ -287,7 +317,7 @@ export default function CopyTradingPage() {
                     </div>
                     <div>
                       <div className="text-[10px] text-slate-400">DAILY MAX LOSS</div>
-                      <div className="font-bold text-red-600">${f.dailyMaxLossUSD.toFixed(2)}</div>
+                      <div className="font-bold text-red-600">{n(f.dailyMaxLossUSD) === null ? '—' : `$${n(f.dailyMaxLossUSD)!.toFixed(2)}`}</div>
                     </div>
                   </div>
 
@@ -309,10 +339,14 @@ export default function CopyTradingPage() {
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-mono">
-                    <span className="text-slate-500">Total Mirrored Trades: <strong className="text-slate-900">{f.totalMirroredTrades}</strong></span>
-                    <span className={`font-bold ${f.realizedPnlUSD >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      P&L: {f.realizedPnlUSD >= 0 ? '+' : ''}${f.realizedPnlUSD.toFixed(2)}
-                    </span>
+                    <span className="text-slate-500">Mirrored fills (audit log): <strong className="text-slate-900" data-testid="copy-follower-fills">{realFills}</strong></span>
+                    {showPnl ? (
+                      <span className={`font-bold ${pnl! >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        P&L: {pnl! >= 0 ? '+' : '-'}${Math.abs(pnl!).toFixed(2)}
+                      </span>
+                    ) : (
+                      <span className="font-bold text-slate-400" data-testid="copy-follower-pnl">P&L: —</span>
+                    )}
                   </div>
                 </div>
               );
@@ -328,7 +362,7 @@ export default function CopyTradingPage() {
             <Activity size={16} className="text-blue-600" />
             <h2 className="font-bold text-base text-slate-900">Live Mirrored Execution Feed & Audit Trail</h2>
           </div>
-          <span className="text-xs font-mono text-slate-500">Latency & Slippage Verified</span>
+          <span className="text-xs font-mono text-slate-500">{auditLogs.length} records</span>
         </div>
 
         <div className="rounded-xl bg-white border border-slate-200/90 shadow-sm overflow-hidden">
@@ -357,9 +391,9 @@ export default function CopyTradingPage() {
                   {auditLogs.map((log: any) => {
                     const isFilled = log.status === 'FILLED';
                     return (
-                      <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                      <tr key={log.id} data-testid="copy-audit-row" className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-2.5 px-3 text-slate-500 text-[11px]">
-                          {new Date(log.timestamp).toLocaleTimeString()}
+                          {Number.isFinite(new Date(log.timestamp).getTime()) ? new Date(log.timestamp).toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
                         </td>
                         <td className="py-2.5 px-3 text-slate-700 font-medium max-w-[150px] truncate">
                           {log.strategyName}
@@ -379,10 +413,10 @@ export default function CopyTradingPage() {
                             {log.side}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 tabular-nums text-slate-700">${Number(log.masterPrice).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 tabular-nums text-slate-900 font-bold">${Number(log.followerPrice).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 tabular-nums text-blue-700 font-semibold">{log.slippageBps} bps</td>
-                        <td className="py-2.5 px-3 tabular-nums text-slate-500">{log.executionLatencyMs} ms</td>
+                        <td className="py-2.5 px-3 tabular-nums text-slate-700">{n(log.masterPrice) === null ? '—' : `$${n(log.masterPrice)!.toFixed(2)}`}</td>
+                        <td className="py-2.5 px-3 tabular-nums text-slate-900 font-bold">{n(log.followerPrice) === null ? '—' : `$${n(log.followerPrice)!.toFixed(2)}`}</td>
+                        <td className="py-2.5 px-3 tabular-nums text-blue-700 font-semibold">{n(log.slippageBps) === null ? '—' : `${log.slippageBps} bps`}</td>
+                        <td className="py-2.5 px-3 tabular-nums text-slate-500">{n(log.executionLatencyMs) === null ? '—' : `${log.executionLatencyMs} ms`}</td>
                         <td className="py-2.5 px-3">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                             isFilled
@@ -496,7 +530,7 @@ export default function CopyTradingPage() {
                       >
                         <div>
                           <div className="font-bold text-xs">{strat.name}</div>
-                          <div className="text-[10px] text-slate-500">{strat.assetClass} · {strat.verifiedWinRate}% Win Rate</div>
+                          <div className="text-[10px] text-slate-500">{strat.assetClass} · {n(strat.totalCompletedTrades) ? `${strat.verifiedWinRate}% win rate` : 'no trades yet'}</div>
                         </div>
                         <CheckCircle2 size={16} className={isSelected ? 'text-blue-600' : 'text-slate-300'} />
                       </div>
@@ -514,6 +548,7 @@ export default function CopyTradingPage() {
                 Cancel
               </button>
               <button
+                data-testid="copy-create-follower"
                 onClick={() => createMutation.mutate()}
                 disabled={createMutation.isPending || !followerName || selectedStrategies.length === 0}
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition disabled:opacity-50"

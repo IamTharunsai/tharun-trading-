@@ -32,7 +32,7 @@ export interface TradeUpdateEvent {
 export class AlpacaMarketStreamService {
   private dataWs: WebSocket | null = null;
   private tradeWs: WebSocket | null = null;
-  private subscribedSymbols: Set<string> = new Set(['AAPL', 'MSFT', 'NVDA', 'SPY', 'QQQ']);
+  private subscribedSymbols: Set<string> = new Set<string>() // filled from open positions + live most-actives, never a fixed list;
   private maxSubscriptionBudget = 30; // Max real-time symbols to manage memory and budget
   private quotesCache = new Map<string, MarketQuote>();
   private processedEventIds = new Set<string>();
@@ -239,6 +239,7 @@ export class AlpacaMarketStreamService {
   private resubscribeSymbols() {
     if (!this.dataWs || this.dataWs.readyState !== WebSocket.OPEN) return;
     const symbols = Array.from(this.subscribedSymbols).slice(0, this.maxSubscriptionBudget);
+    if (symbols.length === 0) return;
     this.dataWs.send(JSON.stringify({
       action: 'subscribe',
       quotes: symbols

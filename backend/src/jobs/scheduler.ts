@@ -92,8 +92,6 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
   }
 }
 
-// Fallback only — used if the live market screen fails (e.g. Polygon outage)
-const FALLBACK_STOCKS = ['NVDA', 'AAPL', 'TSLA', 'AMZN', 'META'];
 
 // Screens the whole market (small + large cap) and returns symbols the current
 // account can actually afford to size a position in — not just a fixed list.
@@ -102,7 +100,13 @@ async function pickDynamicSymbols(count: number, skip = 0): Promise<string[]> {
     runDailyScreen().catch(() => []),
     getPortfolioState().catch(() => null),
   ]);
-  if (screened.length === 0) return skip === 0 ? FALLBACK_STOCKS.slice(0, count) : [];
+  // No hardcoded fallback list: if the Polygon screen is empty, take a
+  // sector-balanced slice of the live universe (Nasdaq screener + Alpaca).
+  if (screened.length === 0) {
+    const { universe } = await import('../services/universeService');
+    const open = await prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true } }).catch(() => []);
+    return universe.swingCandidates(skip + count, new Set(open.map((p: any) => p.asset))).slice(skip, skip + count);
+  }
 
   const cash = portfolio?.cashBalance ?? 0;
   // ponytail: fractional-share orders make exact share count irrelevant, this just
@@ -127,7 +131,8 @@ export function initScheduler() {
   const ET_ZONE = 'America/New_York';
   // Cap on debates per scan window — keeps API cost bounded while still giving
   // the screen room to move past the first batch when everything HOLDs.
-  const MAX_STOCKS_PER_SCAN = 20;
+  const MAX_STOCKS_PER_SCAN = Number(process.env.SWING_DEBATES_PER_WINDOW || 20);
+  const MAX_SWING_ENTRIES_PER_WINDOW = Number(process.env.SWING_ENTRIES_PER_WINDOW || 3);
 
   // Keeps moving to the next symbol in the screened list — instead of stopping after
   // a fixed 5 — until something actually trades or the per-window cap is hit.
@@ -142,6 +147,7 @@ export function initScheduler() {
     const symbols = pool.slice(startSkip, startSkip + MAX_STOCKS_PER_SCAN);
     logger.info(`${label} — screened top ${symbols.length} opportunities: ${symbols.join(', ')}`);
     let tried = 0;
+    let entries = 0;
     for (const symbol of symbols) {
       if (isKillSwitchActive()) return tried;
       const transcript = await runDebateForAsset(symbol, 'stocks').catch(err => {
@@ -151,8 +157,9 @@ export function initScheduler() {
       tried++;
       await new Promise(r => setTimeout(r, 5000));
       if (transcript?.tradeExecuted) {
-        logger.info(`${label} — trade found on ${symbol}, stopping scan`);
-        return tried;
+        entries++;
+        logger.info(`${label} — trade executed on ${symbol} (${entries}/${MAX_SWING_ENTRIES_PER_WINDOW} this window)`);
+        if (entries >= MAX_SWING_ENTRIES_PER_WINDOW) return tried;
       }
     }
     return tried;
@@ -167,7 +174,32 @@ export function initScheduler() {
   }, { timezone: ET_ZONE });
 
   // ── MID-DAY 1:00 PM ET — continue past where the market-open scan left off ──
+  cron.schedule('0 11 * * 1-5', async () => {
+    marketOpenTriedCount += await scanStocksUntilTrade('🕚 LATE-MORNING SCAN', marketOpenTriedCount);
+  }, { timezone: ET_ZONE });
   cron.schedule('0 13 * * 1-5', () => scanStocksUntilTrade('☀️ MID-DAY SCAN', marketOpenTriedCount), { timezone: ET_ZONE });
+
+  // ── INTRADAY FAST LANE: scan every 2 minutes during the session ───────────
+  cron.schedule('*/2 9-15 * * 1-5', async () => {
+    const { runIntradayScan } = await import('../trading/intradayEngine');
+    await runIntradayScan().catch(err => logger.error('Intraday scan error', { err: err?.message }));
+  }, { timezone: ET_ZONE });
+  // Time stop for intraday positions every minute; hard flatten at 15:50 ET.
+  cron.schedule('* 9-15 * * 1-5', async () => {
+    const { manageIntradayExits } = await import('../trading/intradayEngine');
+    await manageIntradayExits().catch(err => logger.error('Intraday exit manager error', { err: err?.message }));
+  }, { timezone: ET_ZONE });
+  cron.schedule('50 15 * * 1-5', async () => {
+    const { manageIntradayExits } = await import('../trading/intradayEngine');
+    logger.info('🔔 15:50 ET — flattening all intraday positions');
+    await manageIntradayExits({ flattenAll: true }).catch(err => logger.error('EOD flatten error', { err: err?.message }));
+  }, { timezone: ET_ZONE });
+
+  // ── BROKER SYNC: the broker is the source of truth for holdings ──────────
+  cron.schedule('*/60 * * * * *', async () => {
+    const { syncBrokerPositions } = await import('../services/brokerSync');
+    await syncBrokerPositions().catch(err => logger.error('Broker sync failed', { err: err?.message }));
+  });
 
   // ── CRYPTO: once per day at 8 AM ET — stop early once one trades ─────────
   cron.schedule('0 8 * * *', async () => {
@@ -287,8 +319,8 @@ export function initScheduler() {
   // path which already checks for an existing open position per asset before
   // debating. Capped concurrent Polymarket positions at 3 (matching the
   // existing "top 3 opportunities" sizing) and skip placing more once at cap.
-  const MAX_OPEN_POLYMARKET_POSITIONS = 3;
-  cron.schedule('*/30 * * * *', async () => {
+  const MAX_OPEN_POLYMARKET_POSITIONS = Number(process.env.POLYMARKET_MAX_OPEN || 10);
+  cron.schedule(`*/${Number(process.env.POLYMARKET_SCAN_EVERY_MIN || 15)} * * * *`, async () => {
     if (isKillSwitchActive()) return;
     try {
       const openCount = await prisma.trade.count({ where: { asset: 'POLYMARKET', status: 'OPEN' } });
@@ -333,7 +365,9 @@ export function initScheduler() {
   });
 
   logger.info('✅ Tharun Trading Scheduler initialized:');
-  logger.info('   ⏱️ Investment Committee: dynamic market screen at 9:35 AM & 1 PM ET');
+  logger.info('   ⏱️ Investment Committee (swing): 9:35, 11:00 & 13:00 ET, sector-balanced universe');
+  logger.info('   ⚡ Intraday fast lane: every 2 min 9:40–15:30 ET, flatten 15:50 ET');
+  logger.info('   🔄 Broker position sync every 60 seconds');
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');

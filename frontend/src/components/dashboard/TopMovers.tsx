@@ -35,7 +35,7 @@ export default function TopMovers() {
                   {up ? <TrendingUp size={12} className="text-emerald-600" /> : <TrendingDown size={12} className="text-red-600" />}
                 </div>
                 <div className="font-mono text-xs text-slate-600 tabular-nums">
-                  ${p.price != null ? p.price.toFixed(2) : '0.00'}
+                  {p.price != null ? `$${p.price.toFixed(2)}` : '—'}
                 </div>
                 <div className={`font-mono text-sm font-bold tabular-nums ${up ? 'text-emerald-600' : 'text-red-600'}`}>
                   {up ? '+' : ''}{(p.change24h || 0).toFixed(2)}%

@@ -147,7 +147,7 @@ class AccountManager {
         status: acc.status,
         currency: acc.currency,
         cash: parseFloat(acc.cash) || 0,
-        portfolioValue: parseFloat(acc.portfolio_value) || 0,
+        portfolioValue: parseFloat(acc.equity) || parseFloat(acc.portfolio_value) || 0,
         buyingPower: parseFloat(acc.buying_power) || 0,
         daytradingBuyingPower: parseFloat(acc.daytrading_buying_power) || 0,
         positions,
@@ -333,6 +333,13 @@ class AccountManager {
       positions: [],
       lastSyncAt: 0,
     };
+  }
+
+  /** Re-read cash / equity / positions for the connected Alpaca account (called every minute by brokerSync). */
+  async refreshAlpaca() {
+    const st: any = this.alpacaState;
+    if (!st?.connected || !st.apiKey || !st.secretKey) return;
+    await this.testAndSaveAlpaca(st.apiKey, st.secretKey, st.paperMode, false);
   }
 
   getLiveAccountsSummary() {

@@ -7,10 +7,10 @@ import {
 } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
 import {
-  getStockCandles, getRegimes, getStocksUniverse, getPositions,
-  getAllStocks, getChartIntelligence, getLiveChart, getFullStockUniverse, getPredictions
+  getStockCandles, getRegimes, getChartIntelligence, getLiveChart, getPredictions
 } from '../services/api';
-import { STOCK_LIST, CRYPTO_LIST } from '../constants/assets';
+import SymbolPicker from '../components/common/SymbolPicker';
+import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
 import { glossaryTitle } from '../constants/glossary';
 
 const REGIME_LABELS: Record<string, string> = {
@@ -29,13 +29,9 @@ const REGIME_LABELS: Record<string, string> = {
 };
 
 export default function ChartsPage() {
-  const [market, setMarket] = useState<'stocks' | 'crypto'>('stocks');
-  const [selected, setSelected] = useState('NVDA');
+  const { symbol: selected, market, setSymbol: setSelected, isLoading: defaultLoading } = useSelectedSymbol('all');
   const [timeframe, setTimeframe] = useState<'1m' | '5m' | '15m' | '1h' | '4h' | '1D' | '1W'>('1D');
   const [range, setRange] = useState<'1D' | '5D' | '1M' | '3M' | '6M' | '1Y'>('3M');
-  const [browseAll, setBrowseAll] = useState(false);
-  const [sortBy, setSortBy] = useState<'debates' | 'alpha'>('debates');
-  const [sectorFilter, setSectorFilter] = useState('ALL');
   const [activeTab, setActiveTab] = useState<'chart' | 'candles_table' | 'polymarket' | 'ca_cnn' | 'ca_regime' | 'ca_confluence' | 'volume_micro' | 'diagnostic'>('chart');
   
   const chartRef = useRef<HTMLDivElement>(null);
@@ -46,13 +42,14 @@ export default function ChartsPage() {
     queryKey: ['live-chart', selected, timeframe, range],
     queryFn: () => getLiveChart(selected, timeframe, range),
     refetchInterval: 30000,
+    enabled: !!selected,
   });
 
   const { data: snapshot, isLoading: candlesLoading } = useQuery({
     queryKey: ['candles', selected, market],
     queryFn: () => getStockCandles(selected, market),
     refetchInterval: 60000,
-    enabled: market === 'crypto',
+    enabled: !!selected && market === 'crypto',
   });
 
   const { data: predictions } = useQuery({
@@ -61,84 +58,19 @@ export default function ChartsPage() {
     refetchInterval: 30000,
   });
 
-  const { data: fullStockUniverse } = useQuery({
-    queryKey: ['full-universe'],
-    queryFn: getFullStockUniverse,
-    staleTime: 5 * 60000,
-  });
-
   const { data: regimeMap } = useQuery({
     queryKey: ['regime', selected],
     queryFn: () => getRegimes([selected]),
     refetchInterval: 60000,
+    enabled: !!selected,
   });
 
   const { data: chartAi, isLoading: aiLoading, refetch: refetchAi } = useQuery({
     queryKey: ['chart-ai', selected, market],
     queryFn: () => getChartIntelligence(selected, market),
     refetchInterval: 60000,
+    enabled: !!selected,
   });
-
-  const { data: universe } = useQuery({
-    queryKey: ['stocks-universe'],
-    queryFn: getStocksUniverse,
-    staleTime: 60000,
-  });
-
-  const { data: positions } = useQuery({
-    queryKey: ['positions'],
-    queryFn: getPositions,
-    staleTime: 60000,
-  });
-
-  const positionSymbols: string[] = (Array.isArray(positions) ? positions : []).map((p: any) => p.asset as string);
-  const universeList: any[] = Array.isArray(universe) ? universe : [];
-  const fullUniverseList: any[] = Array.isArray(fullStockUniverse) ? fullStockUniverse : [];
-
-  const universeSymbols: string[] = Array.from(new Set([
-    ...fullUniverseList.map((u: any) => u.symbol as string),
-    ...universeList.map((u: any) => u.symbol as string),
-    ...positionSymbols,
-    ...STOCK_LIST,
-    ...CRYPTO_LIST,
-  ]));
-
-  const cryptoSymbols = universeSymbols.filter((s: string) => CRYPTO_LIST.includes(s));
-  const stockSymbols = universeSymbols.filter((s: string) => !CRYPTO_LIST.includes(s));
-
-  const { data: allStocksList } = useQuery({
-    queryKey: ['all-stocks'],
-    queryFn: getAllStocks,
-    enabled: browseAll && market === 'stocks',
-    staleTime: 5 * 60000,
-  });
-
-  const universeMap = new Map<string, any>(universeList.map((u: any) => [u.symbol, u]));
-  const fullMap = new Map<string, any>(fullUniverseList.map((u: any) => [u.symbol, u]));
-
-  type Opt = { symbol: string; name: string; debateCount: number; sector: string | null };
-  let optionList: Opt[];
-  if (market === 'crypto') {
-    optionList = cryptoSymbols.map(s => ({ symbol: s, name: s, debateCount: universeMap.get(s)?.debateCount || 0, sector: null }));
-  } else if (browseAll || fullUniverseList.length > 0) {
-    optionList = stockSymbols.map((s: string) => ({
-      symbol: s,
-      name: fullMap.get(s)?.name || universeMap.get(s)?.name || s,
-      debateCount: universeMap.get(s)?.debateCount || 0,
-      sector: fullMap.get(s)?.sector || universeMap.get(s)?.sector || null
-    }));
-  } else {
-    optionList = stockSymbols.map(s => ({ symbol: s, name: universeMap.get(s)?.name || s, debateCount: universeMap.get(s)?.debateCount || 0, sector: universeMap.get(s)?.sector || null }));
-  }
-
-  const availableSectors = Array.from(new Set(optionList.map(o => o.sector).filter(Boolean))) as string[];
-  const filteredBySector = sectorFilter === 'ALL' ? optionList
-    : sectorFilter === 'UNANALYZED' ? optionList.filter(o => !o.sector)
-    : optionList.filter(o => o.sector === sectorFilter);
-
-  const symbolOptions = [...filteredBySector].sort((a, b) =>
-    sortBy === 'alpha' ? a.symbol.localeCompare(b.symbol) : (b.debateCount - a.debateCount) || a.symbol.localeCompare(b.symbol)
-  );
 
   // Candles & Indicators resolution
   const hasLiveCandles = liveChartData?.candles && liveChartData.candles.length > 0;
@@ -276,11 +208,16 @@ export default function ChartsPage() {
     ? (price >= indicators.bollingerBands.upper ? 'At upper band' : price <= indicators.bollingerBands.lower ? 'At lower band' : 'Inside bands')
     : '—';
 
-  const cnn = chartAi?.patternCnn;
-  const regimeFilter = chartAi?.regimeFilter;
-  const confluence = chartAi?.multiTimeframeConfluence;
-  const volumeMicro = chartAi?.volumeMicrostructure;
-  const diagnostic = chartAi?.diagnosticAudit;
+  // The chart-AI heuristics are only meaningful when real indicators exist; otherwise the
+  // backend falls back to synthetic inputs (e.g. EMA = price × 0.99), so hide them.
+  const aiUsable = !!chartAi && !!indicators;
+  const cnn = aiUsable ? chartAi?.patternCnn : null;
+  const regimeFilter = aiUsable ? chartAi?.regimeFilter : null;
+  const confluence = aiUsable ? chartAi?.multiTimeframeConfluence : null;
+  const volumeMicro = aiUsable ? chartAi?.volumeMicrostructure : null;
+  const diagnostic = aiUsable ? chartAi?.diagnosticAudit : null;
+  const rvolNum = typeof volumeMicro?.relativeVolume?.rvol === 'number' && volumeMicro.relativeVolume.rvol > 0 ? volumeMicro.relativeVolume.rvol : null;
+  const vwapDiff = typeof volumeMicro?.priceVsVwap?.diffPct === 'number' ? volumeMicro.priceVsVwap.diffPct : null;
 
   return (
     <div className="space-y-6">
@@ -308,42 +245,10 @@ export default function ChartsPage() {
               {REGIME_LABELS[regimeFilter.activeRegime] || regimeFilter.activeRegime}
             </span>
           )}
-          <select
-            value={market}
-            onChange={e => {
-              setMarket(e.target.value as any);
-              setSelected(e.target.value === 'crypto' ? 'BTC' : 'NVDA');
-            }}
-            className="font-mono text-xs p-1.5 rounded-lg border border-apex-border bg-apex-surface text-apex-text"
-          >
-            <option value="stocks">Stocks</option>
-            <option value="crypto">Crypto</option>
-          </select>
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value as any)}
-            className="font-mono text-xs p-1.5 rounded-lg border border-apex-border bg-apex-surface text-apex-text"
-          >
-            <option value="debates">Sort: Debates</option>
-            <option value="alpha">Sort: A-Z</option>
-          </select>
-          <input
-            list="chart-symbol-list"
-            value={selected}
-            onChange={e => setSelected(e.target.value.toUpperCase())}
-            placeholder="Search symbol..."
-            className="font-mono text-xs p-1.5 rounded-lg border border-apex-border bg-apex-surface text-apex-text w-32"
-          />
-          <datalist id="chart-symbol-list">
-            {symbolOptions.map(o => <option key={o.symbol} value={o.symbol}>{o.name !== o.symbol ? o.name : ''}</option>)}
-          </datalist>
-          {market === 'stocks' && (
-            <label className="flex items-center gap-1 font-mono text-xs text-apex-muted cursor-pointer select-none">
-              <input type="checkbox" checked={browseAll} onChange={e => setBrowseAll(e.target.checked)} />
-              All stocks
-            </label>
-          )}
+          <SymbolPicker value={selected} onChange={(sym, meta) => setSelected(sym, meta)} data-testid="symbol-picker" />
           <button
+            data-testid="recalibrate-ai"
+            disabled={!selected}
             onClick={() => refetchAi()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-apex-border bg-apex-surface hover:bg-apex-surface-2 text-xs font-mono text-apex-text"
           >
@@ -353,84 +258,92 @@ export default function ChartsPage() {
         </div>
       </div>
 
-      {/* Top Confluence & Edge KPI Banner */}
+      {!selected && (
+        <div className="card p-10 text-center" data-testid="chart-empty">
+          <div className="font-sans font-bold text-apex-text mb-1">{defaultLoading ? 'Loading…' : 'Pick a symbol'}</div>
+          <div className="font-mono text-xs text-apex-muted">Use the symbol picker above to choose any US stock or crypto asset.</div>
+        </div>
+      )}
+
+      {/* Top heuristic KPI banner — only computed values, no marketing "edge" claims */}
+      {selected && (
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card p-4 border-l-4 border-l-apex-accent">
+        <div className="card p-4 border-l-4 border-l-apex-accent" data-testid="kpi-pattern">
           <div className="flex items-center justify-between text-xs font-mono text-apex-muted uppercase">
-            <span>CA-1 Pattern CNN Edge</span>
+            <span>CA-1 Pattern Heuristic</span>
             <Cpu size={15} className="text-apex-accent" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-apex-text">
-              {cnn?.rawConfidence ? `${cnn.rawConfidence}%` : '62.0%'}
+              {typeof cnn?.rawConfidence === 'number' ? `${cnn.rawConfidence}%` : '—'}
             </span>
-            <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-              {cnn?.edgePct != null ? `+${cnn.edgePct}% (model claim)` : "edge n/a"}
+            <span className="font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+              unvalidated · no measured edge
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted">
-            Direction: <strong className="text-apex-text">{cnn?.predictedDirection || 'UP'}</strong> (30×4 spatial matrix)
+            Direction: <strong className="text-apex-text">{cnn?.predictedDirection || '—'}</strong> (RSI/EMA/MACD rule)
           </div>
         </div>
 
-        <div className="card p-4 border-l-4 border-l-blue-500">
+        <div className="card p-4 border-l-4 border-l-blue-500" data-testid="kpi-regime">
           <div className="flex items-center justify-between text-xs font-mono text-apex-muted uppercase">
-            <span>CA-2 Regime Multiplier</span>
+            <span>CA-2 Regime</span>
             <Filter size={15} className="text-blue-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-blue-600">
-              {regimeFilter?.regimeMultiplier ? `${regimeFilter.regimeMultiplier}x` : '1.35x'}
-            </span>
-            <span className="font-mono text-xs font-bold text-blue-600 bg-blue-500/10 px-1.5 py-0.5 rounded">
-              regime filter · unvalidated
+              {regimeFilter?.activeRegime ? (REGIME_LABELS[regimeFilter.activeRegime] || regimeFilter.activeRegime) : '—'}
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted">
-            Verdict: <strong className="text-apex-text">{regimeFilter?.verdict || 'PASSED'}</strong> ({regimeFilter?.adjustedAccuracy || 83.7}% adj. accuracy)
+            Verdict: <strong className="text-apex-text">{regimeFilter?.verdict || '—'}</strong>
+            {typeof regimeFilter?.regimeMultiplier === 'number' && <> · weight {regimeFilter.regimeMultiplier}x (unvalidated)</>}
           </div>
         </div>
 
-        <div className="card p-4 border-l-4 border-l-emerald-500">
+        <div className="card p-4 border-l-4 border-l-emerald-500" data-testid="kpi-confluence">
           <div className="flex items-center justify-between text-xs font-mono text-apex-muted uppercase">
-            <span>CA-3 Confluence Detector</span>
+            <span>CA-3 Timeframe Agreement</span>
             <Layers size={15} className="text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-emerald-600">
-              {confluence?.confluenceScore ? `${(confluence.confluenceScore * 100).toFixed(0)}%` : '85%'}
+              {typeof confluence?.confluenceScore === 'number' ? `${(confluence.confluenceScore * 100).toFixed(0)}%` : '—'}
             </span>
-            <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-              {confluence?.winRateEdgeBonusPct != null ? `+${confluence.winRateEdgeBonusPct}% (model claim)` : 'n/a'}
+            <span className="font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+              heuristic score
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted">
-            Status: <strong className="text-apex-text">{confluence?.alignmentStatus?.replace(/_/g, ' ') || 'ALL ALIGNED'}</strong>
+            Status: <strong className="text-apex-text">{confluence?.alignmentStatus?.replace(/_/g, ' ') || '—'}</strong>
           </div>
         </div>
 
-        <div className="card p-4 border-l-4 border-l-purple-500">
+        <div className="card p-4 border-l-4 border-l-purple-500" data-testid="kpi-volume">
           <div className="flex items-center justify-between text-xs font-mono text-apex-muted uppercase">
-            <span>Volume Microstructure & OBV</span>
+            <span>Relative Volume & VWAP</span>
             <Activity size={15} className="text-purple-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-purple-600">
-              {volumeMicro?.relativeVolume?.rvol ? `${volumeMicro.relativeVolume.rvol}x RVol` : 'RVol n/a'}
+              {rvolNum !== null ? `${rvolNum}x RVol` : 'RVol —'}
             </span>
             <span className="font-mono text-xs font-bold text-purple-600 bg-purple-500/10 px-1.5 py-0.5 rounded">
-              {volumeMicro?.priceVsVwap?.status?.replace(/_/g, ' ') || 'ABOVE VWAP'}
+              {volumeMicro?.priceVsVwap?.status?.replace(/_/g, ' ') || 'VWAP —'}
             </span>
           </div>
           <div className="mt-1 font-sans text-[11px] text-apex-muted truncate">
-            {volumeMicro?.obvAnalysis?.warning || 'Institutions accumulating at VWAP'}
+            {vwapDiff !== null ? `Price vs VWAP: ${vwapDiff > 0 ? '+' : ''}${vwapDiff}%` : 'No volume data'}
           </div>
         </div>
       </div>
+      )}
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 border-b border-apex-border pb-2 flex-wrap">
         <button
+          data-testid="tab-chart"
           onClick={() => setActiveTab('chart')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'chart'
@@ -443,6 +356,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-candles-table"
           onClick={() => setActiveTab('candles_table')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'candles_table'
@@ -455,6 +369,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-polymarket"
           onClick={() => setActiveTab('polymarket')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'polymarket'
@@ -467,6 +382,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-ca-cnn"
           onClick={() => setActiveTab('ca_cnn')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'ca_cnn'
@@ -479,6 +395,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-ca-regime"
           onClick={() => setActiveTab('ca_regime')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'ca_regime'
@@ -491,6 +408,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-ca-confluence"
           onClick={() => setActiveTab('ca_confluence')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'ca_confluence'
@@ -503,6 +421,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-volume-micro"
           onClick={() => setActiveTab('volume_micro')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'volume_micro'
@@ -515,6 +434,7 @@ export default function ChartsPage() {
         </button>
 
         <button
+          data-testid="tab-diagnostic"
           onClick={() => setActiveTab('diagnostic')}
           className={`font-mono text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'diagnostic'
@@ -528,7 +448,7 @@ export default function ChartsPage() {
       </div>
 
       {/* Main Chart View */}
-      {activeTab === 'chart' && (
+      {selected && activeTab === 'chart' && (
         <div className="space-y-4">
           {/* Timeframe & Calendar Filter Bar */}
           <div className="flex items-center justify-between flex-wrap gap-3 bg-apex-surface p-3 rounded-xl border border-apex-border">
@@ -537,6 +457,7 @@ export default function ChartsPage() {
               {(['1m', '5m', '15m', '1h', '4h', '1D', '1W'] as const).map(tf => (
                 <button
                   key={tf}
+                  data-testid={`timeframe-${tf}`}
                   onClick={() => setTimeframe(tf)}
                   className={`font-mono text-xs px-2.5 py-1 rounded transition-colors ${
                     timeframe === tf
@@ -554,6 +475,7 @@ export default function ChartsPage() {
               {(['1D', '5D', '1M', '3M', '6M', '1Y'] as const).map(r => (
                 <button
                   key={r}
+                  data-testid={`range-${r}`}
                   onClick={() => setRange(r)}
                   className={`font-mono text-xs px-2.5 py-1 rounded transition-colors ${
                     range === r
@@ -568,7 +490,7 @@ export default function ChartsPage() {
           </div>
 
           {/* Dynamic Stop-Loss & Take-Profit Levels HUD */}
-          {levels && (
+          {levels && typeof levels.entryPrice === 'number' && typeof levels.stopLoss === 'number' && typeof levels.takeProfit1 === 'number' && typeof levels.takeProfit2 === 'number' && typeof levels.vwap === 'number' && (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
                 <div className="font-mono text-[10px] text-blue-400 font-semibold uppercase">Calculated Entry</div>
@@ -597,7 +519,7 @@ export default function ChartsPage() {
               <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
                 <div className="font-mono text-[10px] text-purple-400 font-semibold uppercase">VWAP & Pivot</div>
                 <div className="font-mono text-base font-bold text-purple-300 mt-0.5">${levels.vwap.toFixed(2)}</div>
-                <div className="font-mono text-[10px] text-purple-400/80 mt-0.5">PP: ${levels.pivotPoint.toFixed(2)}</div>
+                <div className="font-mono text-[10px] text-purple-400/80 mt-0.5">PP: {typeof levels.pivotPoint === 'number' ? `$${levels.pivotPoint.toFixed(2)}` : '—'}</div>
               </div>
             </div>
           )}
@@ -610,10 +532,14 @@ export default function ChartsPage() {
                   🛑 Stop: ${levels?.stopLoss || '—'} · 🎯 TP: ${levels?.takeProfit1 || '—'} · VWAP: ${levels?.vwap || '—'}
                 </span>
               </span>
-              <span className="font-mono text-xs text-emerald-600 font-bold flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Live Real-Time Feed Active
-              </span>
+              {hasLiveCandles ? (
+                <span className="font-mono text-xs text-emerald-600 font-bold flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Live data {liveChartData?.source ? `· ${liveChartData.source}` : ''}
+                </span>
+              ) : (
+                <span className="font-mono text-xs text-slate-400 font-bold">No live feed</span>
+              )}
             </div>
 
             {(candlesLoading || liveChartLoading) && <div className="p-10 text-center font-mono text-xs text-slate-400">Streaming real-time chart candles...</div>}
@@ -633,7 +559,7 @@ export default function ChartsPage() {
                   { label: `RSI(14) ${indicators.rsi14?.toFixed(1) ?? ''}`, value: rsiRead },
                   { label: 'MACD Momentum', value: macdRead },
                   { label: 'Bollinger Band State', value: bbRead },
-                  { label: 'VWAP Relationship', value: volumeMicro?.priceVsVwap?.status || 'ABOVE VWAP' },
+                  { label: 'VWAP Relationship', value: volumeMicro?.priceVsVwap?.status?.replace(/_/g, ' ') || '—' },
                 ].map(s => (
                   <div key={s.label} className="p-3 rounded-lg border border-apex-border bg-apex-surface" title={glossaryTitle(s.label)}>
                     <div className="font-mono text-[10px] text-apex-muted uppercase mb-1 border-b border-dotted border-apex-muted/50 inline-block">{s.label}</div>
@@ -707,9 +633,9 @@ export default function ChartsPage() {
                     return (
                       <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-2.5 px-3 text-slate-700 font-sans">
-                          {new Date(c.timestamp).toLocaleString(undefined, {
+                          {Number.isFinite(new Date(c.timestamp).getTime()) ? new Date(c.timestamp).toLocaleString('en-US', {
                             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                          })}
+                          }) : '—'}
                         </td>
                         <td className="py-2.5 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -724,10 +650,10 @@ export default function ChartsPage() {
                         <td className="py-2.5 px-3 text-rose-600 font-bold">${c.low?.toFixed(2)}</td>
                         <td className="py-2.5 px-3 text-slate-900 font-bold">${c.close?.toFixed(2)}</td>
                         <td className={`py-2.5 px-3 font-bold ${isBull ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {c.changePct ? `${c.changePct >= 0 ? '+' : ''}${c.changePct.toFixed(2)}%` : '—'}
+                          {typeof c.changePct === 'number' ? `${c.changePct >= 0 ? '+' : ''}${c.changePct.toFixed(2)}%` : '—'}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-500">${c.wickUpper?.toFixed(2) || '0.00'}</td>
-                        <td className="py-2.5 px-3 text-slate-500">${c.wickLower?.toFixed(2) || '0.00'}</td>
+                        <td className="py-2.5 px-3 text-slate-500">{typeof c.wickUpper === 'number' ? `$${c.wickUpper.toFixed(2)}` : '—'}</td>
+                        <td className="py-2.5 px-3 text-slate-500">{typeof c.wickLower === 'number' ? `$${c.wickLower.toFixed(2)}` : '—'}</td>
                         <td className="py-2.5 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-sans ${
                             c.pattern && c.pattern !== 'Standard'
@@ -766,27 +692,31 @@ export default function ChartsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs px-2.5 py-1 rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold">
-                  Polymarket Gamma Engine Live
+                  {Array.isArray(predictions) ? `${predictions.length} markets` : 'No data'}
                 </span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+              {(Array.isArray(predictions) ? predictions : []).length === 0 && (
+                <div className="col-span-full text-center py-8 font-mono text-xs text-slate-400">No prediction markets returned by the API.</div>
+              )}
               {(Array.isArray(predictions) ? predictions : []).map((pred: any) => {
-                const yesPrice = pred.yesPrice ?? 0.5;
-                const noPrice = pred.noPrice ?? 0.5;
-                const ev = pred.expectedValue ?? (pred.impliedProbability ? (pred.impliedProbability - yesPrice) * 100 : 8.5);
-                const hasEdge = ev > 3;
+                const yesPrice: number | null = typeof pred.yesPrice === 'number' ? pred.yesPrice : null;
+                const noPrice: number | null = typeof pred.noPrice === 'number' ? pred.noPrice : (yesPrice !== null ? 1 - yesPrice : null);
+                const ev: number | null = typeof pred.expectedValue === 'number' ? pred.expectedValue
+                  : (typeof pred.impliedProbability === 'number' && yesPrice !== null ? (pred.impliedProbability - yesPrice) * 100 : null);
+                const hasEdge = ev !== null && ev > 3;
 
                 return (
                   <div key={pred.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4">
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">{pred.category || 'POLITICS / MACRO'}</span>
+                        <span className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">{pred.category || '—'}</span>
                         <span className={`font-mono text-[10px] px-2 py-0.5 rounded font-bold ${
                           hasEdge ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-200 text-slate-600'
                         }`}>
-                          {hasEdge ? `+${ev.toFixed(1)}% EV EDGE` : 'FAIR PRICED'}
+                          {ev === null ? 'EV —' : hasEdge ? `+${ev.toFixed(1)}% EV EDGE` : 'NO EDGE'}
                         </span>
                       </div>
                       <h3 className="font-sans font-bold text-sm text-slate-900 line-clamp-2" title={pred.title}>
@@ -796,17 +726,17 @@ export default function ChartsPage() {
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between font-mono text-xs">
-                        <span className="text-emerald-700 font-bold">YES: ${(yesPrice).toFixed(2)} ({(yesPrice * 100).toFixed(0)}%)</span>
-                        <span className="text-rose-700 font-bold">NO: ${(noPrice).toFixed(2)} ({(noPrice * 100).toFixed(0)}%)</span>
+                        <span className="text-emerald-700 font-bold">YES: {yesPrice !== null ? `$${yesPrice.toFixed(2)} (${(yesPrice * 100).toFixed(0)}%)` : '—'}</span>
+                        <span className="text-rose-700 font-bold">NO: {noPrice !== null ? `$${noPrice.toFixed(2)} (${(noPrice * 100).toFixed(0)}%)` : '—'}</span>
                       </div>
 
                       <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden flex">
-                        <div className="bg-emerald-500 h-2" style={{ width: `${yesPrice * 100}%` }} />
-                        <div className="bg-rose-500 h-2" style={{ width: `${noPrice * 100}%` }} />
+                        <div className="bg-emerald-500 h-2" style={{ width: `${(yesPrice ?? 0) * 100}%` }} />
+                        <div className="bg-rose-500 h-2" style={{ width: `${(noPrice ?? 0) * 100}%` }} />
                       </div>
 
                       <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-1">
-                        <span>Kelly Size: <strong className="text-slate-800">{pred.kellyFraction ? `${(pred.kellyFraction * 100).toFixed(1)}%` : '2.5%'}</strong></span>
+                        <span>Kelly Size: <strong className="text-slate-800">{typeof pred.kellyFraction === 'number' ? `${(pred.kellyFraction * 100).toFixed(1)}%` : '—'}</strong></span>
                         <span>Vol: <strong className="text-slate-800">${pred.volume24h ? (pred.volume24h / 1000).toFixed(0) + 'k' : '—'}</strong></span>
                       </div>
                     </div>
@@ -829,12 +759,12 @@ export default function ChartsPage() {
                   Pattern CNN (Convolutional Neural Network)
                 </h2>
                 <p className="font-sans text-xs text-apex-muted mt-1 max-w-3xl">
-                  Pattern recognition is NOT about memorizing candlestick names. It learns the statistical relationship between multi-day price patterns and forward returns. 30-day OHLCV data is converted into a normalized [30, 4] grayscale spatial matrix passed through Conv2D feature extractors.
+                  The probabilities below come from a rule-based heuristic over RSI, EMA9/EMA21 and MACD on the latest candles. No trained model accuracy or edge has been measured for this system, so treat them as descriptive, not predictive.
                 </p>
               </div>
               <div className="text-right">
                 <div className="font-mono text-3xl font-bold text-apex-text">{cnn.rawConfidence}%</div>
-                <div className="font-mono text-xs text-emerald-600 font-bold">Predicted: {cnn.predictedDirection} (edge not yet measured)</div>
+                <div className="font-mono text-xs text-slate-500 font-bold">Predicted: {cnn.predictedDirection} (heuristic — edge not measured)</div>
               </div>
             </div>
 
@@ -843,7 +773,7 @@ export default function ChartsPage() {
               <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <div className="font-mono text-xs text-emerald-600 font-bold uppercase">P(UP) Forward Direction</div>
                 <div className="font-mono text-3xl font-bold text-emerald-600 mt-1">
-                  {(cnn.probabilities.up * 100).toFixed(1)}%
+                  {typeof cnn.probabilities?.up === 'number' ? `${(cnn.probabilities.up * 100).toFixed(1)}%` : '—'}
                 </div>
                 <div className="font-sans text-[11px] text-apex-muted mt-1">Bullish continuation / expansion probability</div>
               </div>
@@ -851,7 +781,7 @@ export default function ChartsPage() {
               <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <div className="font-mono text-xs text-amber-600 font-bold uppercase">P(FLAT) Mean Reversion</div>
                 <div className="font-mono text-3xl font-bold text-amber-600 mt-1">
-                  {(cnn.probabilities.flat * 100).toFixed(1)}%
+                  {typeof cnn.probabilities?.flat === 'number' ? `${(cnn.probabilities.flat * 100).toFixed(1)}%` : '—'}
                 </div>
                 <div className="font-sans text-[11px] text-apex-muted mt-1">Rangebound chop within 0.5 ATR buffer</div>
               </div>
@@ -859,7 +789,7 @@ export default function ChartsPage() {
               <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20">
                 <div className="font-mono text-xs text-rose-600 font-bold uppercase">P(DOWN) Distribution</div>
                 <div className="font-mono text-3xl font-bold text-rose-600 mt-1">
-                  {(cnn.probabilities.down * 100).toFixed(1)}%
+                  {typeof cnn.probabilities?.down === 'number' ? `${(cnn.probabilities.down * 100).toFixed(1)}%` : '—'}
                 </div>
                 <div className="font-sans text-[11px] text-apex-muted mt-1">Bearish distribution / liquidation probability</div>
               </div>
@@ -873,7 +803,7 @@ export default function ChartsPage() {
               </div>
               <div className="p-3 rounded-lg bg-apex-surface border border-apex-border overflow-x-auto">
                 <div className="grid grid-flow-col auto-cols-max gap-1">
-                  {cnn.normalizedMatrix.map((candleRow: number[], idx: number) => (
+                  {(Array.isArray(cnn.normalizedMatrix) ? cnn.normalizedMatrix : []).map((candleRow: number[], idx: number) => (
                     <div key={idx} className="flex flex-col gap-1 items-center">
                       {candleRow.map((val: number, cIdx: number) => (
                         <div
@@ -899,33 +829,8 @@ export default function ChartsPage() {
               </div>
             </div>
 
-            {/* Model Architecture Specifications */}
-            <div className="mt-6 p-4 rounded-lg bg-apex-surface-2 border border-apex-border">
-              <h4 className="font-sans font-bold text-xs text-apex-text uppercase tracking-wider mb-2">Network Architecture & Training Parameters</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-                <div>
-                  <div className="text-apex-muted">Layers:</div>
-                  <ul className="list-disc list-inside text-apex-text space-y-0.5 mt-1">
-                    {cnn.architecture.layers.map((l: string, i: number) => (
-                      <li key={i}>{l}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-apex-muted">Input Shape: </span>
-                    <span className="text-apex-text font-bold">{cnn.architecture.inputShape}</span>
-                  </div>
-                  <div>
-                    <span className="text-apex-muted">Training Corpus: </span>
-                    <span className="text-apex-text font-bold">{cnn.architecture.trainedOn}</span>
-                  </div>
-                  <div>
-                    <span className="text-apex-muted">Edge Above Random: </span>
-                    <span className="text-emerald-600 font-bold">+{cnn.edgePct}% EV (Kelly Bet Scaler active)</span>
-                  </div>
-                </div>
-              </div>
+            <div className="mt-6 p-3 rounded-lg bg-amber-50 border border-amber-200 font-sans text-xs text-amber-800">
+              Accuracy / edge statistics are not shown because none have been measured on this system's own trades.
             </div>
           </div>
         </div>
@@ -942,22 +847,12 @@ export default function ChartsPage() {
                   Regime-Context Pattern Filter (regime filter · unvalidated)
                 </h2>
                 <p className="font-sans text-xs text-apex-muted mt-1 max-w-3xl">
-                  Key insight: The same pattern means completely different things in different regimes. A bullish engulfing in BULL_TREND has a 71% win rate. The same pattern in BEAR_TREND has only 38% win rate. This module eliminates 40% of false signals before orders hit the exchange.
+                  The same pattern can mean different things in different regimes, so the heuristic direction is re-weighted by the detected regime. The weights are fixed rules, not fitted on data, and have not been validated.
                 </p>
               </div>
               <div className="text-right">
                 <span className="font-mono text-3xl font-bold text-blue-600">{regimeFilter.regimeMultiplier}x</span>
-                <div className="font-mono text-xs text-apex-muted">Regime Multiplier</div>
-              </div>
-            </div>
-
-            {/* Formula banner */}
-            <div className="my-5 p-3.5 rounded-lg bg-apex-surface border border-apex-border font-mono text-xs">
-              <span className="text-apex-muted">Formula: </span>
-              <span className="text-blue-600 font-bold">pattern_accuracy = base_pattern_accuracy × regime_multiplier</span>
-              <div className="mt-1 text-apex-text">
-                {`${regimeFilter.baseAccuracy}% base × ${regimeFilter.regimeMultiplier}x = `}
-                <strong className="text-emerald-600 text-sm">{regimeFilter.adjustedAccuracy}% Adjusted Accuracy</strong>
+                <div className="font-mono text-xs text-apex-muted">Regime weight (unvalidated)</div>
               </div>
             </div>
 
@@ -994,7 +889,7 @@ export default function ChartsPage() {
                 {regimeFilter.explanation}
               </p>
               <div className="mt-2 font-mono text-[10px] text-apex-muted">
-                False signal eliminated: <strong className="text-apex-text">{regimeFilter.falseSignalEliminated ? 'YES (Eliminated 40% noise)' : 'NO (Signal Confirmed)'}</strong>
+                Signal suppressed: <strong className="text-apex-text">{regimeFilter.falseSignalEliminated ? 'YES (signal suppressed by regime rule)' : 'NO'}</strong>
               </div>
             </div>
           </div>
@@ -1009,27 +904,27 @@ export default function ChartsPage() {
               <div>
                 <span className="font-mono text-xs text-emerald-500 font-bold uppercase tracking-wider">CA-3 · Confluence Engine</span>
                 <h2 className="font-sans font-bold text-xl text-apex-text mt-1">
-                  Multi-Timeframe Confluence Detector (claimed edge not yet measured)
+                  Multi-Timeframe Agreement (heuristic)
                 </h2>
                 <p className="font-sans text-xs text-apex-muted mt-1 max-w-3xl">
-                  Philosophy: One timeframe pattern is noise. Three timeframes pointing the same way is true statistical edge. Simultaneously analyzes 1h chart + 4h chart + daily chart. Eliminates 60% of false signals.
+                  Scores whether short-, medium- and long-horizon indicators point the same way. Scores are rule-based; no win-rate improvement has been measured.
                 </p>
               </div>
               <div className="text-right">
                 <div className="font-mono text-3xl font-bold text-emerald-600">
-                  +{(confluence.winRateEdgeBonusPct).toFixed(0)}% Win Rate
+                  {typeof confluence.confluenceScore === 'number' ? `${(confluence.confluenceScore * 100).toFixed(0)}%` : '—'}
                 </div>
-                <div className="font-mono text-xs text-apex-muted">Confluence: {(confluence.confluenceScore * 100).toFixed(0)}%</div>
+                <div className="font-mono text-xs text-apex-muted">Agreement score</div>
               </div>
             </div>
 
             {/* Timeframe Gauge Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-6">
               {[
-                { label: '1-Hour Microstructure', data: confluence.timeframes.h1 },
-                { label: '4-Hour Intermediate Trend', data: confluence.timeframes.h4 },
-                { label: 'Daily Macro Structure', data: confluence.timeframes.daily },
-              ].map(tf => (
+                { label: 'Short horizon', data: confluence.timeframes?.h1 },
+                { label: 'Medium horizon', data: confluence.timeframes?.h4 },
+                { label: 'Long horizon', data: confluence.timeframes?.daily },
+              ].filter(tf => tf.data).map(tf => (
                 <div key={tf.label} className="p-4 rounded-lg bg-apex-surface border border-apex-border">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[10px] text-apex-muted uppercase font-bold">{tf.label}</span>
@@ -1040,10 +935,10 @@ export default function ChartsPage() {
                     </span>
                   </div>
                   <div className="mt-2 font-mono text-2xl font-bold text-apex-text">
-                    {(tf.data.score * 100).toFixed(0)}% Score
+                    {typeof tf.data.score === 'number' ? `${(tf.data.score * 100).toFixed(0)}% Score` : '—'}
                   </div>
                   <div className="mt-1 font-sans text-xs text-apex-muted">
-                    {tf.data.trend} · RSI: {tf.data.rsi}
+                    RSI: {tf.data.rsi ?? '—'}
                   </div>
                 </div>
               ))}
@@ -1054,14 +949,14 @@ export default function ChartsPage() {
               <div className="flex items-center justify-between">
                 <span className="font-sans font-bold text-sm text-apex-text">Position Sizing & Execution Protocol</span>
                 <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded">
-                  {(confluence.positionSizingMultiplier * 100).toFixed(0)}% Kelly Fraction Sizing
+                  {typeof confluence.positionSizingMultiplier === 'number' ? `${(confluence.positionSizingMultiplier * 100).toFixed(0)}% sizing rule` : '—'}
                 </span>
               </div>
               <p className="font-sans text-xs text-apex-text leading-relaxed">
-                {confluence.recommendation}
+                {String(confluence.recommendation || '—').replace(/\s*\(\+?\d+% win rate edge\)/i, '')}
               </p>
               <div className="font-mono text-[11px] text-apex-muted border-t border-apex-border pt-2">
-                Confluence Score = (1h + 4h + Daily) / 3 = {confluence.confluenceScore.toFixed(2)} · Triple timeframe alignment eliminates 60% of false counter-trend signals.
+                Agreement score = mean of the three horizon scores = {typeof confluence.confluenceScore === 'number' ? confluence.confluenceScore.toFixed(2) : '—'}.
               </div>
             </div>
           </div>

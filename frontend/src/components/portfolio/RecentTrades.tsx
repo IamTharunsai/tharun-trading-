@@ -3,6 +3,7 @@ import { getTrades } from '../../services/api';
 import { useStore } from '../../store';
 import { ArrowLeftRight, TrendingUp, TrendingDown } from 'lucide-react';
 import { format } from 'date-fns';
+import { tradeAssetLabel, tradeOutcome, OUTCOME_CLS, tradeMeta } from '../../utils/trades';
 
 export default function RecentTrades() {
   const { data } = useQuery({ queryKey: ['trades'], queryFn: () => getTrades(1, 10), refetchInterval: 10000 });
@@ -33,9 +34,15 @@ export default function RecentTrades() {
             <tbody className="divide-y divide-slate-100">
               {trades.map((t: any) => {
                 const isPos = (t.pnl || 0) >= 0;
+                const outcome = tradeOutcome(t);
+                const label = tradeAssetLabel(t);
+                const d = new Date(t.openedAt || t.createdAt);
                 return (
-                  <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-2.5 px-2.5 font-bold text-slate-900 max-w-[140px] truncate">{t.asset}</td>
+                  <tr key={t.id} data-testid="recent-trade-row" className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-2.5 px-2.5 font-bold text-slate-900 max-w-[180px] truncate" title={label}>
+                      {label}
+                      {tradeMeta(t).lane === 'INTRADAY' && <span className="ml-1 px-1 rounded text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200">INTRADAY</span>}
+                    </td>
                     <td className="py-2.5 px-2.5">
                       <span className={`text-[11px] px-2 py-0.5 rounded font-bold ${
                         t.type === 'BUY' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
@@ -43,24 +50,22 @@ export default function RecentTrades() {
                         {t.type}
                       </span>
                     </td>
-                    <td className="py-2.5 px-2.5 text-slate-800 tabular-nums">${t.entryPrice?.toFixed(2)}</td>
+                    <td className="py-2.5 px-2.5 text-slate-800 tabular-nums">{typeof t.entryPrice === 'number' ? `$${t.entryPrice.toFixed(2)}` : '—'}</td>
                     <td className="py-2.5 px-2.5 text-slate-500 tabular-nums">{t.exitPrice ? `$${t.exitPrice.toFixed(2)}` : '—'}</td>
                     <td className="py-2.5 px-2.5">
-                      {t.pnl != null ? (
+                      {t.pnl != null && outcome !== 'REJECTED' ? (
                         <span className={`font-bold tabular-nums flex items-center gap-1 ${isPos ? 'text-emerald-600' : 'text-red-600'}`}>
                           {isPos ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                          {isPos ? '+' : ''}${t.pnl.toFixed(2)}
+                          {isPos ? '+' : '-'}${Math.abs(Number(t.pnl)).toFixed(2)}
                         </span>
-                      ) : <span className="text-slate-400">running</span>}
+                      ) : <span className="text-slate-400">{outcome === 'OPEN' ? 'running' : '—'}</span>}
                     </td>
                     <td className="py-2.5 px-2.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                        t.status === 'OPEN' ? 'bg-amber-50 text-amber-700 border border-amber-200' : t.status === 'CLOSED' ? 'bg-slate-100 text-slate-600' : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}>
-                        {t.status}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${OUTCOME_CLS[outcome]}`}>
+                        {outcome}
                       </span>
                     </td>
-                    <td className="py-2.5 px-2.5 text-[10px] text-slate-500">{format(new Date(t.openedAt || t.createdAt || Date.now()), 'MM/dd HH:mm')}</td>
+                    <td className="py-2.5 px-2.5 text-[10px] text-slate-500">{Number.isFinite(d.getTime()) ? format(d, 'MM/dd HH:mm') : '—'}</td>
                   </tr>
                 );
               })}

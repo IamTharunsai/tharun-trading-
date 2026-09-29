@@ -89,7 +89,7 @@ export default function LoginPage() {
               </label>
               <div className="relative">
                 <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
+                <input data-testid="login-email"
                   id="login-email"
                   type="email"
                   autoComplete="email"
@@ -109,7 +109,7 @@ export default function LoginPage() {
               </label>
               <div className="relative">
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
+                <input data-testid="login-password"
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
@@ -138,7 +138,7 @@ export default function LoginPage() {
                 </label>
                 <div className="relative">
                   <Shield size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-600" />
-                  <input
+                  <input data-testid="login-totp"
                     id="login-totp"
                     type="text"
                     inputMode="numeric"
@@ -155,7 +155,7 @@ export default function LoginPage() {
             )}
 
             {/* Submit Button */}
-            <button
+            <button data-testid="login-submit"
               type="submit"
               disabled={loading}
               className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-600 hover:to-blue-700 text-white font-mono font-bold text-sm transition-all shadow-lg shadow-blue-800/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
