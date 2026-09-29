@@ -1,9 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { routedMessagesCreate } from '../utils/llmRouter';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { extractResponseText, withRetry } from '../utils/anthropicText';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export async function generateDailyJournal() {
   const today = new Date();
@@ -47,7 +46,7 @@ Write in first person as if you are the AI trading system reporting to the owner
     // previously lost that day's entry silently with no retry, which is how
     // 80 of the last 82 nights ended up with no journal row at all.
     const summary = await withRetry(async () => {
-      const response = await anthropic.messages.create({
+      const response = await routedMessagesCreate({
         model: 'claude-sonnet-5',
         max_tokens: 1000,
         messages: [{ role: 'user', content: prompt }]

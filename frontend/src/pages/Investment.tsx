@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { getPortfolio, getPositions, getTradeStats, getStocksUniverse, getRegimes } from '../services/api';
+import { getPortfolio, getPositions, getTradeStats, getStocksUniverse, getRegimes, getLiveAccounts } from '../services/api';
+import { brokerEquity, fmtUsd, num, portfolioInvested, portfolioNav } from '../utils/format';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { TrendingUp, TrendingDown, DollarSign, Shield, BarChart2, Activity, Ban, Layers } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
@@ -42,10 +43,12 @@ export default function InvestmentPage() {
     refetchInterval: 60000,
   });
 
-  const totalCapital = portfolio?.totalValue || 0;
-  const cashBalance  = portfolio?.cashBalance || 0;
-  const invested     = portfolio?.invested || 0;
-  const pnlTotal     = portfolio?.pnlTotal || 0;
+  const { data: liveAccounts } = useQuery({ queryKey: ['live-accounts'], queryFn: getLiveAccounts, refetchInterval: 30000, retry: false });
+  const totalCapital = portfolioNav(portfolio);
+  const cashBalance  = num(portfolio?.cashBalance);
+  const invested     = portfolioInvested(portfolio);
+  const pnlTotal     = num(portfolio?.pnlTotal ?? portfolio?.totalPnl);
+  const brokerEq     = brokerEquity(liveAccounts);
 
   // Real capital allocation: actual position market value as % of invested capital
   const allocation = openPositions.map(p => ({
@@ -82,17 +85,18 @@ export default function InvestmentPage() {
       {/* Live Portfolio Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Portfolio Value',  value: `$${totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: <DollarSign size={16} />, color: 'text-blue-700' },
-          { label: 'Deployed Capital', value: `$${invested.toFixed(2)}`, icon: <BarChart2 size={16} />, color: 'text-emerald-600' },
-          { label: 'Cash Available',   value: `$${cashBalance.toFixed(2)}`, icon: <Shield size={16} />, color: 'text-slate-700' },
-          { label: 'Total P&L',        value: `${pnlTotal >= 0 ? '+' : ''}$${pnlTotal.toFixed(2)}`, icon: pnlTotal >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />, color: pnlTotal >= 0 ? 'text-emerald-600' : 'text-red-600' },
+          { id: 'nav', label: 'Portfolio NAV',  value: fmtUsd(totalCapital), sub: brokerEq !== null ? `Broker equity (Alpaca): ${fmtUsd(brokerEq)}` : '', icon: <DollarSign size={16} />, color: 'text-blue-700' },
+          { id: 'invested', label: 'Deployed Capital', value: fmtUsd(invested), sub: '', icon: <BarChart2 size={16} />, color: 'text-emerald-600' },
+          { id: 'cash', label: 'Cash Available',   value: fmtUsd(cashBalance), sub: '', icon: <Shield size={16} />, color: 'text-slate-700' },
+          { id: 'pnl-total', label: 'Total P&L',        value: pnlTotal === null ? '—' : `${pnlTotal >= 0 ? '+' : '-'}$${Math.abs(pnlTotal).toFixed(2)}`, sub: '', icon: (pnlTotal ?? 0) >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />, color: pnlTotal === null ? 'text-slate-400' : pnlTotal >= 0 ? 'text-emerald-600' : 'text-red-600' },
         ].map(s => (
-          <div key={s.label} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+          <div key={s.label} data-testid={`stat-${s.id}`} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <span className="font-mono text-[10px] uppercase tracking-wider font-semibold text-slate-500">{s.label}</span>
               <span className="text-blue-600">{s.icon}</span>
             </div>
             <div className={`font-mono font-bold text-2xl tabular-nums ${s.color}`}>{s.value}</div>
+            {s.sub && <div className="font-mono text-xs text-slate-500 mt-1">{s.sub}</div>}
           </div>
         ))}
       </div>

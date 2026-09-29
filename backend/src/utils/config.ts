@@ -1,6 +1,14 @@
 import crypto from 'crypto';
 import { logger } from './logger';
 
+// Env var names pasted into a dashboard sometimes carry a trailing space
+// ("MIN_VOTES_TO_EXECUTE " on Railway was silently ignored). Mirror any such
+// key onto its trimmed name so process.env.X lookups see it.
+for (const key of Object.keys(process.env)) {
+  const trimmed = key.trim();
+  if (trimmed !== key && process.env[trimmed] === undefined) process.env[trimmed] = String(process.env[key]).trim();
+}
+
 export type TradingMode = 'paper' | 'live';
 
 export interface ValidatedConfig {

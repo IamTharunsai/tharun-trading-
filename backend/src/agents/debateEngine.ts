@@ -11,9 +11,10 @@ import { geopoliticalDataService, classifySectors } from '../services/geopolitic
 import { getAgentSuspensionWeights, getAgentCalibrationScores } from '../services/selfLearning';
 import { RegimeAnalysis } from '../services/regimeDetector';
 import { intermarketService } from '../services/intermarketService';
+import { getMacroSnapshot, macroLine } from '../services/fredService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
-import { routedMessagesCreate } from '../utils/llmRouter';
+import { routedMessagesCreate, providerFor } from '../utils/llmRouter';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
@@ -73,15 +74,18 @@ let spendDay = new Date().toISOString().slice(0, 10);
 let spendUsd = 0;
 export function estimateCallCostUsd(model: string, usage: any, provider?: string): number {
   if (!usage || provider === 'ollama') return 0;
+  // NVIDIA NIM hosted endpoints are free on the developer tier (rate-limited, not billed).
+  if (provider === 'nvidia' && process.env.NVIDIA_PAID !== 'true') return 0;
   const key = Object.keys(PRICE_PER_MTOK).find(k => model.toLowerCase().includes(k));
   const [inP, outP] = key ? PRICE_PER_MTOK[key] : [Number(process.env.LLM_PRICE_IN_PER_MTOK || 1), Number(process.env.LLM_PRICE_OUT_PER_MTOK || 5)];
   const cachedIn = (usage.cache_read_input_tokens || 0) * 0.1;
   return (((usage.input_tokens || 0) + cachedIn) * inP + (usage.output_tokens || 0) * outP) / 1e6;
 }
-export function getLlmSpendToday() { return { day: spendDay, usd: spendUsd, budget: Number(process.env.LLM_DAILY_BUDGET_USD || 1) }; }
+let callsToday = 0;
+export function getLlmSpendToday() { return { day: spendDay, usd: spendUsd, calls: callsToday, budget: Number(process.env.LLM_DAILY_BUDGET_USD || 1) }; }
 function assertBudget() {
   const today = new Date().toISOString().slice(0, 10);
-  if (today !== spendDay) { spendDay = today; spendUsd = 0; }
+  if (today !== spendDay) { spendDay = today; spendUsd = 0; callsToday = 0; }
   const budget = Number(process.env.LLM_DAILY_BUDGET_USD || 1);
   if (spendUsd >= budget) throw new Error(`LLM daily budget exhausted ($${spendUsd.toFixed(2)} / $${budget})`);
 }
@@ -94,6 +98,7 @@ async function callWithRetry(params: Parameters<typeof anthropic.messages.create
       // Routed: Anthropic by default, or Ollama / NVIDIA NIM per LLM_PROVIDER_FAST/SMART.
       const response = await routedMessagesCreate(params, (p) => anthropic.messages.create(p));
       logUsage((response as any).model || params.model, (response as any).usage);
+      callsToday++;
       spendUsd += estimateCallCostUsd(String((response as any).model || params.model), (response as any).usage, (response as any).provider);
       return response;
     } catch (err: any) {
@@ -112,7 +117,7 @@ async function callWithRetry(params: Parameters<typeof anthropic.messages.create
 async function runAgentsSequentially<T>(
   agents: any[],
   fn: (agent: any) => Promise<T>,
-  delayMs = 4000
+  delayMs = Number(process.env.LLM_AGENT_DELAY_MS || (providerFor('fast') === 'anthropic' ? 4000 : 400))
 ): Promise<T[]> {
   const results: T[] = [];
   for (const agent of agents) {
@@ -539,13 +544,14 @@ export async function runInvestmentCommitteeDebate(
   // previously a separate `await` after this block (not in the Promise.all),
   // silently turning 4-way parallel fetch into 3-parallel-then-1-sequential
   // and adding the full Alpaca options latency to every stock debate.
-  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast, regimeLessons] = await Promise.all([
+  const [deepAnalysis, stockMemory, intermarket, optionsFlow, kronosForecast, regimeLessons, fredMacro] = await Promise.all([
     snapshot.market === 'stocks' ? fetchDeepAnalysis(asset).catch(() => null) : Promise.resolve(null),
     getStockMemorySummary(asset),
     intermarketService.getIntermarketAnalysis().catch(() => null),
     snapshot.market === 'stocks' ? optionsFlowService.analyzeOptionsFlow(asset, snapshot.price).catch(() => null) : Promise.resolve(null),
     getForecast(asset, snapshot.candles, 5).catch(() => null),
     getRegimeMatchedLessons(asset, marketRegime).catch(() => ''),
+    getMacroSnapshot().catch(() => null),
   ]);
 
   const fundamentalsSummary = deepAnalysis
@@ -560,8 +566,9 @@ export async function runInvestmentCommitteeDebate(
       `SPY ${intermarket.assets.sp500 >= 0 ? '+' : ''}${intermarket.assets.sp500.toFixed(2)}% | DXY proxy ${intermarket.assets.dxy >= 0 ? '+' : ''}${intermarket.assets.dxy.toFixed(2)}% | ` +
       `Gold ${intermarket.assets.stocksGold >= 0 ? '+' : ''}${intermarket.assets.stocksGold.toFixed(2)}% | Oil ${intermarket.assets.oilEnergy >= 0 ? '+' : ''}${intermarket.assets.oilEnergy.toFixed(2)}% | ` +
       `10Y yield proxy ${intermarket.assets.treasuryYield10Y >= 0 ? '+' : ''}${intermarket.assets.treasuryYield10Y.toFixed(2)}% | VIX proxy ${intermarket.assets.vix.toFixed(1)}` +
-      (intermarket.signals.length > 0 ? ` | Signals: ${intermarket.signals.map(s => `${s.name}(${s.signal})`).join(', ')}` : '')
-    : '';
+      (intermarket.signals.length > 0 ? ` | Signals: ${intermarket.signals.map(s => `${s.name}(${s.signal})`).join(', ')}` : '') +
+      (fredMacro ? ` || ${macroLine(fredMacro)}` : '')
+    : (fredMacro ? macroLine(fredMacro) : '');
 
   // optionsFlow (stocks only — Alpaca's options data is US equities) is
   // fetched above, in parallel with the other debate-prep data.

@@ -47,6 +47,13 @@ const TYPE_ICON: Record<string, string> = {
   TRADING:   '💰',
 };
 
+/** A vote whose reason is just "Error" (failed LLM call) is not a real vote. */
+function isErrorActivity(a: AgentActivity): boolean {
+  if (a.activityType !== 'VOTING') return false;
+  const c = String(a.content || '');
+  return /(—|-)\s*Error\s*$/i.test(c) || /\b(provider error|llm (call )?failed|api error)\b/i.test(c) || (/^(FINAL: )?(Vote: )?(BUY|SELL|HOLD)\b/.test(c) && !a.confidence && /—\s*$/.test(c));
+}
+
 export default function AgentMonitorPage() {
   const token = useStore(s => s.token);
   const baseUrl = (import.meta.env.VITE_API_URL as string) || '';
@@ -65,7 +72,7 @@ export default function AgentMonitorPage() {
           axios.get(`${baseUrl}/api/monitor/recent-decisions`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${baseUrl}/api/monitor/status`,           { headers: { Authorization: `Bearer ${token}` } }),
         ]);
-        setActivities(actRes.data.activities || []);
+        setActivities(Array.isArray(actRes.data?.activities) ? actRes.data.activities : []);
         setStatus(statusRes.data);
       } catch (err) {
         console.error('Failed to load activity history', err);
@@ -100,7 +107,7 @@ export default function AgentMonitorPage() {
         agentName: data.agentName || AGENTS[data.agentId]?.name || `Agent ${data.agentId}`,
         activityType: 'VOTING' as const,
         source: data.asset ? `${data.asset} — Round 1` : 'Debate',
-        content: `${data.vote || data.finalVote} (${data.confidence}%) — ${(data.openingArgument || '').slice(0, 200)}`,
+        content: `${data.vote || data.finalVote} (${data.confidence ?? '—'}%) — ${(data.openingArgument || '').slice(0, 200)}`,
         confidence: data.confidence != null ? data.confidence / 100 : undefined,
         impact: ((data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM') as 'HIGH' | 'MEDIUM' | 'LOW',
       }, ...prev].slice(0, 200));
@@ -112,7 +119,7 @@ export default function AgentMonitorPage() {
         agentName: data.agentName || AGENTS[data.agentId]?.name || `Agent ${data.agentId}`,
         activityType: 'VOTING' as const,
         source: 'Final Vote — Round 3',
-        content: `FINAL: ${data.finalVote} (${data.confidence}%) — ${(data.finalReason || '').slice(0, 200)}`,
+        content: `FINAL: ${data.finalVote} (${data.confidence ?? '—'}%) — ${(data.finalReason || '').slice(0, 200)}`,
         confidence: data.confidence != null ? data.confidence / 100 : undefined,
         impact: ((data.confidence || 0) >= 75 ? 'HIGH' : 'MEDIUM') as 'HIGH' | 'MEDIUM' | 'LOW',
       }, ...prev].slice(0, 200));
@@ -124,7 +131,7 @@ export default function AgentMonitorPage() {
         agentName: 'Execution Engine',
         activityType: 'TRADING' as const,
         source: 'Trade Executed',
-        content: `${data.trade?.type} ${data.trade?.asset} @ $${data.trade?.entryPrice?.toFixed(2)} [${data.mode?.toUpperCase()}]`,
+        content: `${data.trade?.type ?? '—'} ${data.trade?.asset ?? '—'} @ ${typeof data.trade?.entryPrice === 'number' ? `$${data.trade.entryPrice.toFixed(2)}` : '—'} [${String(data.mode || '—').toUpperCase()}]`,
         impact: 'HIGH' as const,
       }, ...prev].slice(0, 200));
     };
@@ -173,11 +180,11 @@ export default function AgentMonitorPage() {
             { label: 'Open Positions', value: status.openPositions },
             { label: 'Trades Today',   value: status.todayTrades },
             { label: 'Debates (2h)',   value: status.recentDebates },
-            { label: 'Uptime',         value: `${Math.floor(status.uptime / 60)}m` },
+            { label: 'Uptime',         value: Number.isFinite(Number(status.uptime)) ? `${Math.floor(Number(status.uptime) / 60)}m` : '—' },
           ].map(s => (
             <div key={s.label} style={{ background: 'var(--apex-surface)', border: '1px solid var(--apex-border)', borderRadius: 10, padding: 14 }}>
               <div style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--apex-muted)', marginBottom: 4 }}>{s.label.toUpperCase()}</div>
-              <div style={{ fontFamily: 'Inter', fontSize: 22, fontWeight: 700, color: 'var(--apex-accent)' }}>{s.value}</div>
+              <div style={{ fontFamily: 'Inter', fontSize: 22, fontWeight: 700, color: 'var(--apex-accent)' }}>{s.value ?? '—'}</div>
             </div>
           ))}
         </div>
@@ -185,7 +192,7 @@ export default function AgentMonitorPage() {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)}
+        <select data-testid="monitor-filter-type" value={filterType} onChange={e => setFilterType(e.target.value)}
           style={{ padding: '7px 10px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'JetBrains Mono', fontSize: 10 }}>
           <option value="ALL">All Types</option>
           {['GATHERING','LEARNING','ANALYZING','VOTING','TRADING'].map(t => (
@@ -193,7 +200,7 @@ export default function AgentMonitorPage() {
           ))}
         </select>
 
-        <select value={filterAgent} onChange={e => setFilterAgent(parseInt(e.target.value))}
+        <select data-testid="monitor-filter-agent" value={filterAgent} onChange={e => setFilterAgent(parseInt(e.target.value))}
           style={{ padding: '7px 10px', border: '1px solid var(--apex-border)', background: 'var(--apex-surface)', color: 'var(--apex-text)', borderRadius: 6, fontFamily: 'JetBrains Mono', fontSize: 10 }}>
           <option value={0}>All Agents</option>
           {Object.entries(AGENTS).map(([id, a]) => (
@@ -228,8 +235,9 @@ export default function AgentMonitorPage() {
         ) : (
           filtered.map((activity, idx) => {
             const agent = AGENTS[activity.agentId];
+            const errored = isErrorActivity(activity);
             return (
-              <div key={`${activity.timestamp}-${idx}`} style={{
+              <div key={`${activity.timestamp}-${idx}`} data-testid="monitor-activity" style={{
                 padding: '10px 14px', borderBottom: '1px solid var(--apex-border)',
                 ...impactStyle(activity.impact)
               }}>
@@ -255,18 +263,23 @@ export default function AgentMonitorPage() {
                     }}>
                       {TYPE_ICON[activity.activityType]} {activity.activityType}
                     </span>
-                    {activity.confidence != null && (
+                    {errored && (
+                      <span data-testid="activity-provider-error" style={{ background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FCA5A5', padding: '2px 7px', borderRadius: 4, fontFamily: 'JetBrains Mono', fontSize: 8, fontWeight: 700 }}>
+                        AI provider error — no real vote
+                      </span>
+                    )}
+                    {!errored && activity.confidence != null && (
                       <span style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color: 'var(--apex-muted)' }}>
                         {(activity.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                     <span style={{ fontFamily: 'JetBrains Mono', fontSize: 8, color: 'var(--apex-muted)' }}>
-                      {new Date(activity.timestamp).toLocaleTimeString()}
+                      {Number.isFinite(new Date(activity.timestamp).getTime()) ? new Date(activity.timestamp).toLocaleTimeString() : '—'}
                     </span>
                   </div>
                 </div>
-                <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--apex-text)', lineHeight: 1.5 }}>
-                  {activity.content}
+                <div style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: errored ? '#B91C1C' : 'var(--apex-text)', lineHeight: 1.5 }}>
+                  {errored ? 'The AI provider call failed for this agent; the recorded HOLD is a placeholder, not an opinion.' : activity.content}
                 </div>
               </div>
             );

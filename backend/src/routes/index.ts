@@ -234,7 +234,9 @@ tradesRouter.get('/stats', async (req: Request, res: Response) => {
     avgLoss: avgLoss.toFixed(2),
     bestTrade: all.sort((a: any, b: any) => (b.pnl || 0) - (a.pnl || 0))[0],
     worstTrade: all.sort((a: any, b: any) => (a.pnl || 0) - (b.pnl || 0))[0],
-    profitFactor: Math.abs(avgLoss) > 0 ? (avgWin / Math.abs(avgLoss)).toFixed(2) : '∞'
+    // Profit factor = gross profit / gross loss (not avgWin/avgLoss, which is the payoff ratio).
+    payoffRatio: Math.abs(avgLoss) > 0 ? (avgWin / Math.abs(avgLoss)).toFixed(2) : null,
+    profitFactor: losers.length ? (winners.reduce((s: number, t: any) => s + (t.pnl || 0), 0) / Math.abs(losers.reduce((s: number, t: any) => s + (t.pnl || 0), 0))).toFixed(2) : null
   });
 });
 
@@ -406,7 +408,8 @@ agentsRouter.post('/force-trade', requireOwner, async (req: Request, res: Respon
 // Run full debate + execute trade if approved — used for immediate test
 agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Response) => {
   try {
-    const { asset = 'NVDA', market = 'stocks' } = req.body;
+    const { asset, market = 'stocks' } = req.body || {};
+    if (!asset || typeof asset !== 'string') return res.status(400).json({ error: 'asset is required' });
     const { runDebateForAsset } = await import('../jobs/scheduler');
     // Respond immediately, run debate in background
     res.json({ message: `🏛️ Full debate starting for ${asset} (${market}) — check DebateRoom for live updates`, asset, market, status: 'running' });
@@ -434,6 +437,52 @@ agentsRouter.get('/decisions/:id', async (req: Request, res: Response) => {
 // ── /api/market ───────────────────────────────────────────────────────────────
 export const marketRouter = Router();
 marketRouter.use(requireAuth);
+
+// ── DYNAMIC UNIVERSE (no hardcoded ticker lists anywhere) ─────────────────────
+async function portfolioAndWatchlist(): Promise<{ portfolio: string[]; watchlist: string[] }> {
+  const [positions, decisions] = await Promise.all([
+    prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true } }).catch(() => []),
+    prisma.agentDecision.findMany({ orderBy: { timestamp: 'desc' }, take: 200, select: { asset: true } }).catch(() => []),
+  ]);
+  let broker: string[] = [];
+  try {
+    const { getTradingBroker } = await import('../trading/brokerRouter');
+    const b: any = getTradingBroker();
+    const bp = b?.getPositions ? await b.getPositions() : [];
+    broker = (bp || []).map((p: any) => String(p.symbol || p.asset || '').toUpperCase()).filter(Boolean);
+  } catch { /* broker optional */ }
+  const portfolio = [...new Set([...positions.map((p: any) => p.asset), ...broker])].filter(a => a && a !== 'POLYMARKET');
+  const watchlist = [...new Set(decisions.map((d: any) => d.asset))].filter(a => a && a !== 'POLYMARKET').slice(0, 60);
+  return { portfolio, watchlist };
+}
+
+marketRouter.get('/universe/categories', async (_req: Request, res: Response) => {
+  try {
+    const { universe } = await import('../services/universeService');
+    const extra = await portfolioAndWatchlist();
+    res.json({ categories: universe.categories(extra), ...universe.status() });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Universe unavailable', detail: err?.message });
+  }
+});
+
+marketRouter.get('/universe/symbols', async (req: Request, res: Response) => {
+  try {
+    const { universe } = await import('../services/universeService');
+    const extra = await portfolioAndWatchlist();
+    const out = universe.symbols({
+      category: String(req.query.category || ''),
+      search: String(req.query.search || ''),
+      limit: Number(req.query.limit || 50),
+      offset: Number(req.query.offset || 0),
+      tradableOnly: req.query.tradableOnly === 'true',
+      ...extra,
+    });
+    res.json(out);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Universe unavailable', detail: err?.message });
+  }
+});
 
 marketRouter.get('/prices', async (_req: Request, res: Response) => {
   const { getCurrentPrices } = await import('../services/marketData');
@@ -500,7 +549,16 @@ marketRouter.get('/chart/:symbol', async (req: Request, res: Response) => {
 
 marketRouter.get('/news', async (req: Request, res: Response) => {
   const { limit = '20' } = req.query;
-  const news = await prisma.newsItem.findMany({ take: parseInt(limit as string), orderBy: { publishedAt: 'desc' } });
+  const take = Math.min(parseInt(limit as string) || 20, 200);
+  const rows = await prisma.newsItem.findMany({ take: take * 5, orderBy: { publishedAt: 'desc' } });
+  // The ingest stored the same article many times; show each story once.
+  const seen = new Set<string>();
+  const news = rows.filter((n: any) => {
+    const key = String(n.url || n.title || n.id).toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, take);
   res.json(news);
 });
 
@@ -518,7 +576,7 @@ marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
     const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null } });
     res.json({
       success: true,
-      message: '✅ Polymarket Alpha probability scan complete. Found 6 high-edge opportunities.',
+      message: `Polymarket scan complete — ${predictions.length} open market${predictions.length === 1 ? '' : 's'} tracked.`,
       opportunities: predictions,
       scannedAt: new Date().toISOString()
     });
@@ -591,7 +649,8 @@ marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: 
 
 marketRouter.post('/ai-deep-dive', async (req: Request, res: Response) => {
   try {
-    const { symbol = 'NVDA', assetClass = 'stock' } = req.body;
+    const { symbol, assetClass = 'stock' } = req.body || {};
+    if (!symbol) return res.status(400).json({ error: 'symbol is required' });
     let analysis = '';
 
     if (process.env.GEMINI_API_KEY) {
@@ -928,7 +987,7 @@ settingsRouter.get('/', async (_req: Request, res: Response) => {
     cashReserve: process.env.CASH_RESERVE_PCT || '30',
     maxTradesPerDay: process.env.MAX_TRADES_PER_DAY || '50',
     minAgentConfidence: process.env.MIN_AGENT_CONFIDENCE || '65',
-    minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '7',
+    minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '5',
     cacheStatus: redis.status === 'ready' ? 'Redis (connected)' : 'None — running without cache',
     kronosServiceConfigured: !!process.env.KRONOS_SERVICE_URL,
     liveAccounts: accountManager.getLiveAccountsSummary(),

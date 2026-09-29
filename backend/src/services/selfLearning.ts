@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { updateStockMemory } from './stockMemoryService';
@@ -10,7 +9,6 @@ import { routedMessagesCreate } from '../utils/llmRouter';
 // wrong voice stops dominating the confidence average and Kelly sizing.
 const SUSPENDED_AGENT_WEIGHT = 0.25;
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export interface AgentLesson {
   agentId: number;
@@ -170,7 +168,7 @@ Respond in JSON:
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 600,
       messages: [{ role: 'user', content: prompt }]
-    }, (p) => anthropic.messages.create(p));
+    });
 
     const parsed = JSON.parse(extractResponseText(response.content).replace(/```json\n?|\n?```/g, '').trim());
 
@@ -370,7 +368,7 @@ Decisions: ${decisions.length}
 Write 3 paragraphs covering performance, lessons, and next week strategy.`;
 
     const report = await withRetry(async () => {
-      const response = await anthropic.messages.create({
+      const response = await routedMessagesCreate({
         model: 'claude-sonnet-5',
         max_tokens: 800,
         messages: [{ role: 'user', content: reportPrompt }]

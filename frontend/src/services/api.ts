@@ -145,4 +145,60 @@ export const activateKillSwitch = () => api.post('/kill-switch/activate').then(r
 export const deactivateKillSwitch = () => api.post('/kill-switch/deactivate').then(r => r.data);
 export const getKillSwitchStatus = () => api.get('/kill-switch/status').then(r => r.data);
 
+// ── UNIVERSE (server-side symbol catalog) ────────────────────────────────────
+export type UniverseCategoryGroup = 'dynamic' | 'sector' | 'etf' | 'crypto' | 'portfolio';
+export interface UniverseCategory { id: string; label: string; group: UniverseCategoryGroup; count: number }
+export interface UniverseCategoriesResponse { categories: UniverseCategory[]; syncedAt: string | null; source: string }
+export interface UniverseSymbol {
+  symbol: string; name: string; sector?: string | null; industry?: string | null; marketCap?: number | null;
+  price?: number | null; changePct?: number | null; volume?: number | null; market: 'stocks' | 'crypto'; tradable: boolean;
+}
+export interface UniverseSymbolsResponse { symbols: UniverseSymbol[]; total: number }
+export interface UniverseSymbolsParams { category?: string; search?: string; limit?: number; offset?: number }
+
+export const getUniverseCategories = (): Promise<UniverseCategoriesResponse> =>
+  api.get('/market/universe/categories').then(r => {
+    const d = r.data || {};
+    return {
+      categories: Array.isArray(d.categories) ? d.categories.filter((c: any) => c && typeof c.id === 'string') : [],
+      syncedAt: d.syncedAt ?? null,
+      source: typeof d.source === 'string' ? d.source : '',
+    };
+  });
+
+export const getUniverseSymbols = (params: UniverseSymbolsParams = {}): Promise<UniverseSymbolsResponse> =>
+  api.get('/market/universe/symbols', { params: { limit: 50, offset: 0, ...params } }).then(r => {
+    const d = r.data || {};
+    const symbols: UniverseSymbol[] = Array.isArray(d.symbols) ? d.symbols.filter((x: any) => x && typeof x.symbol === 'string') : [];
+    return { symbols, total: typeof d.total === 'number' ? d.total : symbols.length };
+  });
+
+// ── SYSTEM STATUS ────────────────────────────────────────────────────────────
+export interface LlmTierStatus { provider: string; model: string; healthy: boolean; lastError?: string | null }
+export interface DataProviderStatus { configured: boolean; healthy?: boolean }
+export interface SystemStatus {
+  scheduler: 'online' | 'offline';
+  tradingMode: 'paper' | 'live';
+  polymarket: { mode: 'paper' | 'live'; usConnected: boolean };
+  llm: { fast: LlmTierStatus; smart: LlmTierStatus; spendTodayUsd: number; budgetUsd: number; callsToday?: number };
+  alpaca: { connected: boolean; mode: 'paper' | 'live' };
+  intraday: {
+    enabled: boolean; tradesToday: number; maxPerDay: number;
+    realizedPnlToday?: number; notionalUsd?: number;
+    lastScan?: { at: string; candidates: number; scored: number; passed: number; entered: string[]; note?: string } | null;
+  };
+  dataProviders?: Record<string, DataProviderStatus>;
+  killSwitch?: boolean;
+  brokerSync?: { imported: string[]; updated: string[]; closed: string[]; at?: string };
+  universe?: { source?: string; syncedAt?: string | null; stocks?: number; moversAt?: string | null };
+}
+export const getSystemStatus = (): Promise<Partial<SystemStatus>> =>
+  api.get('/system/status').then(r => r.data || {});
+export const runIntradayScan = () => api.post('/system/intraday/scan').then(r => r.data);
+export const runBrokerSync = () => api.post('/system/broker-sync').then(r => r.data);
+
+// ── POLYMARKET US ────────────────────────────────────────────────────────────
+export const getPolymarketUsAccount = () =>
+  api.get('/market/polymarket-us/account').then(r => r.data);
+
 export default api;

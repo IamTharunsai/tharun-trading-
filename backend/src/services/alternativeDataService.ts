@@ -25,7 +25,7 @@ export interface SymbolAlternativeData {
  * Returns explicit UNAVAILABLE status until live enterprise APIs (e.g. Thinknum, Revelio) are configured.
  */
 export async function getSymbolAlternativeData(symbol: string): Promise<SymbolAlternativeData> {
-  const upper = (symbol || 'NVDA').toUpperCase();
+  const upper = String(symbol || '').toUpperCase();
 
   return {
     symbol: upper,

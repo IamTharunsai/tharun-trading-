@@ -150,67 +150,13 @@ class CopyTradingEngine {
         'strat-cross-industry-ripple',
         'strat-polymarket-alpha'
       ],
-      totalMirroredTrades: 28,
-      realizedPnlUSD: 14.80,
-      createdAt: new Date(Date.now() - 86400000 * 7).toISOString()
+      totalMirroredTrades: 0,
+      realizedPnlUSD: 0,
+      createdAt: new Date().toISOString()
     };
 
     this.followers.set(defaultFollower.id, defaultFollower);
-
-    // Initial audit records showing clean execution
-    this.auditLogs.push(
-      {
-        id: 'log-mirror-101',
-        timestamp: new Date(Date.now() - 3600000 * 3).toISOString(),
-        strategyId: 'strat-intraday-momentum',
-        strategyName: 'Apex Intraday Micro-Cap Momentum',
-        followerId: defaultFollower.id,
-        followerName: defaultFollower.name,
-        symbol: 'AAPL',
-        side: 'BUY',
-        masterPrice: 228.40,
-        followerPrice: 228.42,
-        slippageBps: 0.88,
-        executionLatencyMs: 142,
-        quantity: 0.087,
-        notionalUSD: 19.87,
-        status: 'FILLED'
-      },
-      {
-        id: 'log-mirror-102',
-        timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-        strategyId: 'strat-cross-industry-ripple',
-        strategyName: 'Cross-Industry Boom & Spillover Leader',
-        followerId: defaultFollower.id,
-        followerName: defaultFollower.name,
-        symbol: 'CEG',
-        side: 'BUY',
-        masterPrice: 278.50,
-        followerPrice: 278.55,
-        slippageBps: 1.79,
-        executionLatencyMs: 185,
-        quantity: 0.071,
-        notionalUSD: 19.78,
-        status: 'FILLED'
-      },
-      {
-        id: 'log-mirror-103',
-        timestamp: new Date(Date.now() - 1800000).toISOString(),
-        strategyId: 'strat-polymarket-alpha',
-        strategyName: 'Polymarket Brier-Calibrated Alpha Master',
-        followerId: defaultFollower.id,
-        followerName: defaultFollower.name,
-        symbol: 'Fed Funds Rate Cut FOMC',
-        side: 'YES',
-        masterPrice: 0.68,
-        followerPrice: 0.68,
-        slippageBps: 0.0,
-        executionLatencyMs: 95,
-        quantity: 25.0,
-        notionalUSD: 17.00,
-        status: 'FILLED'
-      }
-    );
+    // No seeded audit rows: the mirrored-execution feed only shows real fills.
   }
 
   getStrategies(): MasterStrategy[] {

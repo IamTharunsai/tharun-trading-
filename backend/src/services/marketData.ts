@@ -13,12 +13,8 @@ export const CRYPTO_ASSETS = [
   'OP','INJ','SUI','SEI','TIA','PYTH','JTO','BONK','WIF','PEPE'
 ];
 
-// Fallback stock list — replaced at runtime by fetchAllAlpacaAssets()
-export let STOCK_ASSETS: string[] = [
-  'AAPL','MSFT','NVDA','TSLA','GOOGL','AMZN','META','SPY','QQQ',
-  'AMD','INTC','NFLX','DIS','BABA','JPM','BAC','GS','V','MA',
-  'PYPL','SQ','COIN','HOOD','PLTR','SOFI','RIVN','LCID','NIO','XPEV'
-];
+// No hardcoded stock list: filled at runtime by fetchAllAlpacaAssets().
+export let STOCK_ASSETS: string[] = [];
 
 // Full list fetched from Alpaca — all active tradeable US equities
 let allAlpacaAssets: string[] = [];
@@ -65,6 +61,7 @@ export function getAllStocksDetailed(): { symbol: string; name: string; exchange
 export function getNextStockBatch(batchSize = 5): string[] {
   const list = allAlpacaAssets.length > 0 ? allAlpacaAssets : STOCK_ASSETS;
   const batch: string[] = [];
+  if (list.length === 0) return batch;
   for (let i = 0; i < batchSize; i++) {
     batch.push(list[assetRotationIndex % list.length]);
     assetRotationIndex++;

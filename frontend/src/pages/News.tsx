@@ -52,9 +52,32 @@ function parseArray(val: any): string[] {
   return [];
 }
 
+/** Dedupe by URL (normalized), falling back to normalized title. Keeps first occurrence. */
+export function dedupeNews<T extends Record<string, any>>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const n of items) {
+    if (!n) continue;
+    const url = typeof n.url === 'string' ? n.url.trim().toLowerCase().replace(/[?#].*$/, '').replace(/\/$/, '') : '';
+    const title = String(n.headline || n.title || n.event || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const key = url ? `u:${url}` : title ? `t:${title}` : `i:${n.id ?? out.length}`;
+    const tKey = title ? `t:${title}` : '';
+    if (seen.has(key) || (tKey && seen.has(tKey))) continue;
+    seen.add(key);
+    if (tKey) seen.add(tKey);
+    out.push(n);
+  }
+  return out;
+}
+
+const safeFormat = (v: any, fmt: string) => {
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? format(d, fmt) : '';
+};
+
 function MarketNewsTab() {
   const { data: rawNews = [] } = useQuery({ queryKey: ['news'], queryFn: getNews, refetchInterval: 60000 });
-  const news = Array.isArray(rawNews) ? rawNews : Array.isArray((rawNews as any)?.news) ? (rawNews as any).news : [];
+  const news = dedupeNews(Array.isArray(rawNews) ? rawNews : Array.isArray((rawNews as any)?.news) ? (rawNews as any).news : []);
 
   const sentimentBadge = (score: number) => {
     if (score > 0.2) {
@@ -72,7 +95,7 @@ function MarketNewsTab() {
         if (!n) return null;
         const assets = parseArray(n.assetsMentioned);
         return (
-          <div key={n.id || Math.random()} className="p-4 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm">
+          <div key={n.id || n.url || n.headline || n.title} data-testid="news-item" className="p-4 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -89,7 +112,7 @@ function MarketNewsTab() {
                   )}
                   {n.publishedAt && (
                     <span className="font-mono text-[10px] text-slate-400">
-                      · {format(new Date(n.publishedAt), 'MM/dd HH:mm')}
+                      · {safeFormat(n.publishedAt, 'MM/dd HH:mm') || '—'}
                     </span>
                   )}
                 </div>
@@ -140,8 +163,8 @@ function GeopoliticsTab() {
           api.get('/monitor/geopolitics', { params: { hours: 24 } }),
           api.get('/monitor/sentiment'),
         ]);
-        setNews(Array.isArray(newsResponse.data?.news) ? newsResponse.data.news : []);
-        setEvents(Array.isArray(eventsResponse.data?.events) ? eventsResponse.data.events : []);
+        setNews(dedupeNews(Array.isArray(newsResponse.data?.news) ? newsResponse.data.news : []));
+        setEvents(dedupeNews(Array.isArray(eventsResponse.data?.events) ? eventsResponse.data.events : []));
         setSentiment(sentimentResponse.data || null);
       } catch (err) {
         console.error('Failed to fetch data', err);
@@ -383,6 +406,7 @@ export default function NewsPage() {
         ]).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            data-testid={`news-tab-${id}`}
             onClick={() => setTab(id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold transition-all ${
               tab === id

@@ -8,9 +8,10 @@ interface StatCardProps {
   trend?: 'up' | 'down' | 'neutral';
   accent?: boolean;
   mono?: boolean;
+  testId?: string;
 }
 
-export default function StatCard({ label, value, sub, icon, trend, accent, mono }: StatCardProps) {
+export default function StatCard({ label, value, sub, icon, trend, accent, mono, testId }: StatCardProps) {
   const valueColorClass = trend === 'up'
     ? 'text-emerald-600'
     : trend === 'down'
@@ -20,7 +21,7 @@ export default function StatCard({ label, value, sub, icon, trend, accent, mono 
     : 'text-slate-900';
 
   return (
-    <div className={`p-4 rounded-xl transition-all bg-white border shadow-sm ${
+    <div data-testid={testId} className={`p-4 rounded-xl transition-all bg-white border shadow-sm ${
       accent
         ? 'border-blue-300 ring-1 ring-blue-100'
         : 'border-slate-200/90 hover:border-slate-300'
@@ -31,7 +32,7 @@ export default function StatCard({ label, value, sub, icon, trend, accent, mono 
         </span>
         {icon && <span className="text-blue-600">{icon}</span>}
       </div>
-      <div className={`text-2xl font-bold leading-tight tabular-nums ${mono ? 'font-mono' : 'font-sans'} ${valueColorClass}`}>
+      <div data-testid={testId ? `${testId}-value` : undefined} className={`text-2xl font-bold leading-tight tabular-nums ${mono ? 'font-mono' : 'font-sans'} ${valueColorClass}`}>
         {value}
       </div>
       {sub && (

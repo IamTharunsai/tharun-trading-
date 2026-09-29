@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import api from '../services/api';
 import { Send, Loader, MessageSquare, TrendingUp, Sparkles, Zap, Shield, HelpCircle } from 'lucide-react';
 import { useStore } from '../store';
+import SymbolPicker from '../components/common/SymbolPicker';
+import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
 
 const AGENTS = [
   { id: 1,  name: 'Technician',  role: 'Technical & Wyckoff Wave Analyst', icon: '📊', color: '#F59E0B' },
@@ -28,17 +30,17 @@ export default function AgentChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [asset, setAsset] = useState('NVDA');
+  const { symbol: asset, setSymbol: setAsset } = useSelectedSymbol('all');
   const prices = useStore(s => s.prices);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const currentPrice = prices[asset]?.price ?? null;
-  const currentChange = prices[asset]?.change24h || 1.84;
+  const currentPrice = asset ? prices[asset]?.price ?? null : null;
+  const currentChange: number | null = asset && typeof prices[asset]?.change24h === 'number' ? prices[asset].change24h : null;
 
   useEffect(() => {
     setMessages([{
       role: 'assistant',
-      content: `Instant Bloomberg (IB) channel open. I am ${selectedAgent.name}, ${selectedAgent.role}. Asset focus is set to [${asset}${currentPrice != null ? ` @ $${currentPrice.toFixed(2)}` : ''}]. Ask me for real-time technical setups, liquidation clusters, or risk guardrails.`,
+      content: `Instant Bloomberg (IB) channel open. I am ${selectedAgent.name}, ${selectedAgent.role}. ${asset ? `Asset focus is set to [${asset}${currentPrice != null ? ` @ $${currentPrice.toFixed(2)}` : ''}].` : 'No asset selected yet — pick one with the ticker picker.'} Ask me for real-time technical setups, liquidation clusters, or risk guardrails.`,
       timestamp: new Date().toLocaleTimeString(),
       agentId: selectedAgent.id
     }]);
@@ -50,6 +52,7 @@ export default function AgentChatPage() {
 
   const sendQuery = async (queryText: string) => {
     if (!queryText.trim() || loading) return;
+    if (!asset) { setMessages(prev => [...prev, { role: 'assistant', content: 'Pick a symbol first.', timestamp: new Date().toLocaleTimeString(), agentId: selectedAgent.id }]); return; }
 
     const userMessage: Message = {
       role: 'user',
@@ -69,14 +72,14 @@ export default function AgentChatPage() {
 
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: response.data.reply,
+        content: response.data?.reply || '⚠️ The agent returned an empty response.',
         timestamp: new Date().toLocaleTimeString(),
         agentId: selectedAgent.id
       }]);
     } catch (err: any) {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `IB Network Connection Notice: Analysis completed via local quantitative cache for ${asset}. Technical bias remains moderately bullish above support.`,
+        content: `⚠️ Request failed — no analysis was produced for ${asset || 'this query'}. ${err?.response?.data?.error || err?.message || 'The AI provider or backend did not respond.'}`,
         timestamp: new Date().toLocaleTimeString(),
         agentId: selectedAgent.id
       }]);
@@ -105,10 +108,10 @@ export default function AgentChatPage() {
         <div className="flex items-center gap-4 text-xs font-mono">
           <span className="text-slate-500 font-semibold">ACTIVE TICKER:</span>
           <div className="flex items-center gap-2">
-            <span className="text-slate-900 font-bold">{asset}</span>
+            <span className="text-slate-900 font-bold" data-testid="active-ticker">{asset || '—'}</span>
             <span className="text-blue-700 font-bold tabular-nums">{currentPrice != null ? `$${currentPrice.toFixed(2)}` : '—'}</span>
-            <span className={`tabular-nums font-bold ${currentChange >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {currentChange >= 0 ? '+' : ''}{currentChange.toFixed(2)}%
+            <span className={`tabular-nums font-bold ${currentChange === null ? 'text-slate-400' : currentChange >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {currentChange === null ? '—' : `${currentChange >= 0 ? '+' : ''}${currentChange.toFixed(2)}%`}
             </span>
           </div>
         </div>
@@ -127,6 +130,7 @@ export default function AgentChatPage() {
               return (
                 <button
                   key={agent.id}
+                  data-testid={`agent-select-${agent.id}`}
                   onClick={() => setSelectedAgent(agent)}
                   className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center gap-2.5 ${
                     isSelected
@@ -151,20 +155,8 @@ export default function AgentChatPage() {
             <div className="text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase px-2 mb-2">
               TARGET TICKER
             </div>
-            <div className="flex gap-1.5 flex-wrap px-1">
-              {['NVDA', 'AAPL', 'MSFT', 'TSLA', 'BTC', 'ETH', 'SOL'].map(a => (
-                <button
-                  key={a}
-                  onClick={() => setAsset(a)}
-                  className={`px-2 py-1 rounded text-xs font-mono font-bold transition-colors ${
-                    asset === a
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
-                  }`}
-                >
-                  {a}
-                </button>
-              ))}
+            <div className="px-1">
+              <SymbolPicker value={asset} onChange={(sym, meta) => setAsset(sym, meta)} data-testid="symbol-picker" className="w-full" />
             </div>
           </div>
         </div>
@@ -189,6 +181,7 @@ export default function AgentChatPage() {
             {/* Quick Action Chips */}
             <div className="hidden sm:flex items-center gap-2">
               <button
+                data-testid="quick-alpha"
                 onClick={() => sendQuery(`Give me your top technical thesis and high-frequency trade trigger for ${asset}.`)}
                 disabled={loading}
                 className="text-[11px] font-mono px-2.5 py-1 rounded bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors font-semibold"
@@ -257,10 +250,12 @@ export default function AgentChatPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={`Message ${selectedAgent.name} on ${asset} (e.g. "Assess volume shelf breakout for NVDA")...`}
+              placeholder={`Message ${selectedAgent.name} on ${asset || '…'}${asset ? ` (e.g. "Assess volume shelf breakout for ${asset}")` : ''}...`}
+              data-testid="chat-input"
               className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
             />
             <button
+              data-testid="chat-send"
               type="submit"
               disabled={loading || !input.trim()}
               className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-40 flex items-center gap-1.5"

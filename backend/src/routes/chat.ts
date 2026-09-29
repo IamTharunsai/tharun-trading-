@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { routedMessagesCreate, describeError } from '../utils/llmRouter';
 import { Router, Request, Response } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
@@ -7,7 +7,6 @@ import { buildMarketSnapshot } from '../services/marketData';
 import { getPortfolioState } from '../services/portfolio';
 import { extractResponseText } from '../utils/anthropicText';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-anthropic-key' });
 
 export const chatRouter = Router();
 chatRouter.use(requireAuth);
@@ -82,17 +81,16 @@ chatRouter.post('/:agentId', async (req: AuthRequest, res: Response) => {
 
     if (!reply) {
       try {
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-5',
+        const response = await routedMessagesCreate({
+          model: 'claude-haiku-4-5',
           max_tokens: 800,
           system: systemPrompt + contextAddition,
           messages
         });
         reply = extractResponseText(response.content);
-      } catch (anthropicErr) {
-        // Fallback domain-expert response
-        const agentName = getAgentName(agentId);
-        reply = `[${agentName}] Analyzing ${asset || 'the current market'}: Structural order flow and multi-timeframe indicators suggest consolidation around key volume nodes. Institutional accumulation remains constructive. Maintain strict stop-loss disciplina and watch for volatility expansion.`;
+      } catch (llmErr) {
+        // Honest failure — never invent an analyst opinion.
+        return res.status(503).json({ error: `AI provider unavailable: ${describeError(llmErr).slice(0, 200)}` });
       }
     }
 

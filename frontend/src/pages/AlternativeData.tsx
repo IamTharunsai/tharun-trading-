@@ -7,17 +7,18 @@ import {
 } from 'lucide-react';
 import { getAlternativeData, getEarningsIvCrush, getAiArsenal } from '../services/api';
 import LastUpdated from '../components/common/LastUpdated';
-
-const WATCH_SYMBOLS = ['NVDA', 'TSLA', 'MSFT', 'AAPL', 'AMZN', 'GOOGL', 'PLTR', 'AMD'];
+import SymbolPicker from '../components/common/SymbolPicker';
+import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
 
 export default function AlternativeDataPage() {
-  const [selectedSymbol, setSelectedSymbol] = useState('NVDA');
+  const { symbol: selectedSymbol, setSymbol: setSelectedSymbol } = useSelectedSymbol('stocks');
   const [activeTab, setActiveTab] = useState<'streams' | 'job_agent' | 'iv_crush' | 'ai_arsenal'>('streams');
 
   const { data: altData, isLoading: altLoading, refetch: refetchAlt } = useQuery({
     queryKey: ['alternative-data', selectedSymbol],
     queryFn: () => getAlternativeData(selectedSymbol),
     refetchInterval: 60000,
+    enabled: !!selectedSymbol,
   });
 
   const { data: ivCrushList, isLoading: ivLoading } = useQuery({
@@ -32,10 +33,16 @@ export default function AlternativeDataPage() {
     staleTime: 300000,
   });
 
-  const streams = altData?.streams || [];
+  const streams: any[] = Array.isArray(altData?.streams) ? altData.streams : [];
   const jobVelocity = altData?.jobPostingVelocity;
-  const compositeScore = altData?.compositeAlphaScore ?? 0;
-  const compositeSignal = altData?.compositeSignal ?? 'STRONG_BUY';
+  const rawScore = Number(altData?.compositeAlphaScore);
+  // A 0 / missing score means no usable data — never label it as a BUY signal.
+  const compositeScore: number | null = Number.isFinite(rawScore) && rawScore !== 0 ? rawScore : null;
+  const compositeSignal: string = compositeScore === null ? 'NO_DATA' : String(altData?.compositeSignal || 'NO_DATA');
+  const signalCls = compositeSignal === 'NO_DATA' ? 'bg-slate-100 text-slate-500'
+    : compositeSignal.includes('BUY') ? 'bg-emerald-500/10 text-emerald-600'
+    : compositeSignal.includes('SELL') ? 'bg-rose-500/10 text-rose-600'
+    : 'bg-slate-100 text-slate-600';
 
   return (
     <div className="space-y-6">
@@ -56,22 +63,10 @@ export default function AlternativeDataPage() {
 
         <div className="flex items-center gap-3 flex-wrap">
           <LastUpdated />
-          <div className="flex items-center gap-1 bg-apex-surface border border-apex-border rounded-lg p-1">
-            {WATCH_SYMBOLS.map(sym => (
-              <button
-                key={sym}
-                onClick={() => setSelectedSymbol(sym)}
-                className={`font-mono text-xs px-2.5 py-1 rounded transition-colors ${
-                  selectedSymbol === sym
-                    ? 'bg-apex-accent text-white font-bold'
-                    : 'text-apex-muted hover:text-apex-text'
-                }`}
-              >
-                {sym}
-              </button>
-            ))}
-          </div>
+          <SymbolPicker value={selectedSymbol} market="stocks" onChange={(sym, meta) => setSelectedSymbol(sym, meta)} data-testid="symbol-picker" />
           <button
+            data-testid="alt-rescan"
+            disabled={!selectedSymbol}
             onClick={() => refetchAlt()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-apex-border bg-apex-surface hover:bg-apex-surface-2 text-xs font-mono text-apex-text transition-colors"
           >
@@ -83,23 +78,19 @@ export default function AlternativeDataPage() {
 
       {/* Top Level Institutional KPI Strip */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card p-4">
+        <div className="card p-4" data-testid="alt-composite">
           <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] text-apex-muted uppercase tracking-wider">Composite Alt-Data Alpha</span>
+            <span className="font-mono text-[10px] text-apex-muted uppercase tracking-wider">Composite Alt-Data Score</span>
             <Zap size={15} className="text-apex-accent" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-mono text-3xl font-bold text-apex-text">{compositeScore > 0 ? `+${compositeScore}` : compositeScore}</span>
-            <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${
-              compositeSignal === 'STRONG_BUY' || compositeSignal === 'BUY'
-                ? 'bg-emerald-500/10 text-emerald-600'
-                : 'bg-rose-500/10 text-rose-600'
-            }`}>
-              {compositeSignal.replace('_', ' ')}
+            <span className="font-mono text-3xl font-bold text-apex-text" data-testid="alt-composite-score">{altLoading ? '…' : compositeScore === null ? '—' : compositeScore > 0 ? `+${compositeScore}` : compositeScore}</span>
+            <span data-testid="alt-composite-signal" className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${signalCls}`}>
+              {compositeSignal.replace(/_/g, ' ')}
             </span>
           </div>
           <div className="mt-2 font-sans text-[11px] text-apex-muted">
-            Weighted across 9 independent non-financial telemetry streams
+            {selectedSymbol ? `Weighted across ${streams.length} alt-data stream${streams.length === 1 ? '' : 's'} for ${selectedSymbol}` : 'Pick a symbol'}
           </div>
         </div>
 
@@ -112,7 +103,7 @@ export default function AlternativeDataPage() {
             <span className="font-mono text-3xl font-bold text-apex-text">
               {jobVelocity ? `${jobVelocity.jobVelocity > 0 ? '+' : ''}${(jobVelocity.jobVelocity * 100).toFixed(1)}%` : 'No data'}
             </span>
-            <span className="font-mono text-xs text-emerald-600 font-semibold">4–8 Wk Lead</span>
+
           </div>
           <div className="mt-2 font-sans text-[11px] text-apex-muted">
             {jobVelocity ? `${jobVelocity.current30dPostings} active hiring openings` : 'Job-posting feed not connected'}
@@ -150,6 +141,7 @@ export default function AlternativeDataPage() {
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-apex-border pb-2">
         <button
+          data-testid="tab-streams"
           onClick={() => setActiveTab('streams')}
           className={`font-mono text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'streams'
@@ -158,10 +150,11 @@ export default function AlternativeDataPage() {
           }`}
         >
           <Layers size={14} />
-          <span>9 Institutional Streams ({selectedSymbol})</span>
+          <span>Alt-Data Streams ({selectedSymbol || '—'})</span>
         </button>
 
         <button
+          data-testid="tab-job-agent"
           onClick={() => setActiveTab('job_agent')}
           className={`font-mono text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'job_agent'
@@ -174,6 +167,7 @@ export default function AlternativeDataPage() {
         </button>
 
         <button
+          data-testid="tab-iv-crush"
           onClick={() => setActiveTab('iv_crush')}
           className={`font-mono text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'iv_crush'
@@ -186,6 +180,7 @@ export default function AlternativeDataPage() {
         </button>
 
         <button
+          data-testid="tab-ai-arsenal"
           onClick={() => setActiveTab('ai_arsenal')}
           className={`font-mono text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
             activeTab === 'ai_arsenal'
@@ -202,13 +197,18 @@ export default function AlternativeDataPage() {
       {activeTab === 'streams' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {streams.length === 0 && (
+              <div className="col-span-full card p-8 text-center font-mono text-xs text-apex-muted">
+                {!selectedSymbol ? 'Pick a symbol to load alternative data.' : altLoading ? 'Loading…' : 'No alternative-data streams returned for this symbol.'}
+              </div>
+            )}
             {streams.map((stream: any) => (
               <div key={stream.id} className="card p-4 hover:border-apex-accent/40 transition-all flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-mono text-[10px] text-apex-muted uppercase tracking-wider">{stream.category}</span>
                     <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-apex-surface-2 text-apex-accent font-semibold">
-                      {stream.edgeLeadTime} Lead
+                      {stream.edgeLeadTime ? `${stream.edgeLeadTime} lead (claimed)` : '—'}
                     </span>
                   </div>
 
@@ -224,7 +224,7 @@ export default function AlternativeDataPage() {
                       <span className={`font-mono font-bold ${
                         stream.signalStrength > 50 ? 'text-emerald-600' : stream.signalStrength < 0 ? 'text-rose-600' : 'text-amber-600'
                       }`}>
-                        {stream.signalStrength > 0 ? `+${stream.signalStrength}` : stream.signalStrength} / 100
+                        {typeof stream.signalStrength === 'number' ? `${stream.signalStrength > 0 ? '+' : ''}${stream.signalStrength} / 100` : '—'}
                       </span>
                     </div>
                   </div>
@@ -285,29 +285,29 @@ export default function AlternativeDataPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="p-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
                 <div className="font-mono text-[10px] text-emerald-600 font-bold uppercase">AI / ML / GPU Engineers</div>
-                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown.aiMlGpu.count} Roles</div>
-                <div className="font-mono text-xs text-emerald-600 mt-1 font-semibold">{jobVelocity.breakdown.aiMlGpu.pctOfTotal}% of Openings</div>
-                <div className="font-sans text-[11px] text-apex-muted mt-2">Product investment signal — <strong className="text-emerald-600">68% Bullish Edge</strong></div>
+                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown?.aiMlGpu?.count} Roles</div>
+                <div className="font-mono text-xs text-emerald-600 mt-1 font-semibold">{jobVelocity.breakdown?.aiMlGpu?.pctOfTotal}% of Openings</div>
+
               </div>
 
               <div className="p-4 rounded-lg border border-blue-500/30 bg-blue-500/5">
                 <div className="font-mono text-[10px] text-blue-600 font-bold uppercase">Core Software & Dev</div>
-                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown.engineeringDev.count} Roles</div>
-                <div className="font-mono text-xs text-blue-600 mt-1 font-semibold">{jobVelocity.breakdown.engineeringDev.pctOfTotal}% of Openings</div>
-                <div className="font-sans text-[11px] text-apex-muted mt-2">Infrastructure runway — <strong className="text-blue-600">Bullish Continuity</strong></div>
+                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown?.engineeringDev?.count} Roles</div>
+                <div className="font-mono text-xs text-blue-600 mt-1 font-semibold">{jobVelocity.breakdown?.engineeringDev?.pctOfTotal}% of Openings</div>
+                <div className="font-sans text-[11px] text-apex-muted mt-2">Infrastructure hiring share</div>
               </div>
 
               <div className="p-4 rounded-lg border border-apex-border bg-apex-surface">
                 <div className="font-mono text-[10px] text-apex-muted font-bold uppercase">Sales & Marketing</div>
-                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown.salesMarketing.count} Roles</div>
-                <div className="font-mono text-xs text-apex-muted mt-1 font-semibold">{jobVelocity.breakdown.salesMarketing.pctOfTotal}% of Openings</div>
+                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown?.salesMarketing?.count} Roles</div>
+                <div className="font-mono text-xs text-apex-muted mt-1 font-semibold">{jobVelocity.breakdown?.salesMarketing?.pctOfTotal}% of Openings</div>
                 <div className="font-sans text-[11px] text-apex-muted mt-2">Commercial distribution push — <strong>Neutral</strong></div>
               </div>
 
               <div className="p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
                 <div className="font-mono text-[10px] text-amber-600 font-bold uppercase">Finance & Legal / Compliance</div>
-                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown.financeLegal.count} Roles</div>
-                <div className="font-mono text-xs text-amber-600 mt-1 font-semibold">{jobVelocity.breakdown.financeLegal.pctOfTotal}% of Openings</div>
+                <div className="font-mono text-2xl font-bold text-apex-text mt-1">{jobVelocity.breakdown?.financeLegal?.count} Roles</div>
+                <div className="font-mono text-xs text-amber-600 mt-1 font-semibold">{jobVelocity.breakdown?.financeLegal?.pctOfTotal}% of Openings</div>
                 <div className="font-sans text-[11px] text-apex-muted mt-2">M&A / Regulatory prep alert — <strong>Investigate</strong></div>
               </div>
             </div>
@@ -346,8 +346,8 @@ export default function AlternativeDataPage() {
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-center p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                  <div className="font-mono text-2xl font-bold text-purple-600">71%</div>
-                  <div className="font-mono text-[10px] text-apex-muted">Historical Win Rate</div>
+                  <div className="font-mono text-2xl font-bold text-slate-400">—</div>
+                  <div className="font-mono text-[10px] text-apex-muted">Win rate (not backtested)</div>
                 </div>
                 <div className="text-center p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                   <div className="font-mono text-2xl font-bold text-emerald-600">2.5% Max</div>

@@ -170,7 +170,7 @@ export async function analyzeChartIntelligence(symbol: string, market: 'stocks' 
     },
     predictedDirection,
     rawConfidence: parseFloat((rawConfidence * 100).toFixed(1)),
-    edgePct: 12.0, // CA-1: 62% accuracy vs 50% random = +12% EV edge
+    edgePct: 0, // No validated edge: this is a heuristic pattern scorer, not a trained model (no backtest yet)
     architecture: {
       inputShape: '30 candles × 4 OHLC values [30, 4]',
       layers: [
@@ -181,8 +181,8 @@ export async function analyzeChartIntelligence(symbol: string, market: 'stocks' 
         'Dense(128) + Dropout(0.3)',
         'Dense(3) + Softmax [UP, DOWN, FLAT]'
       ],
-      trainedOn: '10 Years S&P 500 OHLCV (72% Train / 18% Val / 10% Test)',
-      historicalAccuracy: 62.0
+      trainedOn: 'NOT TRAINED — deterministic heuristic over the last 30 candles (layer list describes the planned model)',
+      historicalAccuracy: 50.0 // coin-flip baseline until a real out-of-sample backtest exists
     }
   };
 
@@ -276,18 +276,18 @@ export async function analyzeChartIntelligence(symbol: string, market: 'stocks' 
 
   if (dir1h === dir4h && dir4h === dirDaily && dir1h !== 'FLAT') {
     alignmentStatus = 'ALL_ALIGNED';
-    winRateEdgeBonusPct = 28; // +28% win rate edge when all 3 align
+    winRateEdgeBonusPct = 0; // unvalidated — was a hardcoded +28% claim
     positionSizingMultiplier = 1.0; // 100% full Kelly bet
     recommendation = 'Triple timeframe confluence confirmed across 1H, 4H, and Daily. Full position sizing unlocked (+28% win rate edge).';
   } else if (dir4h === dirDaily && dir4h !== 'FLAT') {
     if (dir1h !== dir4h && dir1h !== 'FLAT') {
       alignmentStatus = '1H_CONTRADICTION';
-      winRateEdgeBonusPct = 8;
+      winRateEdgeBonusPct = 0;
       positionSizingMultiplier = 0.50; // 1h contradicts: wait for 1h to align or reduce position 50%
       recommendation = 'Daily and 4H align, but 1H microstructure contradicts. Reduce position by 50% or wait for 1H alignment.';
     } else {
       alignmentStatus = 'DAILY_4H_CONFIRMED';
-      winRateEdgeBonusPct = 19;
+      winRateEdgeBonusPct = 0;
       positionSizingMultiplier = 0.85;
       recommendation = 'Strong macro confirmation on Daily + 4H while 1H is consolidating. High positive EV trade.';
     }

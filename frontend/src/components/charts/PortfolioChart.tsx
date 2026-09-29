@@ -7,7 +7,7 @@ import { TrendingUp, BarChart2 } from 'lucide-react';
 interface ChartPoint {
   time: string;
   value: number;
-  benchmark: number;
+  benchmark: number | null;
 }
 
 export default function PortfolioChart() {
@@ -25,11 +25,16 @@ export default function PortfolioChart() {
     if (!rawSnapshots || !Array.isArray(rawSnapshots) || rawSnapshots.length === 0) {
       return [];
     }
-    return rawSnapshots.map((s: any) => ({
-      time: s.time || (s.timestamp ? new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''),
-      value: typeof s.value === 'number' ? s.value : s.totalValue || 0,
-      benchmark: typeof s.benchmark === 'number' ? s.benchmark : s.sp500Benchmark || s.value || 0
-    }));
+    return rawSnapshots.map((s: any) => {
+      const d = s.timestamp ? new Date(s.timestamp) : null;
+      const bench = typeof s.benchmark === 'number' ? s.benchmark : typeof s.sp500Benchmark === 'number' ? s.sp500Benchmark : null;
+      return {
+        time: s.time || (d && Number.isFinite(d.getTime()) ? d.toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''),
+        value: typeof s.value === 'number' ? s.value : Number(s.totalValue) || 0,
+        // Only a real benchmark series — never mirror the portfolio line.
+        benchmark: bench,
+      };
+    }).filter((p: ChartPoint) => p.value > 0);
   })();
 
   const hasData = chartData.length > 0;
@@ -37,6 +42,15 @@ export default function PortfolioChart() {
   const endVal = hasData ? chartData[chartData.length - 1].value : 0;
   const returnPct = hasData && startVal > 0 ? (((endVal - startVal) / startVal) * 100).toFixed(2) : '0.00';
   const isPositive = parseFloat(returnPct) >= 0;
+  const hasBenchmark = chartData.some(p => p.benchmark !== null);
+  const maxDrawdownPct = (() => {
+    let peak = -Infinity, dd = 0;
+    for (const p of chartData) {
+      peak = Math.max(peak, p.value);
+      if (peak > 0) dd = Math.max(dd, (peak - p.value) / peak);
+    }
+    return dd * 100;
+  })();
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -102,19 +116,19 @@ export default function PortfolioChart() {
         <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono">
           <div className="text-slate-500">PERIOD RETURN</div>
           <div className={`font-bold text-sm ${hasData ? (isPositive ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
-            {hasData ? `${isPositive ? '+' : ''}${returnPct}%` : '0.00%'}
+            {hasData && startVal > 0 ? `${isPositive ? '+' : ''}${returnPct}%` : '—'}
           </div>
         </div>
         <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono">
           <div className="text-slate-500">SHARPE RATIO</div>
           <div className="font-bold text-sm text-slate-700">
-            {hasData && chartData.length >= 10 ? 'Available' : 'N/A (<10 snaps)'}
+            {'—'}
           </div>
         </div>
         <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono">
           <div className="text-slate-500">MAX DRAWDOWN</div>
           <div className="font-bold text-sm text-slate-700">
-            {hasData ? '0.00%' : 'N/A'}
+            {chartData.length >= 2 ? `-${maxDrawdownPct.toFixed(2)}%` : '—'}
           </div>
         </div>
         <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono">
@@ -151,7 +165,7 @@ export default function PortfolioChart() {
               <YAxis stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} domain={['auto', 'auto']} tickFormatter={v => `$${v.toLocaleString()}`} />
               <Tooltip content={<CustomTooltip />} />
               <Area type="monotone" dataKey="value" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#chartNavGradient)" />
-              {showBenchmark && (
+              {showBenchmark && hasBenchmark && (
                 <Line type="monotone" dataKey="benchmark" stroke="#2563EB" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
               )}
             </AreaChart>

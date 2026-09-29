@@ -9,89 +9,9 @@ export interface ComprehensiveStockInfo {
   marketCapTier: 'Mega' | 'Large' | 'Mid' | 'High-Beta';
 }
 
-export const COMPREHENSIVE_US_STOCK_UNIVERSE: ComprehensiveStockInfo[] = [
-  // Mega-Caps & Tech Titans
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Mega' },
-  { symbol: 'AAPL', name: 'Apple Inc.', sector: 'Technology', industry: 'Consumer Electronics', marketCapTier: 'Mega' },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', sector: 'Technology', industry: 'Software - Infrastructure', marketCapTier: 'Mega' },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', sector: 'Communication Services', industry: 'Internet Content & Information', marketCapTier: 'Mega' },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.', sector: 'Consumer Cyclical', industry: 'Internet Retail', marketCapTier: 'Mega' },
-  { symbol: 'META', name: 'Meta Platforms Inc.', sector: 'Communication Services', industry: 'Internet Content & Information', marketCapTier: 'Mega' },
-  { symbol: 'TSLA', name: 'Tesla Inc.', sector: 'Consumer Cyclical', industry: 'Auto Manufacturers', marketCapTier: 'Mega' },
-  { symbol: 'AVGO', name: 'Broadcom Inc.', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Mega' },
-  { symbol: 'LLY', name: 'Eli Lilly and Company', sector: 'Healthcare', industry: 'Drug Manufacturers', marketCapTier: 'Mega' },
-  { symbol: 'BRK.B', name: 'Berkshire Hathaway Inc.', sector: 'Financial Services', industry: 'Insurance - Diversified', marketCapTier: 'Mega' },
-  
-  // High-Beta Semis & AI Infrastructure
-  { symbol: 'AMD', name: 'Advanced Micro Devices', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Large' },
-  { symbol: 'TSM', name: 'Taiwan Semiconductor', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Mega' },
-  { symbol: 'ASML', name: 'ASML Holding N.V.', sector: 'Technology', industry: 'Semiconductor Equipment', marketCapTier: 'Mega' },
-  { symbol: 'QCOM', name: 'Qualcomm Inc.', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Large' },
-  { symbol: 'ARM', name: 'Arm Holdings plc', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Large' },
-  { symbol: 'MU', name: 'Micron Technology Inc.', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Large' },
-  { symbol: 'INTC', name: 'Intel Corporation', sector: 'Technology', industry: 'Semiconductors', marketCapTier: 'Large' },
-  { symbol: 'SMCI', name: 'Super Micro Computer Inc.', sector: 'Technology', industry: 'Computer Hardware', marketCapTier: 'High-Beta' },
-  { symbol: 'PLTR', name: 'Palantir Technologies', sector: 'Technology', industry: 'Software - Infrastructure', marketCapTier: 'Large' },
-  { symbol: 'CRWD', name: 'CrowdStrike Holdings', sector: 'Technology', industry: 'Software - Cybersecurity', marketCapTier: 'Large' },
-  { symbol: 'PANW', name: 'Palo Alto Networks', sector: 'Technology', industry: 'Software - Cybersecurity', marketCapTier: 'Large' },
-  { symbol: 'SNOW', name: 'Snowflake Inc.', sector: 'Technology', industry: 'Software - Infrastructure', marketCapTier: 'Large' },
-  { symbol: 'DDOG', name: 'Datadog Inc.', sector: 'Technology', industry: 'Software - Application', marketCapTier: 'Large' },
-  { symbol: 'NOW', name: 'ServiceNow Inc.', sector: 'Technology', industry: 'Software - Application', marketCapTier: 'Large' },
-  { symbol: 'NET', name: 'Cloudflare Inc.', sector: 'Technology', industry: 'Software - Infrastructure', marketCapTier: 'Large' },
-  
-  // Crypto & Fintech Proxies
-  { symbol: 'COIN', name: 'Coinbase Global Inc.', sector: 'Financial Services', industry: 'Financial Data & Stock Exchanges', marketCapTier: 'High-Beta' },
-  { symbol: 'MSTR', name: 'MicroStrategy Inc.', sector: 'Technology', industry: 'Software - Application', marketCapTier: 'High-Beta' },
-  { symbol: 'HOOD', name: 'Robinhood Markets Inc.', sector: 'Financial Services', industry: 'Capital Markets', marketCapTier: 'High-Beta' },
-  { symbol: 'PYPL', name: 'PayPal Holdings Inc.', sector: 'Financial Services', industry: 'Credit Services', marketCapTier: 'Large' },
-  { symbol: 'SQ', name: 'Block Inc.', sector: 'Financial Services', industry: 'Credit Services', marketCapTier: 'Large' },
-  { symbol: 'SOFI', name: 'SoFi Technologies Inc.', sector: 'Financial Services', industry: 'Credit Services', marketCapTier: 'High-Beta' },
-  { symbol: 'MARA', name: 'MARA Holdings Inc.', sector: 'Technology', industry: 'Capital Markets', marketCapTier: 'High-Beta' },
-  { symbol: 'RIOT', name: 'Riot Platforms Inc.', sector: 'Technology', industry: 'Capital Markets', marketCapTier: 'High-Beta' },
-  { symbol: 'CLSK', name: 'CleanSpark Inc.', sector: 'Technology', industry: 'Capital Markets', marketCapTier: 'High-Beta' },
+// The hardcoded COMPREHENSIVE_US_STOCK_UNIVERSE list was removed — names now come
+// from the dynamic universe service (Nasdaq screener + Alpaca).
 
-  // Financial Titans
-  { symbol: 'JPM', name: 'JPMorgan Chase & Co.', sector: 'Financial Services', industry: 'Banks - Diversified', marketCapTier: 'Mega' },
-  { symbol: 'BAC', name: 'Bank of America Corp.', sector: 'Financial Services', industry: 'Banks - Diversified', marketCapTier: 'Mega' },
-  { symbol: 'WFC', name: 'Wells Fargo & Company', sector: 'Financial Services', industry: 'Banks - Diversified', marketCapTier: 'Large' },
-  { symbol: 'GS', name: 'Goldman Sachs Group', sector: 'Financial Services', industry: 'Capital Markets', marketCapTier: 'Large' },
-  { symbol: 'MS', name: 'Morgan Stanley', sector: 'Financial Services', industry: 'Capital Markets', marketCapTier: 'Large' },
-  { symbol: 'V', name: 'Visa Inc.', sector: 'Financial Services', industry: 'Credit Services', marketCapTier: 'Mega' },
-  { symbol: 'MA', name: 'Mastercard Inc.', sector: 'Financial Services', industry: 'Credit Services', marketCapTier: 'Mega' },
-  { symbol: 'BLK', name: 'BlackRock Inc.', sector: 'Financial Services', industry: 'Asset Management', marketCapTier: 'Large' },
-
-  // Energy & Industrials
-  { symbol: 'XOM', name: 'Exxon Mobil Corporation', sector: 'Energy', industry: 'Oil & Gas Integrated', marketCapTier: 'Mega' },
-  { symbol: 'CVX', name: 'Chevron Corporation', sector: 'Energy', industry: 'Oil & Gas Integrated', marketCapTier: 'Large' },
-  { symbol: 'COP', name: 'ConocoPhillips', sector: 'Energy', industry: 'Oil & Gas E&P', marketCapTier: 'Large' },
-  { symbol: 'CAT', name: 'Caterpillar Inc.', sector: 'Industrials', industry: 'Machinery', marketCapTier: 'Large' },
-  { symbol: 'DE', name: 'Deere & Company', sector: 'Industrials', industry: 'Farm & Heavy Construction', marketCapTier: 'Large' },
-  { symbol: 'GE', name: 'GE Aerospace', sector: 'Industrials', industry: 'Aerospace & Defense', marketCapTier: 'Large' },
-  { symbol: 'BA', name: 'Boeing Company', sector: 'Industrials', industry: 'Aerospace & Defense', marketCapTier: 'Large' },
-  { symbol: 'LMT', name: 'Lockheed Martin Corp.', sector: 'Industrials', industry: 'Aerospace & Defense', marketCapTier: 'Large' },
-  { symbol: 'RTX', name: 'RTX Corporation', sector: 'Industrials', industry: 'Aerospace & Defense', marketCapTier: 'Large' },
-
-  // Healthcare & Consumer Giants
-  { symbol: 'WMT', name: 'Walmart Inc.', sector: 'Consumer Defensive', industry: 'Discount Stores', marketCapTier: 'Mega' },
-  { symbol: 'COST', name: 'Costco Wholesale Corp.', sector: 'Consumer Defensive', industry: 'Discount Stores', marketCapTier: 'Mega' },
-  { symbol: 'PG', name: 'Procter & Gamble Company', sector: 'Consumer Defensive', industry: 'Household & Personal Products', marketCapTier: 'Mega' },
-  { symbol: 'HD', name: 'The Home Depot Inc.', sector: 'Consumer Cyclical', industry: 'Home Improvement Retail', marketCapTier: 'Large' },
-  { symbol: 'MCD', name: "McDonald's Corporation", sector: 'Consumer Cyclical', industry: 'Restaurants', marketCapTier: 'Large' },
-  { symbol: 'DIS', name: 'Walt Disney Company', sector: 'Communication Services', industry: 'Entertainment', marketCapTier: 'Large' },
-  { symbol: 'NFLX', name: 'Netflix Inc.', sector: 'Communication Services', industry: 'Entertainment', marketCapTier: 'Large' },
-  { symbol: 'UNH', name: 'UnitedHealth Group Inc.', sector: 'Healthcare', industry: 'Healthcare Plans', marketCapTier: 'Mega' },
-  { symbol: 'JNJ', name: 'Johnson & Johnson', sector: 'Healthcare', industry: 'Drug Manufacturers', marketCapTier: 'Mega' },
-  { symbol: 'ABBV', name: 'AbbVie Inc.', sector: 'Healthcare', industry: 'Drug Manufacturers', marketCapTier: 'Large' },
-  { symbol: 'PFE', name: 'Pfizer Inc.', sector: 'Healthcare', industry: 'Drug Manufacturers', marketCapTier: 'Large' },
-
-  // Key Index ETFs
-  { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', sector: 'ETF', industry: 'US Broad Equity', marketCapTier: 'Mega' },
-  { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', sector: 'ETF', industry: 'Technology Growth', marketCapTier: 'Mega' },
-  { symbol: 'IWM', name: 'iShares Russell 2000 ETF', sector: 'ETF', industry: 'Small Cap Equity', marketCapTier: 'Large' },
-  { symbol: 'SMH', name: 'VanEck Semiconductor ETF', sector: 'ETF', industry: 'Semiconductors', marketCapTier: 'Large' },
-  { symbol: 'XLE', name: 'Energy Select Sector SPDR Fund', sector: 'ETF', industry: 'Energy', marketCapTier: 'Large' },
-  { symbol: 'XLF', name: 'Financial Select Sector SPDR Fund', sector: 'ETF', industry: 'Financials', marketCapTier: 'Large' },
-];
 
 export interface DetailedCandle {
   timestamp: number;
@@ -355,8 +275,9 @@ export async function fetchLiveStockChart(
   }
 
   // Find info name from universe
-  const info = COMPREHENSIVE_US_STOCK_UNIVERSE.find(s => s.symbol === cleanSymbol);
-  const name = info ? info.name : `${cleanSymbol} Corp.`;
+  const { universe } = await import('./universeService');
+  const info = universe.get(cleanSymbol);
+  const name = info ? info.name : cleanSymbol;
 
   // Detect recent candlestick patterns in the last 5 candles
   const patternsDetected: string[] = [];

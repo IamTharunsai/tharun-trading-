@@ -4,24 +4,12 @@ import { useStore } from '../store';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { AGENTS } from '../constants/agents';
-
-const CRYPTO_ASSETS = ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX', 'LINK'];
-
-export const SECTOR_CATEGORIES: Record<string, string[]> = {
-  'AI & Hyperscale Compute': ['NVDA', 'MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'AMD', 'PLTR', 'AVGO', 'MRVL'],
-  'Power & Nuclear (AI Boom)': ['CEG', 'VST', 'OKLO', 'CCJ', 'TLN', 'NEE', 'SO', 'DUK'],
-  'Grid Hardware & Cooling': ['ETN', 'PWR', 'GEV', 'VRT', 'HUBB'],
-  'Defense, Drones & Aerospace': ['LMT', 'RTX', 'NOC', 'GD', 'AVAV', 'KTOS', 'BA'],
-  'Healthcare & GLP-1 Therapeutics': ['LLY', 'NVO', 'WST', 'CTLS', 'JNJ', 'PFE', 'ISRG', 'MDT'],
-  'Energy, Tankers & Offshore': ['XOM', 'CVX', 'OXY', 'SLB', 'BKR', 'HAL', 'STNG', 'FRO'],
-  'Financials & Regional Banks': ['JPM', 'BAC', 'GS', 'MS', 'KRE', 'HBAN', 'CFG', 'V', 'MA'],
-  'Industrials, Steel & Infrastructure': ['CAT', 'DE', 'URI', 'NUE', 'STLD', 'ACM', 'FLR', 'VMC'],
-  'Broad Market & Liquid ETFs': ['SPY', 'QQQ', 'IWM', 'XBI', 'XLE', 'XLF', 'XLV', 'XLI'],
-  'Crypto Venues': ['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'AVAX', 'LINK'],
-};
+import { isCryptoSymbol } from '../constants/assets';
+import SymbolPicker from '../components/common/SymbolPicker';
+import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
 
 function getMarket(asset: string): 'crypto' | 'stocks' {
-  return CRYPTO_ASSETS.includes(asset.toUpperCase()) ? 'crypto' : 'stocks';
+  return isCryptoSymbol(asset) ? 'crypto' : 'stocks';
 }
 
 interface AgentState {
@@ -42,8 +30,8 @@ interface TranscriptEntry {
 export default function DebateRoomPage() {
     const [agentStates, setAgentStates] = useState<Record<number, AgentState>>({});
   const [isDebating, setIsDebating] = useState(false);
-  const [currentAsset, setCurrentAsset] = useState('BTC');
-  const [selectedAsset, setSelectedAsset] = useState('BTC');
+  const [currentAsset, setCurrentAsset] = useState('');
+  const { symbol: selectedAsset, market: selectedMarket, setSymbol: setSelectedAsset } = useSelectedSymbol('all');
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [finalDecision, setFinalDecision] = useState<{ decision: string; goVotes: number; noGoVotes: number; confidence: number } | null>(null);
   const [triggering, setTriggering] = useState(false);
@@ -135,7 +123,8 @@ export default function DebateRoomPage() {
 
     socket.on('council:complete', (data: any) => {
       setIsDebating(false);
-      const { result } = data;
+      const result = data?.result;
+      if (!result) return;
       setFinalDecision({
         decision: result.finalDecision,
         goVotes: result.goVotes,
@@ -159,9 +148,10 @@ export default function DebateRoomPage() {
 
   const triggerDebate = async () => {
     if (triggering || isDebating) return;
+    if (!selectedAsset) { toast.error('Pick a symbol first'); return; }
     setTriggering(true);
     try {
-      await api.post('/agents/trigger-debate', { asset: selectedAsset, market: getMarket(selectedAsset) });
+      await api.post('/agents/trigger-debate', { asset: selectedAsset, market: selectedMarket || getMarket(selectedAsset) });
       toast(`🤖 Debate started for ${selectedAsset} — watch agents vote live!`, { duration: 5000 });
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to trigger debate');
@@ -199,43 +189,22 @@ export default function DebateRoomPage() {
 
         {/* Trigger controls */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedAsset}
-              onChange={e => setSelectedAsset(e.target.value.toUpperCase())}
-              disabled={isDebating}
-              className="px-3 py-2 border border-slate-300 bg-white text-slate-900 rounded-lg font-mono text-xs cursor-pointer focus:outline-none focus:border-blue-500"
-            >
-              {Object.entries(SECTOR_CATEGORIES).map(([cat, symbols]) => (
-                <optgroup key={cat} label={cat}>
-                  {symbols.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-
-            <span className="text-xs text-slate-400 font-mono font-bold">OR</span>
-
-            <input
-              type="text"
-              placeholder="ANY US TICKER (e.g. OKLO)"
-              value={selectedAsset}
-              onChange={e => setSelectedAsset(e.target.value.trim().toUpperCase())}
-              disabled={isDebating}
-              className="w-40 px-2.5 py-1.5 border border-slate-300 bg-white text-slate-900 font-mono text-xs rounded-lg uppercase placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
-            />
-          </div>
+          <SymbolPicker
+            value={selectedAsset}
+            onChange={(sym, meta) => { if (!isDebating) setSelectedAsset(sym, meta); }}
+            data-testid="symbol-picker"
+          />
 
           <span className="font-mono text-xs text-slate-500 font-bold">
-            [{getMarket(selectedAsset).toUpperCase()}]
+            {selectedAsset ? `[${(selectedMarket || getMarket(selectedAsset)).toUpperCase()}]` : ''}
           </span>
           <button
+            data-testid="debate-trigger"
             onClick={triggerDebate}
             disabled={triggering || isDebating || !selectedAsset}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-40"
           >
-            {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Convening...' : `▶ CONVENE COMMITTEE ON ${selectedAsset}`}
+            {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Convening...' : selectedAsset ? `▶ CONVENE COMMITTEE ON ${selectedAsset}` : 'Pick a symbol'}
           </button>
         </div>
       </div>
@@ -364,7 +333,7 @@ export default function DebateRoomPage() {
                   </div>
                 </div>
                 <div className="font-mono text-xs text-slate-600 font-medium">
-                  Synthesized Confidence: <strong className="text-slate-900 font-mono">{finalDecision.confidence?.toFixed(1)}%</strong>
+                  Synthesized Confidence: <strong className="text-slate-900 font-mono">{typeof finalDecision.confidence === 'number' ? `${finalDecision.confidence.toFixed(1)}%` : '—'}</strong>
                 </div>
               </div>
             ) : isDebating ? (

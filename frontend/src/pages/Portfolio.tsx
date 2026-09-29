@@ -1,6 +1,7 @@
 // PORTFOLIO PAGE
 import { useQuery } from '@tanstack/react-query';
-import { getPortfolio, getPositions, getSnapshots } from '../services/api';
+import { getPortfolio, getPositions, getSnapshots, getLiveAccounts } from '../services/api';
+import { brokerEquity, fmtPct, fmtUsd, num, portfolioInvested, portfolioNav, fmtPrice } from '../utils/format';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
@@ -18,31 +19,35 @@ export default function PortfolioPage() {
     ? (positions as any).positions
     : [];
 
+  const { data: liveAccounts } = useQuery({ queryKey: ['live-accounts'], queryFn: getLiveAccounts, refetchInterval: 30000, retry: false });
+
+  const nav = portfolioNav(portfolio);
+  const cash = num(portfolio?.cashBalance);
+  const positionsValue = posList.reduce((sum: number, p: any) => sum + (num(p.currentPrice ?? p.entryPrice) ?? 0) * (num(p.quantity) ?? 0), 0);
+  const invested = portfolioInvested(portfolio) ?? (posList.length ? Math.max(0, positionsValue) : null);
+  const brokerEq = brokerEquity(liveAccounts);
+  const pnlDay = num(portfolio?.pnlDay ?? portfolio?.dailyPnl);
+  const pnlDayPct = num(portfolio?.pnlDayPct ?? portfolio?.dailyPnlPct);
+
   const PIE_COLORS = ['#2563EB', '#059669', '#D97706', '#7C3AED', '#DB2777', '#0284C7', '#4F46E5'];
   const pieData = [
-    { name: 'Cash Reserve', value: portfolio?.cashBalance || 25000, color: PIE_COLORS[0] },
+    ...(cash !== null && cash > 0 ? [{ name: 'Cash Reserve', value: cash, color: PIE_COLORS[0] }] : []),
     ...posList.map((p: any, i: number) => ({
-      name: p.asset,
-      value: (p.currentPrice || p.entryPrice || 0) * (p.quantity || 0),
+      name: String(p.asset ?? '—'),
+      value: Math.abs((num(p.currentPrice ?? p.entryPrice) ?? 0) * (num(p.quantity) ?? 0)),
       color: PIE_COLORS[(i + 1) % PIE_COLORS.length]
-    }))
+    })).filter(d => d.value > 0)
   ];
 
-  const chartData = Array.isArray(snapshots) && snapshots.length > 0
-    ? snapshots.map((s: any) => ({
-        time: s.time || (s.timestamp ? format(new Date(s.timestamp), 'MM/dd') : ''),
-        value: s.value || s.totalValue || 0
-      }))
-    : [
-        { time: '09/01', value: 92400 },
-        { time: '09/05', value: 94800 },
-        { time: '09/10', value: 93900 },
-        { time: '09/15', value: 97500 },
-        { time: '09/20', value: 101200 },
-        { time: '09/23', value: (portfolio?.totalValue || 104850) },
-      ];
+  const chartData = (Array.isArray(snapshots) ? snapshots : [])
+    .map((s: any) => {
+      const d = s.timestamp ? new Date(s.timestamp) : null;
+      const valid = d && Number.isFinite(d.getTime());
+      return { time: s.time || (valid ? format(d!, 'MM/dd HH:mm') : ''), value: num(s.value ?? s.totalValue) };
+    })
+    .filter((p: any) => p.value !== null && p.value > 0);
 
-  const pnlDayPos = (portfolio?.pnlDay || 0) >= 0;
+  const pnlDayPos = (pnlDay ?? 0) >= 0;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto text-slate-900">
@@ -67,30 +72,34 @@ export default function PortfolioPage() {
       {/* Top Metrics Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          testId="stat-nav"
           label="Total Portfolio NAV"
-          value={loadingPortfolio ? '...' : `$${(portfolio?.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          sub={`Cash: $${(portfolio?.cashBalance || 0).toFixed(2)}`}
+          value={loadingPortfolio ? '...' : fmtUsd(nav)}
+          sub={`Cash: ${fmtUsd(cash)}${brokerEq !== null ? ` · Broker equity (Alpaca): ${fmtUsd(brokerEq)}` : ''}`}
           icon={<DollarSign size={16} />}
           accent mono
         />
         <StatCard
-          label="Today's Realized P&L"
-          value={`${pnlDayPos ? '+' : ''}$${(portfolio?.pnlDay || 0).toFixed(2)}`}
-          sub={`${pnlDayPos ? '+' : ''}${(portfolio?.pnlDayPct || 0).toFixed(2)}%`}
-          trend={pnlDayPos ? 'up' : 'down'}
+          testId="stat-pnl-day"
+          label="Today's P&L"
+          value={pnlDay === null ? '—' : `${pnlDayPos ? '+' : '-'}$${Math.abs(pnlDay).toFixed(2)}`}
+          sub={pnlDayPct === null ? undefined : fmtPct(pnlDayPct)}
+          trend={pnlDay === null ? undefined : pnlDayPos ? 'up' : 'down'}
           mono
         />
         <StatCard
+          testId="stat-open-positions"
           label="Active Positions"
           value={posList.length}
-          sub={`Invested: $${(portfolio?.invested || 0).toFixed(2)}`}
+          sub={`Invested: ${fmtUsd(invested)}`}
           icon={<Briefcase size={16} />}
           mono
         />
         <StatCard
+          testId="stat-cash-ratio"
           label="Cash Ratio"
-          value={`${portfolio?.totalValue ? (((portfolio?.cashBalance || 0) / portfolio.totalValue) * 100).toFixed(1) : '100'}%`}
-          sub="Risk-buffered liquidity"
+          value={nav && cash !== null ? `${Math.min(100, (cash / nav) * 100).toFixed(1)}%` : '—'}
+          sub="Cash ÷ NAV"
           icon={<TrendingUp size={16} />}
           mono
         />
@@ -104,6 +113,9 @@ export default function PortfolioPage() {
               <PieIcon size={16} className="text-blue-600" />
               <h2 className="font-semibold text-slate-900 text-sm">Capital Allocation Breakdown</h2>
             </div>
+            {pieData.length === 0 ? (
+              <div className="h-[190px] flex items-center justify-center font-mono text-xs text-slate-400">No allocation data</div>
+            ) : (
             <ResponsiveContainer width="100%" height={190}>
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} dataKey="value" paddingAngle={3}>
@@ -115,6 +127,7 @@ export default function PortfolioPage() {
                 />
               </PieChart>
             </ResponsiveContainer>
+            )}
           </div>
 
           <div className="space-y-2 mt-3 pt-3 border-t border-slate-100">
@@ -139,9 +152,14 @@ export default function PortfolioPage() {
               <TrendingUp size={16} className="text-emerald-600" />
               <h2 className="font-semibold text-slate-900 text-sm">Historical NAV Trajectory</h2>
             </div>
-            <span className="font-mono text-xs text-slate-500">Mark-to-Market Real-Time Ledger</span>
+            <span className="font-mono text-xs text-slate-500">{chartData.length} snapshots</span>
           </div>
 
+          {chartData.length === 0 ? (
+            <div className="h-[240px] flex items-center justify-center font-mono text-xs text-slate-400" data-testid="nav-history-empty">
+              No portfolio snapshots recorded yet.
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={chartData}>
               <defs>
@@ -160,6 +178,7 @@ export default function PortfolioPage() {
               <Area type="monotone" dataKey="value" stroke="#059669" strokeWidth={2.5} fill="url(#gradPortfolio)" />
             </AreaChart>
           </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -191,20 +210,20 @@ export default function PortfolioPage() {
                 {posList.map((p: any) => {
                   const isPos = (p.unrealizedPnl || 0) >= 0;
                   return (
-                    <tr key={p.asset} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={p.id || p.asset} data-testid="position-row" className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-2.5 px-2.5 font-bold text-slate-900">{p.asset}</td>
-                      <td className="py-2.5 px-2.5 text-slate-700 tabular-nums">{p.quantity?.toFixed(4)}</td>
-                      <td className="py-2.5 px-2.5 text-slate-700 tabular-nums">${p.entryPrice?.toFixed(2)}</td>
-                      <td className="py-2.5 px-2.5 text-slate-900 font-bold tabular-nums">${p.currentPrice?.toFixed(2)}</td>
-                      <td className="py-2.5 px-2.5 text-blue-700 font-bold tabular-nums">${((p.currentPrice || p.entryPrice || 0) * (p.quantity || 0))?.toFixed(2)}</td>
+                      <td className="py-2.5 px-2.5 text-slate-700 tabular-nums">{num(p.quantity) !== null ? num(p.quantity)!.toFixed(4) : '—'}</td>
+                      <td className="py-2.5 px-2.5 text-slate-700 tabular-nums">{fmtPrice(p.entryPrice)}</td>
+                      <td className="py-2.5 px-2.5 text-slate-900 font-bold tabular-nums">{fmtPrice(p.currentPrice)}</td>
+                      <td className="py-2.5 px-2.5 text-blue-700 font-bold tabular-nums">{fmtUsd((num(p.currentPrice ?? p.entryPrice) ?? 0) * (num(p.quantity) ?? 0))}</td>
                       <td className={`py-2.5 px-2.5 font-bold tabular-nums ${isPos ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {isPos ? '+' : ''}${p.unrealizedPnl?.toFixed(2)}
+                        {num(p.unrealizedPnl) === null ? '—' : `${isPos ? '+' : '-'}$${Math.abs(num(p.unrealizedPnl)!).toFixed(2)}`}
                       </td>
                       <td className={`py-2.5 px-2.5 font-bold tabular-nums ${isPos ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {isPos ? '+' : ''}{p.unrealizedPnlPct?.toFixed(2)}%
+                        {fmtPct(p.unrealizedPnlPct)}
                       </td>
-                      <td className="py-2.5 px-2.5 text-red-600 tabular-nums">${p.stopLossPrice?.toFixed(2)}</td>
-                      <td className="py-2.5 px-2.5 text-emerald-600 tabular-nums">${p.takeProfitPrice?.toFixed(2)}</td>
+                      <td className="py-2.5 px-2.5 text-red-600 tabular-nums">{num(p.stopLossPrice) ? fmtPrice(p.stopLossPrice) : '—'}</td>
+                      <td className="py-2.5 px-2.5 text-emerald-600 tabular-nums">{num(p.takeProfitPrice) ? fmtPrice(p.takeProfitPrice) : '—'}</td>
                     </tr>
                   );
                 })}

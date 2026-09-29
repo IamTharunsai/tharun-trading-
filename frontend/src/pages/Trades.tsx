@@ -9,13 +9,16 @@ import {
 } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
 import LastUpdated from '../components/common/LastUpdated';
+import { tradeOutcome, tradeAssetLabel, tradeMeta as meta, OUTCOME_CLS } from '../utils/trades';
 
 const PAGE_SIZE = 25;
+
+const truncate = (s: string, n = 60) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
 export function TradesPage() {
   const [page, setPage] = useState(1);
   const [filterMarket, setFilterMarket] = useState<'all' | 'stocks' | 'crypto' | 'polymarket'>('all');
-  const [filterOutcome, setFilterOutcome] = useState<'all' | 'winners' | 'losers' | 'open'>('all');
+  const [filterOutcome, setFilterOutcome] = useState<'all' | 'winners' | 'losers' | 'open' | 'rejected'>('all');
 
   const { data, isLoading } = useQuery({
     queryKey: ['trades-full', page, filterMarket],
@@ -46,36 +49,39 @@ export function TradesPage() {
 
     // Filter by Outcome
     if (filterOutcome === 'winners') {
-      list = list.filter((t: any) => (t.pnl || 0) > 0);
+      list = list.filter((t: any) => tradeOutcome(t) === 'WIN');
     } else if (filterOutcome === 'losers') {
-      list = list.filter((t: any) => (t.pnl || 0) < 0);
+      list = list.filter((t: any) => tradeOutcome(t) === 'LOSS');
     } else if (filterOutcome === 'open') {
-      list = list.filter((t: any) => t.status === 'OPEN');
+      list = list.filter((t: any) => tradeOutcome(t) === 'OPEN');
+    } else if (filterOutcome === 'rejected') {
+      list = list.filter((t: any) => tradeOutcome(t) === 'REJECTED');
     }
 
     return list;
   }, [rawTrades, filterMarket, filterOutcome]);
 
-  // Compute live connected KPIs for current view
+  // KPIs from CLOSED trades only (rejections / opens never count toward win rate or P&L).
   const currentStats = useMemo(() => {
-    const closed = trades.filter((t: any) => t.status === 'CLOSED');
-    const winners = closed.filter((t: any) => (t.pnl || 0) > 0);
-    const losers = closed.filter((t: any) => (t.pnl || 0) < 0);
-    const totalPnl = trades.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0);
-    const winRate = closed.length > 0 ? ((winners.length / closed.length) * 100).toFixed(1) : (stats?.winRate ? String(stats.winRate) : '0.0');
-    const totalWinsAmount = winners.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0);
-    const totalLossesAmount = Math.abs(losers.reduce((sum: number, t: any) => sum + (t.pnl || 0), 0));
-    const profitFactor = totalLossesAmount > 0 ? (totalWinsAmount / totalLossesAmount).toFixed(2) : (stats?.profitFactor ? String(stats.profitFactor) : '1.00');
-
+    const scope = rawTrades.filter((t: any) => filterMarket === 'all' || String(t.market || '').toLowerCase() === filterMarket);
+    const closed = scope.filter((t: any) => String(t.status || '').toUpperCase() === 'CLOSED' && tradeOutcome(t) !== 'REJECTED');
+    const winners = closed.filter((t: any) => tradeOutcome(t) === 'WIN');
+    const losers = closed.filter((t: any) => tradeOutcome(t) === 'LOSS');
+    const pnlOf = (t: any) => (Number.isFinite(Number(t.pnl)) ? Number(t.pnl) : 0);
+    const totalPnl = closed.reduce((sum: number, t: any) => sum + pnlOf(t), 0);
+    const totalWinsAmount = winners.reduce((sum: number, t: any) => sum + pnlOf(t), 0);
+    const totalLossesAmount = Math.abs(losers.reduce((sum: number, t: any) => sum + pnlOf(t), 0));
     return {
-      count: trades.length,
-      winRate,
-      totalPnl: totalPnl.toFixed(2),
+      count: scope.length,
+      closedCount: closed.length,
+      rejectedCount: scope.filter((t: any) => tradeOutcome(t) === 'REJECTED').length,
+      winRate: closed.length > 0 ? (winners.length / closed.length) * 100 : null,
+      totalPnl: closed.length > 0 ? totalPnl : null,
       winnersCount: winners.length,
       losersCount: losers.length,
-      profitFactor
+      profitFactor: totalLossesAmount > 0 ? totalWinsAmount / totalLossesAmount : null,
     };
-  }, [trades, stats]);
+  }, [rawTrades, filterMarket]);
 
   const total = data?.total || trades.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -83,7 +89,7 @@ export function TradesPage() {
   const exportCSV = () => {
     const headers = ['Asset', 'Market', 'Side', 'Qty', 'EntryPrice', 'ExitPrice', 'PnL', 'PnLPct', 'Status', 'OpenedAt'];
     const rows = trades.map(t => [
-      `"${t.asset}"`,
+      `"${tradeAssetLabel(t).replace(/"/g, "'")}"`,
       t.market,
       t.type,
       t.quantity,
@@ -91,7 +97,7 @@ export function TradesPage() {
       t.exitPrice || '',
       t.pnl || 0,
       t.pnlPct || 0,
-      t.status,
+      tradeOutcome(t),
       t.openedAt
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -124,6 +130,7 @@ export function TradesPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            data-testid="export-trades-csv"
             onClick={exportCSV}
             className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-700 font-bold transition shadow-xs"
           >
@@ -137,26 +144,31 @@ export function TradesPage() {
       {/* Connected Financial KPIs Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label={filterMarket === 'polymarket' ? 'Polymarket Wagers' : filterMarket === 'stocks' ? 'Stock Trades' : 'Total Executions'}
+          testId="stat-trade-count"
+          label={filterMarket === 'polymarket' ? 'Polymarket Wagers' : filterMarket === 'stocks' ? 'Stock Trades' : 'Total Orders (this page)'}
           value={currentStats.count}
+          sub={`${currentStats.closedCount} closed · ${currentStats.rejectedCount} rejected`}
           mono
         />
         <StatCard
-          label="Win Rate"
-          value={`${currentStats.winRate}%`}
-          trend={parseFloat(currentStats.winRate) >= 50 ? 'up' : 'down'}
+          testId="stat-win-rate"
+          label="Win Rate (closed)"
+          value={currentStats.winRate === null ? '—' : `${currentStats.winRate.toFixed(1)}%`}
+          sub={`${currentStats.winnersCount}W / ${currentStats.losersCount}L`}
+          trend={currentStats.winRate === null ? undefined : currentStats.winRate >= 50 ? 'up' : 'down'}
           mono
         />
         <StatCard
+          testId="stat-realized-pnl"
           label="Net Realized P&L"
-          value={`${parseFloat(currentStats.totalPnl) >= 0 ? '+' : ''}$${currentStats.totalPnl}`}
-          trend={parseFloat(currentStats.totalPnl) >= 0 ? 'up' : 'down'}
+          value={currentStats.totalPnl === null ? '—' : `${currentStats.totalPnl >= 0 ? '+' : '-'}$${Math.abs(currentStats.totalPnl).toFixed(2)}`}
+          trend={currentStats.totalPnl === null ? undefined : currentStats.totalPnl >= 0 ? 'up' : 'down'}
           mono
         />
         <StatCard
+          testId="stat-profit-factor"
           label="Profit Factor"
-          value={currentStats.profitFactor}
-          trend="up"
+          value={currentStats.profitFactor === null ? '—' : currentStats.profitFactor.toFixed(2)}
           mono
         />
       </div>
@@ -174,6 +186,7 @@ export function TradesPage() {
           ].map(m => (
             <button
               key={m.id}
+              data-testid={`trades-market-${m.id}`}
               onClick={() => { setFilterMarket(m.id as any); setPage(1); }}
               className={`px-3.5 py-1.5 rounded-lg font-mono text-xs font-bold transition-all ${
                 filterMarket === m.id
@@ -194,12 +207,14 @@ export function TradesPage() {
             { id: 'winners', label: `Winners (${currentStats.winnersCount})`, icon: CheckCircle, color: 'text-emerald-600' },
             { id: 'losers', label: `Losers (${currentStats.losersCount})`, icon: XCircle, color: 'text-red-600' },
             { id: 'open', label: 'Open Positions', icon: Clock, color: 'text-blue-600' },
+            { id: 'rejected', label: `Rejected (${currentStats.rejectedCount})`, icon: XCircle, color: 'text-slate-400' },
           ].map(o => {
             const Icon = o.icon;
             const active = filterOutcome === o.id;
             return (
               <button
                 key={o.id}
+                data-testid={`trades-outcome-${o.id}`}
                 onClick={() => { setFilterOutcome(o.id as any); setPage(1); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono text-xs font-bold transition-all ${
                   active
@@ -223,9 +238,7 @@ export function TradesPage() {
             {filterMarket !== 'all' && <span className="ml-1 text-blue-700 font-bold">in {filterMarket.toUpperCase()}</span>}
             {filterOutcome !== 'all' && <span className="ml-1 text-slate-700">({filterOutcome.toUpperCase()})</span>}
           </div>
-          <div className="text-slate-500">
-            Engine Latency: <span className="text-emerald-600 font-bold">42ms</span>
-          </div>
+
         </div>
 
         <table className="w-full text-left font-mono text-xs">
@@ -248,12 +261,23 @@ export function TradesPage() {
             {trades.map((t: any) => {
               const isPolymarket = t.market?.toLowerCase() === 'polymarket';
               const isPos = (t.pnl || 0) >= 0;
+              const outcome = tradeOutcome(t);
+              const m = meta(t);
+              const assetLabel = tradeAssetLabel(t);
+              const isIntraday = m.lane === 'INTRADAY';
+              const isSynced = t.reconciliationStatus === 'IMPORTED_FROM_BROKER';
 
               return (
-                <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                <tr key={t.id} data-testid="trade-row" data-outcome={outcome} className={`hover:bg-slate-50/80 transition-colors ${outcome === 'REJECTED' ? 'opacity-60' : ''}`}>
                   {/* Asset */}
-                  <td className="py-3 px-3 font-bold text-slate-900 max-w-[220px] truncate" title={t.asset}>
-                    {t.asset}
+                  <td className="py-3 px-3 font-bold text-slate-900 max-w-[260px]" title={assetLabel}>
+                    <div className="truncate">{truncate(assetLabel)}</div>
+                    {(isIntraday || isSynced) && (
+                      <div className="flex gap-1 mt-0.5">
+                        {isIntraday && <span data-testid="badge-intraday" className="px-1.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">INTRADAY</span>}
+                        {isSynced && <span data-testid="badge-synced" className="px-1.5 rounded text-[9px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">SYNCED FROM BROKER</span>}
+                      </div>
+                    )}
                   </td>
 
                   {/* Market Badge */}
@@ -287,7 +311,7 @@ export function TradesPage() {
 
                   {/* Entry */}
                   <td className="py-3 px-3 text-slate-700 tabular-nums">
-                    ${t.entryPrice != null ? Number(t.entryPrice).toFixed(isPolymarket ? 2 : 2) : '—'}
+                    {t.entryPrice != null ? `$${Number(t.entryPrice).toFixed(2)}` : '—'}
                   </td>
 
                   {/* Exit */}
@@ -296,36 +320,30 @@ export function TradesPage() {
                   </td>
 
                   {/* PnL */}
-                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnl != null ? (isPos ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
-                    {t.pnl != null ? `${isPos ? '+' : ''}$${Number(t.pnl).toFixed(2)}` : '—'}
+                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnl != null && outcome !== 'REJECTED' ? (isPos ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
+                    {t.pnl != null && outcome !== 'REJECTED' ? `${isPos ? '+' : '-'}$${Math.abs(Number(t.pnl)).toFixed(2)}` : '—'}
                   </td>
 
                   {/* ROI */}
-                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnlPct != null ? (isPos ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
-                    {t.pnlPct != null ? `${isPos ? '+' : ''}${Number(t.pnlPct).toFixed(2)}%` : '—'}
+                  <td className={`py-3 px-3 font-bold tabular-nums ${t.pnlPct != null && outcome !== 'REJECTED' ? (isPos ? 'text-emerald-600' : 'text-red-600') : 'text-slate-400'}`}>
+                    {t.pnlPct != null && outcome !== 'REJECTED' ? `${isPos ? '+' : ''}${Number(t.pnlPct).toFixed(2)}%` : '—'}
                   </td>
 
                   {/* Status */}
                   <td className="py-3 px-3">
-                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                      t.status === 'OPEN'
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : isPos
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : 'bg-slate-100 text-slate-600 border border-slate-200'
-                    }`}>
-                      {t.status === 'OPEN' ? 'OPEN' : isPos ? 'WIN' : 'LOSS'}
+                    <span data-testid="trade-outcome" className={`px-2 py-0.5 rounded font-bold text-[10px] ${OUTCOME_CLS[outcome]}`}>
+                      {outcome}
                     </span>
                   </td>
 
                   {/* Strategy */}
-                  <td className="py-3 px-3 text-slate-500 truncate max-w-[160px]" title={t.exitReason || t.entryReason}>
-                    {t.exitReason || t.entryReason || (isPolymarket ? 'Kelly Bayesian Oracle' : 'Wyckoff Flow')}
+                  <td className="py-3 px-3 text-slate-500 truncate max-w-[200px]" title={t.exitReason || t.entryReason || m.setup || ''}>
+                    {t.exitReason || t.entryReason || m.setup || '—'}
                   </td>
 
                   {/* Timestamp */}
                   <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
-                    {format(new Date(t.openedAt || Date.now()), 'MM/dd HH:mm:ss')}
+                    {(() => { const d = new Date(t.openedAt || t.createdAt); return Number.isFinite(d.getTime()) ? format(d, 'MM/dd HH:mm:ss') : '—'; })()}
                   </td>
                 </tr>
               );
