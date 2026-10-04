@@ -14,6 +14,13 @@ import RiskMonitor from '../components/portfolio/RiskMonitor';
 import TopMovers from '../components/dashboard/TopMovers';
 import IntradayCard from '../components/dashboard/IntradayCard';
 import AgentActivityTable from '../components/dashboard/AgentActivityTable';
+// ── New market intelligence panels (OpenTerminal 5-panel suite + Polymarket) ──
+import SectorHeatmap from '../components/panels/SectorHeatmap';
+import CryptoBoard from '../components/panels/CryptoBoard';
+import YieldCurve from '../components/panels/YieldCurve';
+import OptionsChain from '../components/panels/OptionsChain';
+import MarketScreener from '../components/panels/MarketScreener';
+import PolymarketGreedAgent from '../components/panels/PolymarketGreedAgent';
 import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2, Zap, Play, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
@@ -219,6 +226,39 @@ export default function DashboardPage() {
 
       {/* Per-asset agent reasoning, win rate, trade frequency, strategy adaptation */}
       <AgentActivityTable />
+
+      {/* ── Market Intelligence Suite (OpenTerminal 5-panel + Polymarket Greed) */}
+      <div>
+        <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+          <BarChart2 size={20} className="text-blue-600" />
+          Market Intelligence Suite
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+            LIVE
+          </span>
+        </h2>
+
+        {/* Row 1: Sector Heatmap + Crypto Overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <SectorHeatmap />
+          <CryptoBoard />
+        </div>
+
+        {/* Row 2: Yield Curve + Options Chain */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <YieldCurve />
+          <OptionsChain symbol={selectedAsset || 'SPY'} />
+        </div>
+
+        {/* Row 3: Market Screener full-width */}
+        <div className="mb-6">
+          <MarketScreener />
+        </div>
+
+        {/* Row 4: Polymarket Money Greed Agent */}
+        <div>
+          <PolymarketGreedAgent />
+        </div>
+      </div>
 
       {/* Recent Trades */}
       <RecentTrades />

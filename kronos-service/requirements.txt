@@ -12,3 +12,23 @@ tqdm==4.68.4
 quantstats>=0.0.62
 scikit-learn>=1.3.0
 lightgbm>=4.0.0
+
+# ── ML Addons (KronosMLAddons.py) ──────────────────────────────────────────
+# FinBERT financial sentiment analysis (ProsusAI)
+transformers>=4.40.0
+# Note: torch already listed above — required by transformers
+
+# pandas-ta: 130+ technical indicators (replaces TA-Lib, no C compilation needed)
+pandas-ta>=0.3.14b0
+
+# neuralforecast: NHITS / PatchTST / TimesNet time-series forecasting (Nixtla)
+neuralforecast>=1.7.0
+
+# PyPortfolioOpt: efficient frontier, HRP, Black-Litterman portfolio optimization
+PyPortfolioOpt>=1.5.5
+
+# empyrical: Sharpe, Sortino, Calmar, alpha/beta, max drawdown (Quantopian)
+empyrical>=0.5.5
+
+# cvxpy: required by PyPortfolioOpt for convex optimization
+cvxpy>=1.4.0

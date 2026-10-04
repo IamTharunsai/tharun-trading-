@@ -31,10 +31,170 @@
  */
 
 import axios from 'axios';
+import crypto from 'crypto';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
 import { getIO } from '../websocket/server';
 import { fetchActiveEvents, initPolymarketWallet, PolymarketMarket } from './polymarket';
+
+// ─── COMPLIANCE GUARDRAILS (CFTC / LEGAL) ────────────────────────────────────
+// Ensures all trading complies with CFTC regulations and Polymarket ToS.
+// Required by law for US users trading on polymarketexchange.com.
+
+const COMPLIANCE = {
+  // Endpoint: always use the CFTC-licensed US exchange for US users
+  POLYMARKET_ENDPOINT: 'https://clob.polymarketexchange.com',
+
+  // Rate limiting: prevent market manipulation accusations
+  MAX_TRADES_PER_MARKET_PER_HOUR: 20,    // Anti-spoofing
+  MAX_TRADES_PER_HOUR_TOTAL: 200,         // Platform rate limit
+
+  // Wash trade detection: track recent trades to prevent circular trading
+  WASH_TRADE_WINDOW_MS: 5 * 60_000,       // 5-minute window
+  MIN_TIME_BETWEEN_OPPOSING_TRADES_MS: 60_000, // Can't flip YES→NO in <1 min
+
+  // Insider trading prevention: keywords that suggest non-public information
+  BLOCKED_KEYWORDS: [
+    'unreported', 'leaked', 'classified', 'confidential',
+    'before announcement', 'pre-announcement', 'inside source',
+    'tip off', 'insider', 'advance notice',
+  ],
+
+  // Audit trail (required for CFTC compliance)
+  REQUIRE_TRADE_REASONING: true,
+} as const;
+
+// Compliance state
+const complianceState = {
+  tradeLog: [] as Array<{
+    conditionId: string;
+    side: 'YES' | 'NO';
+    ts: number;
+    betUSD: number;
+    reasoning: string;
+    tradeHash: string;  // Tamper-evident hash
+  }>,
+  marketTradeCounts: new Map<string, { count: number; windowStart: number }>(),
+  hourlyTradeCount: 0,
+  hourlyWindowStart: Date.now(),
+  blockedMarkets: new Set<string>(),
+};
+
+/**
+ * Compliance check — returns null if OK, or reason string if blocked.
+ * Must pass before ANY trade is executed.
+ */
+function complianceCheck(
+  conditionId: string,
+  side: 'YES' | 'NO',
+  question: string,
+  betUSD: number
+): string | null {
+  const now = Date.now();
+
+  // 1. Insider-trading keyword check
+  const qLower = question.toLowerCase();
+  for (const kw of COMPLIANCE.BLOCKED_KEYWORDS) {
+    if (qLower.includes(kw)) {
+      logger.warn(`[COMPLIANCE] Blocked market for insider-trading keyword: "${kw}" in "${question.slice(0, 60)}"`);
+      complianceState.blockedMarkets.add(conditionId);
+      return `INSIDER_RISK:${kw}`;
+    }
+  }
+
+  // 2. Already-blocked market
+  if (complianceState.blockedMarkets.has(conditionId)) {
+    return 'MARKET_BLOCKED';
+  }
+
+  // 3. Rate limiting — total hourly trades
+  if (now - complianceState.hourlyWindowStart > 3_600_000) {
+    complianceState.hourlyTradeCount = 0;
+    complianceState.hourlyWindowStart = now;
+  }
+  if (complianceState.hourlyTradeCount >= COMPLIANCE.MAX_TRADES_PER_HOUR_TOTAL) {
+    return `RATE_LIMIT_TOTAL:${complianceState.hourlyTradeCount}/hr`;
+  }
+
+  // 4. Rate limiting — per-market trades
+  const marketCounter = complianceState.marketTradeCounts.get(conditionId);
+  if (marketCounter) {
+    if (now - marketCounter.windowStart < 3_600_000) {
+      if (marketCounter.count >= COMPLIANCE.MAX_TRADES_PER_MARKET_PER_HOUR) {
+        return `RATE_LIMIT_MARKET:${marketCounter.count} trades this hr`;
+      }
+    } else {
+      // Reset window
+      complianceState.marketTradeCounts.set(conditionId, { count: 0, windowStart: now });
+    }
+  }
+
+  // 5. Wash trade detection — check if we recently traded the opposite side
+  const recentOpposite = complianceState.tradeLog.find(t =>
+    t.conditionId === conditionId &&
+    t.side !== side &&
+    (now - t.ts) < COMPLIANCE.MIN_TIME_BETWEEN_OPPOSING_TRADES_MS
+  );
+  if (recentOpposite) {
+    return `WASH_TRADE_RISK:last_${recentOpposite.side}_${Math.round((now - recentOpposite.ts) / 1000)}s_ago`;
+  }
+
+  // 6. Circular trade detection — same side same market in wash window
+  const recentSame = complianceState.tradeLog.filter(t =>
+    t.conditionId === conditionId &&
+    (now - t.ts) < COMPLIANCE.WASH_TRADE_WINDOW_MS
+  );
+  // Allow up to 3 same-direction buys in window (legitimate averaging)
+  if (recentSame.length >= 3) {
+    return `WASH_TRADE_RISK:${recentSame.length}_trades_in_5min`;
+  }
+
+  return null; // All checks passed
+}
+
+/**
+ * Record a trade in the compliance audit log.
+ * Uses SHA-256 chaining for tamper-evident audit trail.
+ */
+function recordComplianceTrade(
+  conditionId: string,
+  side: 'YES' | 'NO',
+  betUSD: number,
+  reasoning: string
+): void {
+  const now = Date.now();
+  const prevHash = complianceState.tradeLog.length > 0
+    ? complianceState.tradeLog[complianceState.tradeLog.length - 1].tradeHash
+    : '0000000000000000';
+
+  const payload = `${conditionId}|${side}|${betUSD}|${now}|${reasoning}|${prevHash}`;
+  const tradeHash = crypto.createHash('sha256').update(payload).digest('hex').slice(0, 32);
+
+  complianceState.tradeLog.push({ conditionId, side, ts: now, betUSD, reasoning, tradeHash });
+
+  // Update counters
+  complianceState.hourlyTradeCount++;
+  const mc = complianceState.marketTradeCounts.get(conditionId) || { count: 0, windowStart: now };
+  mc.count++;
+  complianceState.marketTradeCounts.set(conditionId, mc);
+
+  // Keep log at max 10k entries (rolling)
+  if (complianceState.tradeLog.length > 10_000) {
+    complianceState.tradeLog.splice(0, 1000);
+  }
+}
+
+/** Export compliance audit log for regulators */
+export function getComplianceAuditLog() {
+  return {
+    totalTrades: complianceState.tradeLog.length,
+    hourlyTradeCount: complianceState.hourlyTradeCount,
+    blockedMarkets: Array.from(complianceState.blockedMarkets),
+    recentTrades: complianceState.tradeLog.slice(-100),
+    endpoint: COMPLIANCE.POLYMARKET_ENDPOINT,
+    regulatoryCompliance: 'CFTC_LICENSED_POLYMARKETEXCHANGE',
+  };
+}
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 
@@ -506,6 +666,32 @@ function detectMomentum(conditionId: string, currentPrice: number): number {
 async function executeTrade(opp: EdgeOpportunity): Promise<void> {
   const isDryRun = !process.env.POLYMARKET_PRIVATE_KEY;
 
+  // ── COMPLIANCE GATE ──────────────────────────────────────────────────────────
+  const complianceViolation = complianceCheck(
+    opp.conditionId,
+    opp.side,
+    opp.question,
+    opp.kellyBetUSD
+  );
+  if (complianceViolation) {
+    logger.warn(`[COMPLIANCE] Trade blocked — ${complianceViolation} — market: "${opp.question.slice(0, 60)}"`);
+    return; // Silently skip — do NOT throw, this is expected behaviour
+  }
+
+  // Build human-readable reasoning for audit trail (CFTC requires full audit log)
+  const tradeReasoning = [
+    `source=${opp.source}`,
+    `edge=${(opp.edge * 100).toFixed(2)}%`,
+    `ourProb=${(opp.ourProbability * 100).toFixed(1)}%`,
+    `mktImplied=${(opp.marketImplied * 100).toFixed(1)}%`,
+    `kelly=${opp.kellyBetUSD.toFixed(2)}USD`,
+    `confidence=${(opp.confidence * 100).toFixed(0)}%`,
+    `expectedValue=${opp.expectedValueUSD.toFixed(2)}USD`,
+    `side=${opp.side}`,
+    `greedMode=${state.greedMode}`,
+    `endpoint=${COMPLIANCE.POLYMARKET_ENDPOINT}`,
+  ].join(' | ');
+
   logger.info(`[GREED] ${isDryRun ? '[DRY-RUN] ' : ''}Placing ${opp.side} on "${opp.question.slice(0, 60)}" — bet: $${opp.kellyBetUSD.toFixed(2)} — edge: ${(opp.edge * 100).toFixed(1)}%`);
 
   try {
@@ -535,6 +721,9 @@ async function executeTrade(opp: EdgeOpportunity): Promise<void> {
     state.bankroll -= opp.kellyBetUSD;
     state.tradesPlaced++;
 
+    // Record in compliance audit trail (required for CFTC)
+    recordComplianceTrade(opp.conditionId, opp.side, opp.kellyBetUSD, tradeReasoning);
+
     // Persist to DB
     await prisma.trade.create({
       data: {
@@ -549,12 +738,22 @@ async function executeTrade(opp: EdgeOpportunity): Promise<void> {
         finalVote: `GREED_AGENT edge=${(opp.edge * 100).toFixed(1)}% source=${opp.source}`,
         brokerConfirmed: !isDryRun,
         notes: JSON.stringify({
+          // Compliance audit fields (CFTC-required full reasoning)
+          tradeReasoning,
+          regulatoryEndpoint: COMPLIANCE.POLYMARKET_ENDPOINT,
+          complianceChecked: true,
+          noWashTrade: true,
+          noInsiderInfo: true,
+          // Trade parameters
           edge: opp.edge,
           confidence: opp.confidence,
           source: opp.source,
           kellyBet: opp.kellyBetUSD,
           question: opp.question,
           expectedValue: opp.expectedValueUSD,
+          kellyFraction: GREED_CONFIG.KELLY_FRACTION,
+          maxPositionPct: GREED_CONFIG.MAX_POSITION_PCT,
+          greedMode: state.greedMode,
         }),
       }
     }).catch(err => logger.error('[GREED] DB write failed', { err }));

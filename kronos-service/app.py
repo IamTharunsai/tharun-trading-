@@ -47,6 +47,15 @@ try:
 except ImportError as e:
     logging.warning(f"QuantStats/FreqAI addons not available: {e}")
 
+# ── ML Addons: FinBERT sentiment, pandas-ta indicators, neuralforecast,
+#               PyPortfolioOpt, empyrical metrics ─────────────────────────────
+try:
+    from KronosMLAddons import ml_addons_bp
+    app.register_blueprint(ml_addons_bp, url_prefix='/api')
+    logging.info("✅ ML Addons registered: /api/sentiment, /api/indicators, /api/ml-forecast, /api/portfolio/optimize, /api/metrics/advanced, /api/ml-health")
+except ImportError as e:
+    logging.warning(f"ML addons not available (install requirements): {e}")
+
 if __name__ == "__main__":
     model_loader.get_predictor()  # load at boot, not on first request
     app.run(host="0.0.0.0", port=int(__import__("os").environ.get("PORT", "8000")))
