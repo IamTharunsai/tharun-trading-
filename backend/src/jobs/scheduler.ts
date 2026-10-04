@@ -148,19 +148,31 @@ export function initScheduler() {
     logger.info(`${label} — screened top ${symbols.length} opportunities: ${symbols.join(', ')}`);
     let tried = 0;
     let entries = 0;
-    for (const symbol of symbols) {
+    // Run stocks in parallel mini-batches of 3 — each debate is independent
+    // (debateLocks prevents double-entry on the same asset). Batch size is
+    // intentionally small: Polygon REST is rate-limited to ~5 req/s, and the
+    // 5 s inter-batch pause keeps pressure within the free-tier window.
+    const STOCK_BATCH = 3;
+    for (let i = 0; i < symbols.length; i += STOCK_BATCH) {
       if (isKillSwitchActive()) return tried;
-      const transcript = await runDebateForAsset(symbol, 'stocks').catch(err => {
-        logger.error(`${label} debate failed`, { err, symbol });
-        return null;
-      });
-      tried++;
+      const batch = symbols.slice(i, i + STOCK_BATCH);
+      const results = await Promise.all(
+        batch.map(symbol =>
+          runDebateForAsset(symbol, 'stocks').catch(err => {
+            logger.error(`${label} debate failed`, { err, symbol });
+            return null;
+          })
+        )
+      );
+      tried += batch.length;
       await new Promise(r => setTimeout(r, 5000));
-      if (transcript?.tradeExecuted) {
-        entries++;
-        logger.info(`${label} — trade executed on ${symbol} (${entries}/${MAX_SWING_ENTRIES_PER_WINDOW} this window)`);
-        if (entries >= MAX_SWING_ENTRIES_PER_WINDOW) return tried;
+      for (const transcript of results) {
+        if (transcript?.tradeExecuted) {
+          entries++;
+          logger.info(`${label} — trade executed (${entries}/${MAX_SWING_ENTRIES_PER_WINDOW} this window)`);
+        }
       }
+      if (entries >= MAX_SWING_ENTRIES_PER_WINDOW) return tried;
     }
     return tried;
   };
@@ -202,16 +214,28 @@ export function initScheduler() {
   });
 
   // ── CRYPTO: once per day at 8 AM ET — stop early once one trades ─────────
+  // Runs coins in parallel batches of 3 (3× speedup vs sequential) while still
+  // honouring the stop-on-first-trade contract: if ANY coin in a batch trades,
+  // we break out before processing the next batch. The 5 s inter-batch pause
+  // keeps Binance / Alpaca rate-limit pressure low.
   cron.schedule('0 8 * * *', async () => {
     if (isKillSwitchActive()) return;
-    logger.info('🪙 DAILY CRYPTO SCAN...');
-    for (const coin of CRYPTO_SCAN_LIST) {
-      const transcript = await runDebateForAsset(coin, 'crypto').catch(() => null);
-      await new Promise(r => setTimeout(r, 5000));
-      if (transcript?.tradeExecuted) {
-        logger.info(`🪙 Trade found on ${coin}, stopping crypto scan`);
+    logger.info('🪙 DAILY CRYPTO SCAN (parallel batches of 3)...');
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < CRYPTO_SCAN_LIST.length; i += BATCH_SIZE) {
+      if (isKillSwitchActive()) break;
+      const batch = CRYPTO_SCAN_LIST.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(coin => runDebateForAsset(coin, 'crypto').catch(() => null))
+      );
+      const traded = results.find(r => r?.tradeExecuted);
+      if (traded) {
+        const tradedCoin = batch[results.indexOf(traded)];
+        logger.info(`🪙 Trade found on ${tradedCoin}, stopping crypto scan`);
         break;
       }
+      // Brief inter-batch pause to respect Binance WebSocket rate limits
+      await new Promise(r => setTimeout(r, 3000));
     }
   }, { timezone: ET_ZONE });
 
@@ -272,26 +296,31 @@ export function initScheduler() {
     const cryptoAssets = CRYPTO_ASSETS.slice(0, 3).map(a => ({ asset: a, market: 'crypto' as const })).filter(a => !heldSymbols.has(a.asset));
     const stockAssets = getNextStockBatch(2).map(a => ({ asset: a, market: 'stocks' as const })).filter(a => !heldSymbols.has(a.asset));
     const regimeAssets = [...heldAssets, ...cryptoAssets, ...stockAssets];
-    for (const { asset, market } of regimeAssets) {
-      try {
-        const snapshot = await buildMarketSnapshot(asset, market);
-        if (!snapshot) continue;
-        const bWidth = (snapshot.indicators.bollingerBands.upper - snapshot.indicators.bollingerBands.lower) / snapshot.indicators.bollingerBands.middle;
-        await detectMarketRegime(asset, {
-          price: snapshot.price,
-          priceChange24h: snapshot.priceChangePct24h,
-          rsi: snapshot.indicators.rsi14,
-          macdHistogram: snapshot.indicators.macd.histogram,
-          bollingerWidth: bWidth,
-          ema9: snapshot.indicators.ema9,
-          ema21: snapshot.indicators.ema21,
-          ema200: snapshot.indicators.ema200,
-          volume24h: snapshot.volume24h,
-          volumeAvg20: snapshot.indicators.volumeAvg20,
-          atr14: snapshot.indicators.atr14,
-        });
-      } catch (err) { logger.error(`Regime detection failed for ${asset}`, { err }); }
-    }
+    // Run all regime detections in parallel — each is an independent snapshot
+    // fetch + LLM classification with no cross-asset dependencies. Was sequential
+    // before (O(n × latency)); now O(max_latency) regardless of list length.
+    await Promise.allSettled(
+      regimeAssets.map(async ({ asset, market }) => {
+        try {
+          const snapshot = await buildMarketSnapshot(asset, market);
+          if (!snapshot) return;
+          const bWidth = (snapshot.indicators.bollingerBands.upper - snapshot.indicators.bollingerBands.lower) / snapshot.indicators.bollingerBands.middle;
+          await detectMarketRegime(asset, {
+            price: snapshot.price,
+            priceChange24h: snapshot.priceChangePct24h,
+            rsi: snapshot.indicators.rsi14,
+            macdHistogram: snapshot.indicators.macd.histogram,
+            bollingerWidth: bWidth,
+            ema9: snapshot.indicators.ema9,
+            ema21: snapshot.indicators.ema21,
+            ema200: snapshot.indicators.ema200,
+            volume24h: snapshot.volume24h,
+            volumeAvg20: snapshot.indicators.volumeAvg20,
+            atr14: snapshot.indicators.atr14,
+          });
+        } catch (err) { logger.error(`Regime detection failed for ${asset}`, { err }); }
+      })
+    );
   });
 
   // ── DAILY 11:59 PM: Generate Journal ─────────────────────────────────────
@@ -371,7 +400,7 @@ export function initScheduler() {
   });
 
   // ── Mark-to-market open positions every 5 minutes ────────────────────────
-  schedule.scheduleJob('*/5 * * * *', async () => {
+  cron.schedule('*/5 * * * *', async () => {
     try {
       const { markToMarketOpenPositions } = await import('../trading/executionEngine');
       await markToMarketOpenPositions();
@@ -379,7 +408,7 @@ export function initScheduler() {
   });
 
   // ── Verify audit ledger chain integrity daily at 6 AM ────────────────────
-  schedule.scheduleJob('0 6 * * *', async () => {
+  cron.schedule('0 6 * * *', async () => {
     try {
       const { verifyChain } = await import('../services/auditLedger');
       const result = await verifyChain();
@@ -387,7 +416,7 @@ export function initScheduler() {
         logger.error(`[LEDGER ALERT] Chain corruption at sequence ${result.firstCorruptedSequence}`);
         // TODO: send Telegram/email alert
       } else {
-        logger.info(`[LEDGER] Chain integrity OK — ${result.totalEvents} events verified`);
+        logger.info(`[LEDGER] Chain integrity OK — ${result.count} events verified`);
       }
     } catch (err) { logger.error('Ledger integrity check failed', { err }); }
   });

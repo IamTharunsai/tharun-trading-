@@ -60,7 +60,7 @@ export interface TechnicalIndicators {
 }
 
 export interface AgentVote {
-  agentId: number;
+  agentId: string | number;
   agentName: string;
   vote: VoteDirection;
   confidence: number; // 0-100

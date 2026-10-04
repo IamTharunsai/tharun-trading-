@@ -63,7 +63,7 @@ export async function syncBrokerPositions(): Promise<BrokerSyncResult> {
     const current = parseFloat(p.current_price) || entry;
     const side = p.side === 'short' ? 'SELL' : 'BUY';
     const unrealizedPnl = parseFloat(p.unrealized_pl) || 0;
-    const existing = dbBySym.get(sym);
+    const existing = dbBySym.get(sym) as any;
     if (existing) {
       await prisma.position.update({
         where: { id: existing.id },

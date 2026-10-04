@@ -13,7 +13,7 @@
  * 4. Structured reasoning chains between analyst layers
  */
 
-import type { AgentVote } from './types';
+import type { AgentVote, VoteDirection } from './types';
 
 export interface FirmDebateInput {
   asset: string;
@@ -199,14 +199,15 @@ export async function runFirmDebate(
     const pmDecision = await runPortfolioManagerLayer(input, allContext);
 
     // Build agent vote array for compatibility with existing debate system
+    const ts = Date.now();
     const agentVotes: AgentVote[] = [
-      { agentId: 'firm-fundamentals', agentName: 'Fundamentals Analyst', signal: traderDecision.signal, confidence: 70, reasoning: research.fundamentalReport.slice(0, 200), tier: 2 },
-      { agentId: 'firm-sentiment', agentName: 'Sentiment Analyst', signal: traderDecision.signal, confidence: research.sentimentScore, reasoning: `Sentiment score: ${research.sentimentScore}`, tier: 2 },
-      { agentId: 'firm-news', agentName: 'News Analyst', signal: traderDecision.signal, confidence: 65, reasoning: research.newsSummary.slice(0, 200), tier: 2 },
-      { agentId: 'firm-technical', agentName: 'Technical Analyst', signal: traderDecision.signal, confidence: research.technicalSignals.overallScore, reasoning: `RSI=${research.technicalSignals.rsi}, MACD=${research.technicalSignals.macdSignal}`, tier: 1 },
-      { agentId: 'firm-bull', agentName: 'Bull Researcher', signal: 'BUY', confidence: adversarial.bullConfidence, reasoning: adversarial.bullCase.slice(0, 200), tier: 2 },
-      { agentId: 'firm-bear', agentName: 'Bear Researcher', signal: 'SELL', confidence: adversarial.bearConfidence, reasoning: adversarial.bearCase.slice(0, 200), tier: 2 },
-      { agentId: 'firm-trader', agentName: 'Trader', signal: traderDecision.signal, confidence: traderDecision.confidence, reasoning: traderDecision.rationale.slice(0, 200), tier: 3 },
+      { agentId: 'firm-fundamentals', agentName: 'Fundamentals Analyst', vote: traderDecision.signal as VoteDirection, signal: traderDecision.signal, confidence: 70, reasoning: research.fundamentalReport.slice(0, 200), keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 2 },
+      { agentId: 'firm-sentiment', agentName: 'Sentiment Analyst', vote: traderDecision.signal as VoteDirection, signal: traderDecision.signal, confidence: research.sentimentScore, reasoning: `Sentiment score: ${research.sentimentScore}`, keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 2 },
+      { agentId: 'firm-news', agentName: 'News Analyst', vote: traderDecision.signal as VoteDirection, signal: traderDecision.signal, confidence: 65, reasoning: research.newsSummary.slice(0, 200), keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 2 },
+      { agentId: 'firm-technical', agentName: 'Technical Analyst', vote: traderDecision.signal as VoteDirection, signal: traderDecision.signal, confidence: research.technicalSignals.overallScore, reasoning: `RSI=${research.technicalSignals.rsi}, MACD=${research.technicalSignals.macdSignal}`, keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 1 },
+      { agentId: 'firm-bull', agentName: 'Bull Researcher', vote: 'BUY', signal: 'BUY', confidence: adversarial.bullConfidence, reasoning: adversarial.bullCase.slice(0, 200), keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 2 },
+      { agentId: 'firm-bear', agentName: 'Bear Researcher', vote: 'SELL', signal: 'SELL', confidence: adversarial.bearConfidence, reasoning: adversarial.bearCase.slice(0, 200), keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 2 },
+      { agentId: 'firm-trader', agentName: 'Trader', vote: traderDecision.signal as VoteDirection, signal: traderDecision.signal, confidence: traderDecision.confidence, reasoning: traderDecision.rationale.slice(0, 200), keyFactors: [], riskWarnings: [], executionTime: 0, timestamp: ts, tier: 3 },
     ];
 
     return {

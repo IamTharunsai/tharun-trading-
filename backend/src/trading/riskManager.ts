@@ -109,6 +109,37 @@ import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { TradeSignal, PortfolioState } from '../agents/types';
 
+// ─── Real 7-day rolling drawdown from DB portfolio snapshots ─────────────────
+/**
+ * Queries the portfolioSnapshot table for the highest value in the past 7 days
+ * and computes the drawdown from that peak to the current portfolio value.
+ * Falls back to 0 if no snapshots are found (new account / first week).
+ */
+async function computeWeeklyDrawdownPct(currentValue: number): Promise<number> {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // Find the highest total portfolio value recorded over the last 7 days
+    const snapshots = await (prisma as any).portfolioSnapshot.findMany({
+      where: { timestamp: { gte: sevenDaysAgo } },
+      select: { totalValue: true },
+      orderBy: { timestamp: 'asc' },
+    }).catch(() => [] as { totalValue: number }[]);
+
+    if (!snapshots || snapshots.length === 0) return 0;
+
+    const weeklyPeak = Math.max(...snapshots.map((s: { totalValue: number }) => Number(s.totalValue)));
+    if (weeklyPeak <= 0) return 0;
+
+    const dd = Math.max(0, (weeklyPeak - currentValue) / weeklyPeak * 100);
+    logger.info(`[RISK] Weekly drawdown: peak=$${weeklyPeak.toFixed(2)}, current=$${currentValue.toFixed(2)}, dd=${dd.toFixed(2)}%`);
+    return dd;
+  } catch (err: any) {
+    // portfolioSnapshot table may not exist yet — fall back gracefully
+    logger.debug(`[RISK] Could not fetch portfolio snapshots for weekly drawdown: ${err?.message}`);
+    return 0;
+  }
+}
+
 // ─── validateTradeSignal — thin wrapper called by scheduler.ts ───────────────
 /**
  * Quick risk gate before executeTradeSignal is called.
@@ -130,6 +161,16 @@ export async function validateTradeSignal(
     return { approved: false, reason: 'HOLD — no position change needed' };
   }
 
+  // Compute real 7-day rolling drawdown from portfolio snapshots
+  const weeklyDrawdownPct = await computeWeeklyDrawdownPct(portfolio.totalValue);
+
+  // Warn if drawdown is approaching the 5% weekly gate
+  if (weeklyDrawdownPct >= 4 && weeklyDrawdownPct < 5) {
+    import('../services/alertService').then(({ alert }) =>
+      alert.drawdownWarning(weeklyDrawdownPct, 5).catch(() => {})
+    ).catch(() => {});
+  }
+
   const result = evaluateRisk({
     goVotes: Math.round((signal.confidence ?? 0.6) * 10),
     noGoVotes: 10 - Math.round((signal.confidence ?? 0.6) * 10),
@@ -139,10 +180,17 @@ export async function validateTradeSignal(
     signal: signal.direction,
     proposedPositionSizePct: signal.positionSizePct ?? 5,
     currentDrawdownPct: drawdownPct,
-    weeklyDrawdownPct: drawdownPct, // approximate
+    weeklyDrawdownPct,
     existingPositionCount: openCount,
     maxPositions,
   });
+
+  // Alert on risk-gate rejections (not just HOLD blocks or insufficient-consensus)
+  if (!result.approved && result.reason.includes('DRAWDOWN') || result.reason.includes('MAX_POSITIONS')) {
+    import('../services/alertService').then(({ alert }) =>
+      alert.tradeFailed(signal.asset, result.reason, signal.direction).catch(() => {})
+    ).catch(() => {});
+  }
 
   return result;
 }
@@ -175,19 +223,25 @@ export async function checkStopLosses(prices: Record<string, number>): Promise<v
       ? (currentPrice - trade.entryPrice) * trade.quantity
       : (trade.entryPrice - currentPrice) * trade.quantity;
 
+    const pnlPct = trade.entryPrice > 0 ? pnl / (trade.entryPrice * trade.quantity) * 100 : 0;
     await prisma.trade.update({
       where: { id: trade.id },
       data: {
         status: 'CLOSED',
         exitPrice: currentPrice,
         pnl,
-        pnlPct: trade.entryPrice > 0 ? pnl / (trade.entryPrice * trade.quantity) : 0,
+        pnlPct,
         closedAt: new Date(),
         exitReason: reason,
       },
     }).catch((err: any) => logger.error(`[RISK] SL/TP close failed for ${trade.asset}: ${err?.message}`));
 
     logger.info(`[RISK] ${reason} triggered: ${trade.asset} @ $${currentPrice.toFixed(2)} pnl=$${pnl.toFixed(2)}`);
+
+    // Non-blocking alert
+    import('../services/alertService').then(({ alert }) =>
+      alert.positionClosed(trade.asset, reason, pnl, pnlPct).catch(() => {})
+    ).catch(() => {});
   }
 }
 

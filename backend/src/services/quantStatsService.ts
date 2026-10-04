@@ -261,7 +261,7 @@ export async function generateTearsheet(
       }),
     });
     if (!res.ok) return null;
-    const data = await res.json();
+    const data = await res.json() as any;
     return data.html;
   } catch {
     return null;

@@ -13,7 +13,7 @@
  */
 
 import { createHash } from 'crypto';
-import { prisma } from '../lib/prisma';
+import { prisma } from '../utils/prisma';
 
 export interface LedgerEntry {
   id: string;

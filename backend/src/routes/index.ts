@@ -13,6 +13,7 @@ import { chatRouter } from './chat';
 import intelligenceRouter from './intelligence';
 import { closePosition } from '../trading/riskManager';
 import { getCurrentPrices } from '../services/marketData';
+import axios from 'axios';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 import rateLimit from 'express-rate-limit';
@@ -451,8 +452,8 @@ async function portfolioAndWatchlist(): Promise<{ portfolio: string[]; watchlist
     const bp = b?.getPositions ? await b.getPositions() : [];
     broker = (bp || []).map((p: any) => String(p.symbol || p.asset || '').toUpperCase()).filter(Boolean);
   } catch { /* broker optional */ }
-  const portfolio = [...new Set([...positions.map((p: any) => p.asset), ...broker])].filter(a => a && a !== 'POLYMARKET');
-  const watchlist = [...new Set(decisions.map((d: any) => d.asset))].filter(a => a && a !== 'POLYMARKET').slice(0, 60);
+  const portfolio = ([...new Set([...positions.map((p: any) => p.asset), ...broker])].filter(a => a && a !== 'POLYMARKET') as string[]);
+  const watchlist = ([...new Set(decisions.map((d: any) => d.asset))].filter(a => a && a !== 'POLYMARKET').slice(0, 60) as string[]);
   return { portfolio, watchlist };
 }
 
