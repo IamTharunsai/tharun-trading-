@@ -334,6 +334,43 @@ export async function activateGreedAgent(greedMode = false): Promise<{
   state.tradesPlaced = 0;
   state.pausedUntil = null;
 
+  // Reset in-memory positions Map — only load broker-confirmed OPEN trades from DB.
+  // Ghost dry-run entries (brokerConfirmed=false) are excluded to prevent the counter
+  // from bloating and blocking real scans ("max open positions 16/10").
+  state.currentPositions = new Map();
+  state.totalExposure = 0;
+  try {
+    const openTrades = await prisma.trade.findMany({
+      where: {
+        asset:           { startsWith: 'POLYMARKET:' },
+        status:          'OPEN',
+        brokerConfirmed: true,   // ONLY real, confirmed fills — never dry-run ghosts
+      },
+    });
+    for (const t of openTrades) {
+      const conditionId = t.asset.replace('POLYMARKET:', '');
+      const pos: GreedPosition = {
+        conditionId,
+        question:      (t.metadata as any)?.question || conditionId,
+        side:          t.type === 'BUY' ? 'YES' : 'NO',
+        shares:        t.quantity,
+        entryPrice:    t.entryPrice,
+        costBasis:     t.quantity * t.entryPrice,
+        currentPrice:  t.entryPrice,
+        unrealizedPnL: 0,
+        openedAt:      t.openedAt ? new Date(t.openedAt).getTime() : Date.now(),
+        edgeAtEntry:   0,
+        kellyBetSize:  t.quantity * t.entryPrice,
+        expiresAt:     Date.now() + 30 * 86_400_000,
+      };
+      state.currentPositions.set(conditionId, pos);
+      state.totalExposure += pos.costBasis;
+    }
+    logger.info(`[GREED] Loaded ${openTrades.length} broker-confirmed open position(s) from DB`);
+  } catch (err: any) {
+    logger.warn('[GREED] Could not load open positions from DB — starting with empty Map', { err: err?.message });
+  }
+
   logger.info(`[GREED] 🚀 Money Greed Agent ACTIVATED — bankroll: $${state.bankroll.toFixed(2)} — mode: ${greedMode ? '🔥 FULL GREED' : '⚡ NORMAL'}`);
 
   startScanLoop();
@@ -767,31 +804,41 @@ async function executeTrade(opp: EdgeOpportunity): Promise<void> {
       expiresAt:   opp.market.endDate ? new Date(opp.market.endDate).getTime() : Date.now() + 30 * 86_400_000,
     };
 
-    state.currentPositions.set(opp.conditionId, position);
-    state.totalExposure += opp.kellyBetUSD;
-    state.bankroll      -= opp.kellyBetUSD;
+    // Only track real (non-dry-run) positions in the in-memory Map.
+    // Dry-run "positions" have no real financial exposure and must not count
+    // against MAX_CONCURRENT_POSITIONS — otherwise the counter bloats to 16/10
+    // and blocks all real scans on every restart.
+    if (!isDryRun) {
+      state.currentPositions.set(opp.conditionId, position);
+      state.totalExposure += opp.kellyBetUSD;
+      state.bankroll      -= opp.kellyBetUSD;
+    }
     state.tradesPlaced++;
 
     // Compliance audit trail (CFTC-required)
     recordComplianceTrade(opp.conditionId, opp.side, opp.kellyBetUSD, tradeReasoning);
 
-    // Persist to DB using correct column names (type not action, market not action)
-    await prisma.trade.create({
-      data: {
-        asset:           `POLYMARKET:${opp.conditionId}`,
-        market:          'prediction',
-        type:            opp.side === 'YES' ? 'BUY' : 'SELL',
-        quantity:        shares,
-        entryPrice:      fillPrice,
-        stopLossPrice:   fillPrice * 0.5,   // 50% stop on prediction market
-        takeProfitPrice: 0.95,              // Exit at 95¢ (near-certainty)
-        status:          'OPEN',
-        brokerConfirmed: !isDryRun,
-        brokerOrderId:   orderId || undefined,
-        openedAt:        new Date(),
-        agentDecisionId: undefined,
-      }
-    }).catch((err: any) => logger.error('[GREED] DB write failed', { err }));
+    // Persist to DB only for real trades — dry-run entries create ghost OPEN records
+    // that get reloaded on next startup and falsely inflate the position counter.
+    if (!isDryRun) {
+      await prisma.trade.create({
+        data: {
+          asset:           `POLYMARKET:${opp.conditionId}`,
+          market:          'prediction',
+          type:            opp.side === 'YES' ? 'BUY' : 'SELL',
+          quantity:        shares,
+          entryPrice:      fillPrice,
+          stopLossPrice:   fillPrice * 0.5,   // 50% stop on prediction market
+          takeProfitPrice: 0.95,              // Exit at 95¢ (near-certainty)
+          status:          'OPEN',
+          brokerConfirmed: true,
+          brokerOrderId:   orderId || undefined,
+          openedAt:        new Date(),
+          agentDecisionId: undefined,
+          metadata:        { question: opp.question, source: opp.source, edge: opp.edge },
+        }
+      }).catch((err: any) => logger.error('[GREED] DB write failed', { err }));
+    }
 
   } catch (err: any) {
     logger.error(`[GREED] Trade execution failed: ${err.message}`, { conditionId: opp.conditionId });
