@@ -397,6 +397,6 @@ export async function manageIntradayExits(opts: { flattenAll?: boolean } = {}) {
     const pos = await prisma.position.findFirst({ where: { asset: t.asset, status: 'OPEN' } });
     if (!pos) continue;
     const reason = opts.flattenAll ? 'intraday_eod_flatten' : 'intraday_time_stop';
-    await closePosition(pos, pos.currentPrice, reason).catch(err => logger.error(`Intraday exit failed ${t.asset}`, { error: err?.message }));
+    await closePosition(pos, pos.currentPrice, reason).catch((err: any) => logger.error(`Intraday exit failed ${t.asset}`, { error: err?.message }));
   }
 }

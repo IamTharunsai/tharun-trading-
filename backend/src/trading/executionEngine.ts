@@ -1,155 +1,151 @@
 /**
- * CRITICAL BUG FIX: Execution Engine Silent Failure
+ * APEX Trading — Execution Engine
  *
- * PROBLEM: KOLD had 13 goVotes, finalVote=SELL, 68% confidence → executed=false,
- *   executionReason=null. The execution engine dropped the signal silently.
+ * Implements executeTradeSignal (imported by scheduler.ts) and
+ * markToMarketOpenPositions (periodic P&L updater).
  *
- * FIX: Add robust error handling, logging, and retry to the execution flow.
- *   Also fixes: unrealized P&L not being computed on open positions.
- *
- * FILE TO PATCH: backend/src/trading/executionEngine.ts
- *
- * ADD these two functions and call them from the main executeDecision():
+ * Broker routing:
+ *   stocks / ETFs  → Alpaca REST API (paper or live depending on env)
+ *   crypto         → Alpaca REST API (crypto-enabled account)
+ *   prediction     → polymarketMoneyGreed.ts handles its own execution
  */
 
-import { prisma } from '../lib/prisma';
+import { prisma } from '../utils/prisma';
+import { TradeSignal, PortfolioState } from '../agents/types';
+import { createAlpacaBroker } from '../services/alpacaBroker';
+import { getCurrentPrice, buildMarketSnapshot } from '../services/marketData';
+import { logger } from '../utils/logger';
+import { isKillSwitchActive } from '../agents/orchestrator';
 
-/**
- * FIX 1: Execute with full error logging — no more silent failures
- */
-export async function executeWithLogging(
-  decisionId: string,
-  asset: string,
-  signal: 'BUY' | 'SELL',
-  approvedSizePct: number,
-): Promise<{ success: boolean; reason: string }> {
+// ─── Env flags ───────────────────────────────────────────────────────────────
+const PAPER_MODE = (process.env.VITE_TRADING_MODE || process.env.TRADING_MODE || 'PAPER').toUpperCase() !== 'LIVE';
+const DRY_RUN    = process.env.DRY_RUN === 'true';   // never sends broker orders when true
+
+// ─── Market classifier ────────────────────────────────────────────────────────
+function getMarketForAsset(asset: string): 'crypto' | 'stocks' {
+  const CRYPTO = new Set(['BTC','ETH','SOL','BNB','ADA','AVAX','LINK','DOT','UNI','MATIC',
+    'XRP','DOGE','SHIB','LTC','BCH','ATOM','FIL','NEAR','APT','ARB','OP','INJ','SUI',
+    'SEI','TIA','PYTH','JTO','BONK','WIF','PEPE']);
+  if (CRYPTO.has(asset)) return 'crypto';
+  return 'stocks'; // prediction-market assets use polymarketMoneyGreed.ts, not this path
+}
+
+// ─── Price resolution (in-memory ws cache first, Binance/Alpaca fallback) ────
+async function fetchCurrentPrice(asset: string): Promise<number | null> {
+  // 1. In-memory WebSocket cache (populated by marketData.ts stream)
+  const cached = getCurrentPrice(asset);
+  if (cached && cached > 0) return cached;
+
+  // 2. Live fetch fallback
   try {
-    // Fetch current price
-    const price = await fetchCurrentPrice(asset);
-    if (!price || price <= 0) {
-      const reason = `PRICE_FETCH_FAILED: Could not get price for ${asset}`;
-      await recordExecutionFailure(decisionId, reason);
-      return { success: false, reason };
-    }
+    const market = getMarketForAsset(asset);
+    const snap = await buildMarketSnapshot(asset, market);
+    if (snap?.price && snap.price > 0) return snap.price;
+  } catch {/* fall through */}
 
-    // Calculate position size
-    const portfolio = await getPortfolioValue();
-    const positionValue = portfolio.cashBalance * (approvedSizePct / 100);
-    const quantity = positionValue / price;
-
-    if (quantity <= 0) {
-      const reason = `INSUFFICIENT_CASH: Need $${positionValue.toFixed(2)}, have $${portfolio.cashBalance.toFixed(2)}`;
-      await recordExecutionFailure(decisionId, reason);
-      return { success: false, reason };
-    }
-
-    // Place order via broker
-    const order = await placeBrokerOrder(asset, signal, quantity, price);
-    if (!order.success) {
-      const reason = `BROKER_REJECT: ${order.error}`;
-      await recordExecutionFailure(decisionId, reason);
-      return { success: false, reason };
-    }
-
-    // Record trade in DB
-    await prisma.trade.create({
-      data: {
-        asset,
-        market: getMarketForAsset(asset),
-        type: signal,
-        status: 'OPEN',
-        entryPrice: price,
-        quantity,
-        fees: order.fees ?? 0,
-        brokerOrderId: order.orderId,
-        brokerConfirmed: true,
-        agentDecisionId: decisionId,
-        stopLossPrice: signal === 'BUY' ? price * 0.98 : price * 1.02,
-        takeProfitPrice: signal === 'BUY' ? price * 1.06 : price * 0.94,
-        openedAt: new Date(),
-      },
-    });
-
-    // Mark decision as executed
-    await prisma.agentDecision.update({
-      where: { id: decisionId },
-      data: {
-        executed: true,
-        executionReason: `Executed ${signal} ${quantity.toFixed(4)} ${asset} @ $${price.toFixed(2)} | Order: ${order.orderId}`,
-      },
-    });
-
-    console.log(`[EXECUTION] ✅ ${signal} ${quantity.toFixed(4)} ${asset} @ $${price} | Order ${order.orderId}`);
-    return { success: true, reason: `${signal} executed @ $${price}` };
-
-  } catch (err) {
-    const reason = `EXECUTION_EXCEPTION: ${(err as Error).message}`;
-    console.error(`[EXECUTION] ❌ Failed for ${asset}: ${reason}`);
-    await recordExecutionFailure(decisionId, reason);
-    return { success: false, reason };
-  }
+  return null;
 }
 
-/**
- * FIX 2: Mark-to-market all open positions — run every 5 minutes via scheduler
- * Fixes: AMZN P&L showing null despite being an open confirmed trade
- */
-export async function markToMarketOpenPositions(): Promise<void> {
-  const openTrades = await prisma.trade.findMany({
-    where: { status: 'OPEN', brokerConfirmed: true },
-  });
+// ─── Portfolio cash from DB ───────────────────────────────────────────────────
+async function getLocalCashBalance(): Promise<number> {
+  try {
+    // Prefer Alpaca account cash (ground truth)
+    const broker = createAlpacaBroker(PAPER_MODE);
+    if (broker) {
+      const summary = await broker.getPortfolioSummary().catch(() => null);
+      if (summary?.cash && summary.cash > 0) return summary.cash;
+    }
+  } catch {/* fall through */}
 
-  if (openTrades.length === 0) return;
+  // Fallback: derive from DB snapshot
+  const STARTING_CAPITAL = parseFloat(process.env.STARTING_CAPITAL || '100000');
+  const closedTrades = await prisma.trade.findMany({ where: { status: 'CLOSED' } });
+  const realizedPnl = closedTrades.reduce((s: number, t: any) => s + (t.pnl || 0), 0);
+  const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' } });
+  const invested = openPositions.reduce((s: number, p: any) => s + p.entryPrice * p.quantity, 0);
+  return Math.max(0, STARTING_CAPITAL + realizedPnl - invested);
+}
 
-  for (const trade of openTrades) {
-    try {
-      const currentPrice = await fetchCurrentPrice(trade.asset);
-      if (!currentPrice) continue;
+// ─── Broker order placement (Alpaca) ─────────────────────────────────────────
+async function placeBrokerOrder(
+  asset: string,
+  side: 'BUY' | 'SELL',
+  qty: number,
+  _price: number,   // reference only; we use market order
+  stopLoss?: number,
+  takeProfit?: number,
+): Promise<{ success: boolean; orderId?: string; fillPrice?: number; fees?: number; error?: string }> {
 
-      const pnl = trade.type === 'BUY'
-        ? (currentPrice - trade.entryPrice) * trade.quantity
-        : (trade.entryPrice - currentPrice) * trade.quantity;
+  if (DRY_RUN) {
+    logger.info(`[EXEC] DRY_RUN — would ${side} ${qty.toFixed(4)} ${asset}`);
+    return { success: true, orderId: `dryrun-${Date.now()}`, fillPrice: _price, fees: 0 };
+  }
 
-      const pnlPct = trade.type === 'BUY'
-        ? (currentPrice - trade.entryPrice) / trade.entryPrice
-        : (trade.entryPrice - currentPrice) / trade.entryPrice;
+  const broker = createAlpacaBroker(PAPER_MODE);
+  if (!broker) {
+    return { success: false, error: 'Alpaca credentials not configured — set ALPACA_API_KEY and ALPACA_SECRET_KEY in Railway env vars' };
+  }
 
-      await prisma.trade.update({
-        where: { id: trade.id },
-        data: { pnl, pnlPct },
-      });
+  try {
+    const market = getMarketForAsset(asset);
 
-      // Check stop loss / take profit triggers
-      const hitSL = trade.type === 'BUY'
-        ? currentPrice <= trade.stopLossPrice!
-        : currentPrice >= trade.stopLossPrice!;
+    // Crypto: Alpaca uses "BTC/USD" format
+    const symbol = market === 'crypto' ? `${asset}/USD` : asset;
 
-      const hitTP = trade.type === 'BUY'
-        ? currentPrice >= trade.takeProfitPrice!
-        : currentPrice <= trade.takeProfitPrice!;
+    const orderRequest: any = {
+      symbol,
+      qty: parseFloat(qty.toFixed(6)),
+      side: side === 'BUY' ? 'buy' : 'sell',
+      type: 'market',
+      time_in_force: market === 'crypto' ? 'gtc' : 'day',
+    };
 
-      if (hitSL) {
-        await closeTrade(trade.id, currentPrice, 'STOP_LOSS');
-        console.log(`[MTM] 🛑 Stop loss triggered for ${trade.asset} @ $${currentPrice}`);
-      } else if (hitTP) {
-        await closeTrade(trade.id, currentPrice, 'TAKE_PROFIT');
-        console.log(`[MTM] 🎯 Take profit triggered for ${trade.asset} @ $${currentPrice}`);
+    // Bracket order (stop-loss + take-profit) when levels provided
+    if (stopLoss && takeProfit && side === 'BUY') {
+      orderRequest.order_class = 'bracket';
+      orderRequest.take_profit = { limit_price: parseFloat(takeProfit.toFixed(2)) };
+      orderRequest.stop_loss   = { stop_price: parseFloat(stopLoss.toFixed(2)) };
+    }
+
+    const order = await broker.createOrder(orderRequest);
+
+    // Poll for fill price (Alpaca fills market orders almost instantly)
+    let fillPrice = _price;
+    let attempts = 0;
+    while (attempts < 6) {
+      await new Promise(r => setTimeout(r, 1000));
+      const filled = await broker.getOrder(order.id).catch(() => null);
+      if (filled?.filled_avg_price) {
+        fillPrice = parseFloat(String(filled.filled_avg_price));
+        break;
       }
-
-    } catch (err) {
-      console.error(`[MTM] Error marking ${trade.asset}: ${(err as Error).message}`);
+      attempts++;
     }
+
+    return {
+      success: true,
+      orderId: order.id,
+      fillPrice,
+      fees: 0, // Alpaca charges $0 commissions
+    };
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || err?.message || String(err);
+    logger.error(`[EXEC] Alpaca order failed for ${asset}: ${msg}`);
+    return { success: false, error: msg };
   }
 }
 
+// ─── Record failure on AgentDecision row ─────────────────────────────────────
 async function recordExecutionFailure(decisionId: string, reason: string): Promise<void> {
+  if (!decisionId) return;
   await prisma.agentDecision.update({
     where: { id: decisionId },
     data: { executed: false, executionReason: reason },
-  }).catch(() => {}); // don't throw on secondary failure
+  }).catch(() => {});
 }
 
-async function closeTrade(tradeId: string, exitPrice: number, reason: string): Promise<void> {
+// ─── Close a trade (SL/TP trigger or manual) ─────────────────────────────────
+async function closeTrade(tradeId: string, exitPrice: number, exitReason: string): Promise<void> {
   const trade = await prisma.trade.findUnique({ where: { id: tradeId } });
   if (!trade) return;
 
@@ -165,19 +161,268 @@ async function closeTrade(tradeId: string, exitPrice: number, reason: string): P
       pnl,
       pnlPct: pnl / (trade.entryPrice * trade.quantity),
       closedAt: new Date(),
-      exitReason: reason,
+      exitReason,
     },
   });
+
+  logger.info(`[MTM] Trade ${tradeId} closed: ${exitReason} @ $${exitPrice.toFixed(2)} pnl=$${pnl.toFixed(2)}`);
 }
 
-// Stubs — implement with your actual price feed and broker
-async function fetchCurrentPrice(asset: string): Promise<number | null> { return null; }
-async function getPortfolioValue(): Promise<{ cashBalance: number }> { return { cashBalance: 0 }; }
-async function placeBrokerOrder(asset: string, side: string, qty: number, price: number): Promise<{ success: boolean; orderId?: string; fees?: number; error?: string }> { return { success: false }; }
-function getMarketForAsset(asset: string): string {
-  const crypto = ['BTC','ETH','SOL','BNB','ADA','DOGE','XRP'];
-  const prediction = ['POLYMARKET'];
-  if (crypto.includes(asset)) return 'crypto';
-  if (prediction.includes(asset)) return 'prediction';
-  return 'stocks';
+// ─── Poll for fill confirmation (used by intradayEngine) ─────────────────────
+/**
+ * confirmOrderFill — polls the broker until the order is filled or maxAttempts exhausted.
+ * @param broker        AlpacaBroker instance
+ * @param orderId       Broker order ID to poll
+ * @param maxAttempts   Max polling attempts (default 8)
+ * @param intervalMs    Delay between polls in ms (default 750)
+ * @returns { fillPrice, fillQty } — values from last known state if never confirmed
+ */
+export async function confirmOrderFill(
+  broker: ReturnType<typeof createAlpacaBroker>,
+  orderId: string,
+  maxAttempts = 8,
+  intervalMs = 750,
+): Promise<{ fillPrice: number; fillQty: number }> {
+  if (!broker) return { fillPrice: 0, fillQty: 0 };
+
+  let fillPrice = 0;
+  let fillQty = 0;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, intervalMs));
+    try {
+      const order = await broker.getOrder(orderId).catch(() => null);
+      if (!order) continue;
+      if (order.filled_avg_price) fillPrice = parseFloat(String(order.filled_avg_price));
+      if (order.filled_qty)       fillQty   = parseFloat(String(order.filled_qty));
+      if (order.status === 'filled') break;
+    } catch { /* fall through, retry */ }
+  }
+
+  return { fillPrice, fillQty };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PUBLIC API — these are what scheduler.ts and the rest of the system import
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * executeTradeSignal — the function scheduler.ts imports.
+ * Returns true if the order was successfully placed/recorded.
+ */
+export async function executeTradeSignal(
+  signal: TradeSignal,
+  _portfolio: PortfolioState,
+): Promise<boolean> {
+  if (isKillSwitchActive()) {
+    logger.warn('[EXEC] Kill switch active — trade blocked');
+    return false;
+  }
+
+  const { asset, market, direction, agentDecisionId } = signal;
+
+  try {
+    // 1. Price
+    const price = signal.entryPrice > 0
+      ? signal.entryPrice
+      : await fetchCurrentPrice(asset);
+
+    if (!price || price <= 0) {
+      const reason = `PRICE_FETCH_FAILED: Cannot get current price for ${asset}`;
+      logger.warn(`[EXEC] ❌ ${reason}`);
+      await recordExecutionFailure(agentDecisionId, reason);
+      return false;
+    }
+
+    // 2. Cash / position size
+    const cashBalance = await getLocalCashBalance();
+    const sizePct = Math.min(signal.positionSizePct || 5, 10) / 100;  // max 10%
+    const positionValue = cashBalance * sizePct;
+
+    if (positionValue < 1) {
+      const reason = `INSUFFICIENT_CASH: Available $${cashBalance.toFixed(2)}, need at least $1`;
+      logger.warn(`[EXEC] ❌ ${reason}`);
+      await recordExecutionFailure(agentDecisionId, reason);
+      return false;
+    }
+
+    const quantity = positionValue / price;
+
+    // 3. Place broker order (direction is VoteDirection which includes 'HOLD';
+    //    signals with HOLD direction should never reach here, but cast for TS)
+    if (direction !== 'BUY' && direction !== 'SELL') {
+      const reason = `INVALID_DIRECTION: ${direction} is not a tradeable direction`;
+      logger.warn(`[EXEC] ❌ ${reason}`);
+      await recordExecutionFailure(agentDecisionId, reason);
+      return false;
+    }
+    const order = await placeBrokerOrder(
+      asset,
+      direction as 'BUY' | 'SELL',
+      quantity,
+      price,
+      signal.stopLossPrice,
+      signal.takeProfitPrice,
+    );
+
+    if (!order.success) {
+      const reason = `BROKER_REJECT: ${order.error}`;
+      logger.warn(`[EXEC] ❌ ${reason}`);
+      await recordExecutionFailure(agentDecisionId, reason);
+      return false;
+    }
+
+    const fillPrice = order.fillPrice || price;
+
+    // 4. Write trade to DB
+    await prisma.trade.create({
+      data: {
+        asset,
+        market: market || getMarketForAsset(asset),
+        type: direction,
+        status: 'OPEN',
+        entryPrice: fillPrice,
+        quantity,
+        fees: order.fees ?? 0,
+        brokerOrderId: order.orderId,
+        brokerConfirmed: !DRY_RUN,
+        agentDecisionId: agentDecisionId || undefined,
+        stopLossPrice: signal.stopLossPrice || (direction === 'BUY' ? fillPrice * 0.97 : fillPrice * 1.03),
+        takeProfitPrice: signal.takeProfitPrice || (direction === 'BUY' ? fillPrice * 1.06 : fillPrice * 0.94),
+        openedAt: new Date(),
+      },
+    });
+
+    // 5. Also create/update Position row (used for portfolio NAV)
+    await prisma.position.upsert({
+      where: { asset },
+      create: {
+        asset,
+        market: market || getMarketForAsset(asset),
+        side: direction,
+        entryPrice: fillPrice,
+        currentPrice: fillPrice,
+        quantity,
+        status: 'OPEN',
+        openedAt: new Date(),
+        stopLossPrice: signal.stopLossPrice || (direction === 'BUY' ? fillPrice * 0.97 : fillPrice * 1.03),
+        takeProfitPrice: signal.takeProfitPrice || (direction === 'BUY' ? fillPrice * 1.06 : fillPrice * 0.94),
+      },
+      update: {
+        side: direction,
+        entryPrice: fillPrice,
+        currentPrice: fillPrice,
+        quantity,
+        status: 'OPEN',
+        openedAt: new Date(),
+        stopLossPrice: signal.stopLossPrice || (direction === 'BUY' ? fillPrice * 0.97 : fillPrice * 1.03),
+        takeProfitPrice: signal.takeProfitPrice || (direction === 'BUY' ? fillPrice * 1.06 : fillPrice * 0.94),
+      },
+    }).catch(() => {/* ignore if Position table has changed */});
+
+    // 6. Mark decision executed
+    if (agentDecisionId) {
+      await prisma.agentDecision.update({
+        where: { id: agentDecisionId },
+        data: {
+          executed: true,
+          executionReason: `${direction} ${quantity.toFixed(4)} ${asset} @ $${fillPrice.toFixed(2)} | Order: ${order.orderId} | ${DRY_RUN ? 'DRY_RUN' : PAPER_MODE ? 'PAPER' : 'LIVE'}`,
+        },
+      }).catch(() => {});
+    }
+
+    logger.info(`[EXEC] ✅ ${direction} ${quantity.toFixed(4)} ${asset} @ $${fillPrice.toFixed(2)} | Order: ${order.orderId}`);
+    return true;
+
+  } catch (err: any) {
+    const reason = `EXECUTION_EXCEPTION: ${err?.message || String(err)}`;
+    logger.error(`[EXEC] ❌ Exception for ${asset}: ${reason}`);
+    await recordExecutionFailure(agentDecisionId, reason);
+    return false;
+  }
+}
+
+/**
+ * markToMarketOpenPositions — run every 5 min from scheduler.
+ * Updates unrealized P&L on all open trades and triggers SL/TP closes.
+ */
+export async function markToMarketOpenPositions(): Promise<void> {
+  const openTrades = await prisma.trade.findMany({
+    where: { status: 'OPEN' },
+  });
+
+  if (openTrades.length === 0) return;
+
+  logger.info(`[MTM] Marking ${openTrades.length} open trade(s) to market`);
+
+  for (const trade of openTrades) {
+    try {
+      const currentPrice = await fetchCurrentPrice(trade.asset);
+      if (!currentPrice || currentPrice <= 0) {
+        logger.debug(`[MTM] No price for ${trade.asset}, skipping`);
+        continue;
+      }
+
+      const pnl = trade.type === 'BUY'
+        ? (currentPrice - trade.entryPrice) * trade.quantity
+        : (trade.entryPrice - currentPrice) * trade.quantity;
+
+      const pnlPct = trade.type === 'BUY'
+        ? (currentPrice - trade.entryPrice) / trade.entryPrice
+        : (trade.entryPrice - currentPrice) / trade.entryPrice;
+
+      await prisma.trade.update({
+        where: { id: trade.id },
+        data: { pnl, pnlPct },
+      });
+
+      // Trigger stop-loss / take-profit
+      const sl = trade.stopLossPrice;
+      const tp = trade.takeProfitPrice;
+
+      const hitSL = sl && (trade.type === 'BUY' ? currentPrice <= sl : currentPrice >= sl);
+      const hitTP = tp && (trade.type === 'BUY' ? currentPrice >= tp : currentPrice <= tp);
+
+      if (hitSL) {
+        await closeTrade(trade.id, currentPrice, 'STOP_LOSS');
+        logger.warn(`[MTM] 🛑 SL triggered: ${trade.asset} @ $${currentPrice.toFixed(2)}`);
+      } else if (hitTP) {
+        await closeTrade(trade.id, currentPrice, 'TAKE_PROFIT');
+        logger.info(`[MTM] 🎯 TP triggered: ${trade.asset} @ $${currentPrice.toFixed(2)}`);
+      }
+
+    } catch (err: any) {
+      logger.error(`[MTM] Error for ${trade.asset}: ${err?.message}`);
+    }
+  }
+}
+
+/**
+ * executeWithLogging — kept for any direct callers that use this older API.
+ * Wraps executeTradeSignal with a decisionId + simpler args.
+ */
+export async function executeWithLogging(
+  decisionId: string,
+  asset: string,
+  signal: 'BUY' | 'SELL',
+  approvedSizePct: number,
+): Promise<{ success: boolean; reason: string }> {
+  const price = await fetchCurrentPrice(asset);
+  if (!price) return { success: false, reason: `PRICE_FETCH_FAILED: no price for ${asset}` };
+
+  const fakeSignal: TradeSignal = {
+    asset,
+    market: getMarketForAsset(asset),
+    direction: signal,
+    confidence: 0.7,
+    entryPrice: price,
+    stopLossPrice: signal === 'BUY' ? price * 0.97 : price * 1.03,
+    takeProfitPrice: signal === 'BUY' ? price * 1.06 : price * 0.94,
+    positionSizePct: approvedSizePct,
+    agentDecisionId: decisionId,
+    reasoning: 'via executeWithLogging',
+  };
+
+  const ok = await executeTradeSignal(fakeSignal, {} as PortfolioState);
+  return { success: ok, reason: ok ? `${signal} executed @ $${price}` : 'See execution logs' };
 }

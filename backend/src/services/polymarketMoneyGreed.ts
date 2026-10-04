@@ -591,8 +591,10 @@ function estimateProbability(market: PolymarketMarket): number {
   if (q.includes('record') || q.includes('all-time')) biasAdj += 0.04;   // Markets underestimate records
   if (q.includes('federal reserve') || q.includes('fed ')) biasAdj -= 0.02; // Overpriced macro events
 
-  // Final estimate: blend Bayesian + noise + bias
-  const est = bayesianEst + biasAdj + (Math.random() - 0.5) * liquidityNoise * volumeSignal;
+  // Final estimate: blend Bayesian + bias (no random noise — use deterministic model only)
+  // Random noise was previously added here but causes inconsistent edge detection;
+  // thin-book uncertainty is already captured by refusing markets below MIN_LIQUIDITY_USD
+  const est = bayesianEst + biasAdj + liquidityNoise * 0.5; // use half the noise as fixed conservative adjustment
   return Math.max(0.01, Math.min(0.99, est));
 }
 
@@ -695,72 +697,117 @@ async function executeTrade(opp: EdgeOpportunity): Promise<void> {
   logger.info(`[GREED] ${isDryRun ? '[DRY-RUN] ' : ''}Placing ${opp.side} on "${opp.question.slice(0, 60)}" — bet: $${opp.kellyBetUSD.toFixed(2)} — edge: ${(opp.edge * 100).toFixed(1)}%`);
 
   try {
-    // In production: call polymarket CLOB API to place order
-    // We use market orders for speed (limit orders miss fills)
-    const fillPrice = opp.market.yesPrice; // Approximate fill (real: fetch from CLOB)
-    const shares = opp.kellyBetUSD / fillPrice;
+    let fillPrice = opp.marketImplied;
+    let orderId: string | null = null;
 
-    // Record position
+    if (!isDryRun) {
+      // ── REAL CLOB ORDER — polymarketexchange.com (CFTC-licensed) ───────────
+      // Polymarket CLOB requires EIP-712 signed orders; the private key is used
+      // to sign the order payload. On failure we abort (never deduct real money
+      // without a confirmed fill).
+      try {
+        const clobResp = await axios.post(
+          `${COMPLIANCE.POLYMARKET_ENDPOINT}/order`,
+          {
+            tokenID: opp.conditionId,
+            side:     opp.side === 'YES' ? 'buy' : 'buy',  // YES token = buy; NO token = buy the NO token
+            type:     'market',
+            amount:   opp.kellyBetUSD.toFixed(2),           // USDC amount
+            timeInForce: 'FOK',                              // Fill-or-Kill for speed
+            // Private key signing happens server-side via POLYMARKET_PRIVATE_KEY env var
+            // which is picked up by the Polymarket SDK / py-clob-client if wired here
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'POLY_ADDRESS':    process.env.POLYMARKET_WALLET_ADDRESS || '',
+              'POLY_SIGNATURE':  await signPolymarketOrder(opp.conditionId, opp.side, opp.kellyBetUSD),
+              'POLY_TIMESTAMP':  String(Date.now()),
+              'POLY_NONCE':      '0',
+            },
+            timeout: GREED_CONFIG.ORDER_TIMEOUT_MS,
+          }
+        );
+
+        const order = clobResp.data;
+        orderId    = order.orderID || order.id || null;
+        fillPrice  = parseFloat(order.avgPrice ?? order.price ?? String(opp.marketImplied));
+
+        logger.info(`[GREED] ✅ CLOB fill: ${opp.side} on "${opp.question.slice(0, 50)}" — price: ${fillPrice.toFixed(4)} — orderId: ${orderId}`);
+
+      } catch (clobErr: any) {
+        const clobMsg = clobErr?.response?.data?.error || clobErr?.message || String(clobErr);
+        logger.warn(`[GREED] CLOB order failed (${clobMsg}) — position NOT recorded`);
+        return; // Abort: never record a position without a real confirmed fill
+      }
+    } else {
+      // DRY-RUN: simulate fill at current market price
+      fillPrice = opp.side === 'YES' ? opp.market.yesPrice : opp.market.noPrice;
+      orderId   = `dryrun-${Date.now()}`;
+      logger.info(`[GREED] [DRY-RUN] Would place ${opp.side} on "${opp.question.slice(0, 50)}" @ ${fillPrice.toFixed(4)} for $${opp.kellyBetUSD.toFixed(2)}`);
+    }
+
+    const shares = fillPrice > 0 ? opp.kellyBetUSD / fillPrice : 0;
+
+    // Record position in memory
     const position: GreedPosition = {
       conditionId: opp.conditionId,
-      question: opp.question,
-      side: opp.side,
+      question:    opp.question,
+      side:        opp.side,
       shares,
-      entryPrice: opp.marketImplied,
-      costBasis: opp.kellyBetUSD,
-      currentPrice: opp.marketImplied,
+      entryPrice:  fillPrice,
+      costBasis:   opp.kellyBetUSD,
+      currentPrice: fillPrice,
       unrealizedPnL: 0,
-      openedAt: Date.now(),
+      openedAt:    Date.now(),
       edgeAtEntry: opp.edge,
       kellyBetSize: opp.kellyBetUSD,
-      expiresAt: opp.market.endDate ? new Date(opp.market.endDate).getTime() : Date.now() + 30 * 86_400_000,
+      expiresAt:   opp.market.endDate ? new Date(opp.market.endDate).getTime() : Date.now() + 30 * 86_400_000,
     };
 
     state.currentPositions.set(opp.conditionId, position);
     state.totalExposure += opp.kellyBetUSD;
-    state.bankroll -= opp.kellyBetUSD;
+    state.bankroll      -= opp.kellyBetUSD;
     state.tradesPlaced++;
 
-    // Record in compliance audit trail (required for CFTC)
+    // Compliance audit trail (CFTC-required)
     recordComplianceTrade(opp.conditionId, opp.side, opp.kellyBetUSD, tradeReasoning);
 
-    // Persist to DB
+    // Persist to DB using correct column names (type not action, market not action)
     await prisma.trade.create({
       data: {
-        asset: `POLYMARKET:${opp.conditionId}`,
-        action: opp.side === 'YES' ? 'BUY' : 'SELL',
-        quantity: shares,
-        entryPrice: opp.marketImplied,
-        currentPrice: opp.marketImplied,
-        stopLossPrice: opp.marketImplied * 0.5,  // 50% stop on prediction market
-        takeProfitPrice: 0.95,                    // Exit at 95 cents (near-certainty)
-        status: 'OPEN',
-        finalVote: `GREED_AGENT edge=${(opp.edge * 100).toFixed(1)}% source=${opp.source}`,
+        asset:           `POLYMARKET:${opp.conditionId}`,
+        market:          'prediction',
+        type:            opp.side === 'YES' ? 'BUY' : 'SELL',
+        quantity:        shares,
+        entryPrice:      fillPrice,
+        stopLossPrice:   fillPrice * 0.5,   // 50% stop on prediction market
+        takeProfitPrice: 0.95,              // Exit at 95¢ (near-certainty)
+        status:          'OPEN',
         brokerConfirmed: !isDryRun,
-        notes: JSON.stringify({
-          // Compliance audit fields (CFTC-required full reasoning)
-          tradeReasoning,
-          regulatoryEndpoint: COMPLIANCE.POLYMARKET_ENDPOINT,
-          complianceChecked: true,
-          noWashTrade: true,
-          noInsiderInfo: true,
-          // Trade parameters
-          edge: opp.edge,
-          confidence: opp.confidence,
-          source: opp.source,
-          kellyBet: opp.kellyBetUSD,
-          question: opp.question,
-          expectedValue: opp.expectedValueUSD,
-          kellyFraction: GREED_CONFIG.KELLY_FRACTION,
-          maxPositionPct: GREED_CONFIG.MAX_POSITION_PCT,
-          greedMode: state.greedMode,
-        }),
+        brokerOrderId:   orderId || undefined,
+        openedAt:        new Date(),
+        agentDecisionId: undefined,
       }
-    }).catch(err => logger.error('[GREED] DB write failed', { err }));
+    }).catch((err: any) => logger.error('[GREED] DB write failed', { err }));
 
   } catch (err: any) {
     logger.error(`[GREED] Trade execution failed: ${err.message}`, { conditionId: opp.conditionId });
   }
+}
+
+/**
+ * Sign a Polymarket CLOB order using the wallet private key.
+ * Returns a hex signature string.
+ * In production this would use ethers.js / py-clob-client for EIP-712 signing.
+ */
+async function signPolymarketOrder(conditionId: string, side: 'YES' | 'NO', amount: number): Promise<string> {
+  const privKey = process.env.POLYMARKET_PRIVATE_KEY;
+  if (!privKey) return '';
+  // Simple HMAC signature for MVP — replace with EIP-712 typed-data signing
+  // when integrating the full Polymarket CLOB SDK
+  const msg = `${conditionId}:${side}:${amount.toFixed(2)}:${Date.now()}`;
+  return crypto.createHmac('sha256', privKey).update(msg).digest('hex');
 }
 
 // ─── POSITION MANAGEMENT ─────────────────────────────────────────────────────
@@ -770,11 +817,33 @@ async function updateOpenPositions(): Promise<void> {
 
   const now = Date.now();
 
+  // Fetch all live market prices from CLOB in one batch request
+  const conditionIds = Array.from(state.currentPositions.keys()).filter(id => !id.includes('_momentum') && !id.includes('_decay'));
+  let livePrices: Map<string, number> = new Map();
+  if (conditionIds.length > 0 && process.env.POLYMARKET_PRIVATE_KEY) {
+    try {
+      const resp = await axios.get(`${COMPLIANCE.POLYMARKET_ENDPOINT}/prices-history`, {
+        params: { token_id: conditionIds.join(','), interval: '1m' },
+        timeout: 3000,
+      });
+      const priceData = resp.data?.history || resp.data || [];
+      for (const item of (Array.isArray(priceData) ? priceData : Object.entries(priceData))) {
+        if (Array.isArray(item) && item.length === 2) {
+          livePrices.set(item[0] as string, parseFloat(item[1] as string));
+        } else if (item?.token_id && item?.price) {
+          livePrices.set(item.token_id, parseFloat(item.price));
+        }
+      }
+    } catch {/* CLOB unavailable — keep last known price, don't use random */}
+  }
+
   for (const [id, pos] of state.currentPositions.entries()) {
-    // Simulate price update (production: fetch from CLOB)
-    // In real mode: await fetchCurrentPrice(pos.conditionId)
-    const drift = (Math.random() - 0.48) * 0.02; // Slight positive drift from our edge
-    pos.currentPrice = Math.max(0.01, Math.min(0.99, pos.currentPrice + drift));
+    // Use real CLOB price if available, otherwise keep last known (no random drift)
+    const livePrice = livePrices.get(id.replace(/_momentum$|_decay$/, ''));
+    if (livePrice && livePrice > 0) {
+      pos.currentPrice = livePrice;
+    }
+    // Else: keep pos.currentPrice unchanged (stale is better than random)
     pos.unrealizedPnL = (pos.currentPrice - pos.entryPrice) * pos.shares;
 
     // Exit conditions:
@@ -834,7 +903,7 @@ async function closePosition(id: string, pos: GreedPosition, reason: string): Pr
       pnlPct: pos.entryPrice > 0 ? pnl / pos.costBasis : 0,
       closedAt: new Date(),
     }
-  }).catch(err => logger.error('[GREED] DB close failed', { err }));
+  }).catch((err: any) => logger.error('[GREED] DB close failed', { err }));
 
   broadcastState();
 }
@@ -925,7 +994,7 @@ function getSnapshot(): GreedAgentSnapshot {
 function broadcastState() {
   try {
     const io = getIO();
-    io.emit('greed_agent_update', getSnapshot());
+    io?.emit('greed_agent_update', getSnapshot());
   } catch {
     // WebSocket not initialized yet
   }

@@ -5,7 +5,7 @@ import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
 import { runDailyScreen } from '../services/stockScreener';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
 import { detectMarketRegime } from '../services/regimeDetector';
-import { executeTradeSignal } from '../trading/executionEngine';
+import { executeTradeSignal, markToMarketOpenPositions } from '../trading/executionEngine';
 import { validateTradeSignal } from '../trading/riskManager';
 import { runPostTradeAnalysis, generateWeeklyReport } from '../services/selfLearning';
 import { getPortfolioState } from '../services/portfolio';
@@ -234,9 +234,15 @@ export function initScheduler() {
     await checkStopLosses(prices).catch(err => logger.error('Stop loss check failed', { err }));
   });
 
-  // ── EVERY 5 MINUTES: Portfolio Snapshot ──────────────────────────────────
+  // ── EVERY 5 MINUTES: Mark-to-market + Portfolio Snapshot ─────────────────
   cron.schedule('*/5 * * * *', async () => {
     try {
+      // Update P&L on all open trades with real current prices
+      // Triggers SL/TP closes automatically when prices cross levels
+      await markToMarketOpenPositions().catch(err =>
+        logger.error('Mark-to-market failed', { err: err?.message })
+      );
+
       const portfolio = await getPortfolioState();
       await prisma.portfolioSnapshot.create({
         data: {
