@@ -364,6 +364,28 @@ export function initScheduler() {
     } catch (err) { logger.error('Post-trade polling failed', { err }); }
   });
 
+  // ── Mark-to-market open positions every 5 minutes ────────────────────────
+  schedule.scheduleJob('*/5 * * * *', async () => {
+    try {
+      const { markToMarketOpenPositions } = await import('../trading/executionEngine');
+      await markToMarketOpenPositions();
+    } catch (err) { logger.error('Mark-to-market failed', { err }); }
+  });
+
+  // ── Verify audit ledger chain integrity daily at 6 AM ────────────────────
+  schedule.scheduleJob('0 6 * * *', async () => {
+    try {
+      const { verifyChain } = await import('../services/auditLedger');
+      const result = await verifyChain();
+      if (!result.valid) {
+        logger.error(`[LEDGER ALERT] Chain corruption at sequence ${result.firstCorruptedSequence}`);
+        // TODO: send Telegram/email alert
+      } else {
+        logger.info(`[LEDGER] Chain integrity OK — ${result.totalEvents} events verified`);
+      }
+    } catch (err) { logger.error('Ledger integrity check failed', { err }); }
+  });
+
   logger.info('✅ Tharun Trading Scheduler initialized:');
   logger.info('   ⏱️ Investment Committee (swing): 9:35, 11:00 & 13:00 ET, sector-balanced universe');
   logger.info('   ⚡ Intraday fast lane: every 2 min 9:40–15:30 ET, flatten 15:50 ET');

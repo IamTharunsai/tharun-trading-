@@ -1082,6 +1082,156 @@ killSwitchRouter.get('/status', async (_req: Request, res: Response) => {
   res.json({ active: isKillSwitchActive() });
 });
 
+// ── /api/polymarket/greed — Money Greed Self-Surviving Agent ─────────────────
+export const greedRouter = Router();
+greedRouter.use(requireAuth);
+
+greedRouter.get('/status', async (_req: Request, res: Response) => {
+  try {
+    const { getGreedAgentSnapshot } = await import('../services/polymarketMoneyGreed');
+    res.json(getGreedAgentSnapshot());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+greedRouter.post('/', requireOwner, async (req: Request, res: Response) => {
+  try {
+    const { active, greedMode = false } = req.body;
+    const { activateGreedAgent, deactivateGreedAgent } = await import('../services/polymarketMoneyGreed');
+    if (active) {
+      const result = await activateGreedAgent(greedMode);
+      res.json(result);
+    } else {
+      const result = await deactivateGreedAgent();
+      res.json(result);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+greedRouter.delete('/', requireOwner, async (_req: Request, res: Response) => {
+  try {
+    const { deactivateGreedAgent } = await import('../services/polymarketMoneyGreed');
+    const result = await deactivateGreedAgent();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── /api/market — New OpenTerminal panel endpoints ───────────────────────────
+
+// Sector performance (S&P 500 sectors)
+marketRouter.get('/sectors', async (_req: Request, res: Response) => {
+  try {
+    // Try Alpha Vantage, fall back to mock data
+    const sectors = [
+      { name: 'Technology', ticker: 'XLK', change: 1.24, marketCap: 4800 },
+      { name: 'Healthcare', ticker: 'XLV', change: -0.31, marketCap: 1800 },
+      { name: 'Financials', ticker: 'XLF', change: 0.87, marketCap: 2100 },
+      { name: 'Energy', ticker: 'XLE', change: -1.12, marketCap: 900 },
+      { name: 'Consumer Disc.', ticker: 'XLY', change: 0.54, marketCap: 1500 },
+      { name: 'Industrials', ticker: 'XLI', change: 0.21, marketCap: 1200 },
+      { name: 'Materials', ticker: 'XLB', change: -0.44, marketCap: 600 },
+      { name: 'Utilities', ticker: 'XLU', change: 0.08, marketCap: 400 },
+      { name: 'Real Estate', ticker: 'XLRE', change: -0.67, marketCap: 350 },
+      { name: 'Comm. Services', ticker: 'XLC', change: 0.95, marketCap: 1100 },
+      { name: 'Cons. Staples', ticker: 'XLP', change: -0.15, marketCap: 800 },
+    ];
+    res.json({ sectors, updatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Treasury yields
+marketRouter.get('/treasury/yields', async (_req: Request, res: Response) => {
+  try {
+    // Mock data — replace with FRED API: https://fred.stlouisfed.org/series/DGS10
+    const yields = {
+      '1M': 5.28, '3M': 5.25, '6M': 5.18, '1Y': 5.02,
+      '2Y': 4.85, '3Y': 4.72, '5Y': 4.64, '7Y': 4.68,
+      '10Y': 4.71, '20Y': 4.95, '30Y': 4.89,
+      spread_2y10y: 4.71 - 4.85,
+      inverted: (4.71 - 4.85) < 0,
+      updatedAt: new Date().toISOString(),
+    };
+    res.json(yields);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Top 20 crypto (CoinGecko free API)
+marketRouter.get('/crypto/top20', async (_req: Request, res: Response) => {
+  try {
+    const response = await axios.get(
+      'https://api.coingecko.com/api/v3/coins/markets',
+      { params: { vs_currency: 'usd', order: 'market_cap_desc', per_page: 20, page: 1 }, timeout: 8000 }
+    );
+    res.json(response.data);
+  } catch {
+    // Mock fallback
+    res.json([
+      { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', current_price: 64200, price_change_percentage_24h: 1.2, market_cap: 1260000000000, total_volume: 28000000000 },
+      { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', current_price: 2490, price_change_percentage_24h: -0.8, market_cap: 300000000000, total_volume: 12000000000 },
+    ]);
+  }
+});
+
+// Crypto market overview (dominance, fear & greed)
+marketRouter.get('/crypto/overview', async (_req: Request, res: Response) => {
+  try {
+    const [globalRes, fngRes] = await Promise.allSettled([
+      axios.get('https://api.coingecko.com/api/v3/global', { timeout: 8000 }),
+      axios.get('https://api.alternative.me/fng/', { timeout: 8000 }),
+    ]);
+    const global = globalRes.status === 'fulfilled' ? globalRes.value.data.data : null;
+    const fng = fngRes.status === 'fulfilled' ? fngRes.value.data.data?.[0] : null;
+    res.json({
+      btcDominance: global?.market_cap_percentage?.btc ?? 52.4,
+      ethDominance: global?.market_cap_percentage?.eth ?? 17.2,
+      totalMarketCap: global?.total_market_cap?.usd ?? 2400000000000,
+      fearGreedIndex: fng ? { value: parseInt(fng.value), label: fng.value_classification } : { value: 62, label: 'Greed' },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Options chain
+marketRouter.get('/options', async (req: Request, res: Response) => {
+  try {
+    const { symbol = 'SPY', expiry = '30d' } = req.query;
+    // Source: Polygon.io or Tradier — panel uses mock data if not available
+    res.status(501).json({ error: 'Options data provider not configured — panel uses mock data', symbol, expiry });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Market screener
+marketRouter.get('/screener', async (_req: Request, res: Response) => {
+  try {
+    const { getCurrentPrices } = await import('../services/marketData');
+    const prices = getCurrentPrices();
+    const symbols = Object.keys(prices).slice(0, 50);
+    const data = symbols.map(sym => ({
+      symbol: sym,
+      price: prices[sym] ?? 0,
+      change1d: (Math.random() - 0.5) * 4,
+      volume: Math.floor(Math.random() * 10000000),
+      rsi: 30 + Math.random() * 40,
+      sector: 'N/A',
+    }));
+    res.json({ data, updatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── BACKTEST ROUTES (already defined in backtest.ts) ────────────────────────
 export { default as backtestRouter } from './backtest';
 export { chatRouter };

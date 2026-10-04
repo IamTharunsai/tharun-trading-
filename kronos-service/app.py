@@ -38,6 +38,15 @@ def forecast_route():
     return jsonify(result)
 
 
+# ── QuantStats + FreqAI endpoints ─────────────────────────────────────────────
+try:
+    from KronosQuantstatsFlaskAddons import register_quantstats_route, register_freqai_route
+    register_quantstats_route(app)
+    register_freqai_route(app)
+    logging.info("✅ QuantStats + FreqAI routes registered")
+except ImportError as e:
+    logging.warning(f"QuantStats/FreqAI addons not available: {e}")
+
 if __name__ == "__main__":
     model_loader.get_predictor()  # load at boot, not on first request
     app.run(host="0.0.0.0", port=int(__import__("os").environ.get("PORT", "8000")))

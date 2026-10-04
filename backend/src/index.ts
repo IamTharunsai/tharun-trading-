@@ -27,6 +27,7 @@ import backtestRoutes from './routes/backtest';
 import intelligenceRoutes from './routes/intelligence';
 import copyTradingRoutes from './routes/copyTrading';
 import systemRoutes from './routes/system';
+import { greedRouter } from './routes/index';
 
 const app = express();
 const server = http.createServer(app);
@@ -75,6 +76,7 @@ app.use('/api/backtest', backtestRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 app.use('/api/copy-trading', copyTradingRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/polymarket/greed', greedRouter);
 
 import { appConfig } from './utils/config';
 

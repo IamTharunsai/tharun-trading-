@@ -675,3 +675,18 @@ model EventIntelligence {
 
   @@index([publishedAt])
 }
+
+// ── Vibe-Trading Hash Audit Ledger ───────────────────────────────────────────
+model AuditLedger {
+  id          String   @id @default(cuid())
+  sequence    Int      @unique
+  timestamp   DateTime @default(now())
+  eventType   String
+  data        Json
+  dataHash    String
+  prevHash    String
+  chainHash   String   @unique
+
+  @@index([eventType])
+  @@index([sequence])
+}

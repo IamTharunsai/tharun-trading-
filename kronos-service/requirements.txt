@@ -9,3 +9,6 @@ safetensors==0.6.2
 pytest==8.3.3
 requests==2.32.3
 tqdm==4.68.4
+quantstats>=0.0.62
+scikit-learn>=1.3.0
+lightgbm>=4.0.0
