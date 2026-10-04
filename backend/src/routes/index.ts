@@ -1233,6 +1233,57 @@ marketRouter.get('/screener', async (_req: Request, res: Response) => {
   }
 });
 
+// ── FINCEPT / ECONOMIC DATA ROUTES (FinceptTerminal integration) ─────────────
+marketRouter.get('/economic/calendar', async (req: Request, res: Response) => {
+  try {
+    const days = parseInt(req.query.days as string) || 14;
+    const { getEconomicCalendar } = await import('../services/finceptService');
+    const events = await getEconomicCalendar(days);
+    res.json({ events, count: events.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+marketRouter.get('/economic/indicators', async (_req: Request, res: Response) => {
+  try {
+    const { getMacroIndicators } = await import('../services/finceptService');
+    const indicators = await getMacroIndicators();
+    res.json({ indicators });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+marketRouter.get('/economic/central-banks', async (_req: Request, res: Response) => {
+  try {
+    const { getCentralBanks } = await import('../services/finceptService');
+    res.json({ banks: getCentralBanks() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+marketRouter.get('/economic/earnings', async (req: Request, res: Response) => {
+  try {
+    const days = parseInt(req.query.days as string) || 7;
+    const { getEarningsCalendar } = await import('../services/finceptService');
+    const earnings = await getEarningsCalendar(days);
+    res.json({ earnings, count: earnings.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+marketRouter.get('/economic/breadth', async (_req: Request, res: Response) => {
+  try {
+    const { getMarketBreadth } = await import('../services/finceptService');
+    res.json(getMarketBreadth());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── BACKTEST ROUTES (already defined in backtest.ts) ────────────────────────
 export { default as backtestRouter } from './backtest';
 export { chatRouter };

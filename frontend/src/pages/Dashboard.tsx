@@ -21,7 +21,12 @@ import YieldCurve from '../components/panels/YieldCurve';
 import OptionsChain from '../components/panels/OptionsChain';
 import MarketScreener from '../components/panels/MarketScreener';
 import PolymarketGreedAgent from '../components/panels/PolymarketGreedAgent';
-import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2, Zap, Play, Search } from 'lucide-react';
+// ── FinceptTerminal + missing OpenTerminal panels ──────────────────────────────
+import EconomicCalendar from '../components/panels/EconomicCalendar';
+import OrderBook from '../components/panels/OrderBook';
+import NewsFeed from '../components/panels/NewsFeed';
+import RiskMetrics from '../components/panels/RiskMetrics';
+import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2, Zap, Play, Search, Globe, BookOpen, Newspaper, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
 import toast from 'react-hot-toast';
@@ -257,6 +262,29 @@ export default function DashboardPage() {
         {/* Row 4: Polymarket Money Greed Agent */}
         <div>
           <PolymarketGreedAgent />
+        </div>
+      </div>
+
+      {/* ── Macro Intelligence Suite (FinceptTerminal + OpenTerminal panels) ─── */}
+      <div>
+        <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+          <Globe size={20} className="text-emerald-600" />
+          Macro Intelligence Suite
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            FINCEPT + OPENTERMINAL
+          </span>
+        </h2>
+
+        {/* Row 1: Economic Calendar + Order Book */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <EconomicCalendar />
+          <OrderBook />
+        </div>
+
+        {/* Row 2: News Feed + Risk Metrics */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <NewsFeed />
+          <RiskMetrics />
         </div>
       </div>
 
