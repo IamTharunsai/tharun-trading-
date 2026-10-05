@@ -15,15 +15,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 
 const MATURITIES = [
-  { label: '1M', months: 1 },
-  { label: '3M', months: 3 },
-  { label: '6M', months: 6 },
-  { label: '1Y', months: 12 },
-  { label: '2Y', months: 24 },
-  { label: '5Y', months: 60 },
-  { label: '10Y', months: 120 },
-  { label: '20Y', months: 240 },
-  { label: '30Y', months: 360 },
+  { maturity: '1M', months: 1 },
+  { maturity: '3M', months: 3 },
+  { maturity: '6M', months: 6 },
+  { maturity: '1Y', months: 12 },
+  { maturity: '2Y', months: 24 },
+  { maturity: '5Y', months: 60 },
+  { maturity: '10Y', months: 120 },
+  { maturity: '20Y', months: 240 },
+  { maturity: '30Y', months: 360 },
 ];
 
 interface YieldPoint { maturity: string; months: number; rate: number; }
@@ -166,7 +166,7 @@ export const YieldCurve: React.FC = () => {
       ctx.fillStyle = '#4b5563';
       ctx.font = '9px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(m.label, x, height - 6);
+      ctx.fillText(m.maturity, x, height - 6);
     });
 
     // Curves

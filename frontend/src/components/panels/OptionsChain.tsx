@@ -138,8 +138,9 @@ const SYMBOLS = ['AAPL', 'AMZN', 'TSLA', 'SPY', 'QQQ', 'NVDA', 'MSFT'];
 const fmt = (n: number, decimals = 2) => n.toFixed(decimals);
 const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
-export const OptionsChain: React.FC = () => {
-  const [symbol, setSymbol] = useState('SPY');
+interface OptionsChainProps { symbol?: string; }
+export const OptionsChain: React.FC<OptionsChainProps> = ({ symbol: initialSymbol = 'SPY' }) => {
+  const [symbol, setSymbol] = useState(initialSymbol);
   const [expiryDays, setExpiryDays] = useState(30);
   const [data, setData] = useState<OptionsData | null>(null);
   const [loading, setLoading] = useState(true);
