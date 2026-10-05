@@ -329,3 +329,4 @@ export const OptionsChain: React.FC<OptionsChainProps> = ({ symbol: initialSymbo
 };
 
 export default OptionsChain;
+
