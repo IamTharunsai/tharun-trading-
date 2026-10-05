@@ -7,10 +7,12 @@ import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
   TrendingUp, BookOpen, Newspaper, Settings, LogOut,
   Power, Zap, Eye, MessageSquare, Users, Globe2,
-  FileSpreadsheet, ShieldAlert, Cpu, Radio, Menu, X
+  FileSpreadsheet, ShieldAlert, Cpu, Radio, Menu, X,
+  Activity, Layers, Search, Brain, LineChart, Bitcoin
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 import ErrorBoundary from './ErrorBoundary';
+import CommandPalette from './CommandPalette';
 import { useSystemStatus } from '../../hooks/useSystemStatus';
 
 const testIdForPath = (path: string) => `nav-${path === '/' ? 'home' : path.replace(/^\//, '').replace(/\//g, '-')}`;
@@ -54,6 +56,13 @@ const NAV_GROUPS = [
     items: [
       { path: '/alternative-data', label: 'Alternative Data Radar', icon: Radio },
       { path: '/analytics', label: 'BQuant Analytics', icon: TrendingUp },
+      { path: '/tearsheet', label: 'Performance Tearsheet', icon: Activity },
+      { path: '/options', label: 'Options Chain', icon: Layers },
+      { path: '/macro', label: 'Macro Dashboard', icon: Globe2 },
+      { path: '/crypto-strategy', label: 'Crypto Strategy Lab', icon: Bitcoin },
+      { path: '/forecaster', label: 'Price Forecaster (ML)', icon: LineChart },
+      { path: '/multi-agent', label: 'Multi-Agent Research', icon: Brain },
+      { path: '/quote', label: 'Quote Panel', icon: Search },
       { path: '/news', label: 'Bloomberg News Wire', icon: Newspaper },
       { path: '/journal', label: 'Trade Journal', icon: BookOpen },
       { path: '/investment', label: 'Investment Plan', icon: Cpu },
@@ -74,6 +83,7 @@ export default function Layout() {
   const { killSwitchActive, setKillSwitch, logout } = useStore();
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
   const [timeUtc, setTimeUtc] = useState('');
   const [timeEst, setTimeEst] = useState('');
   const location = useLocation();
@@ -90,6 +100,17 @@ export default function Layout() {
     if (typeof status?.killSwitch === 'boolean' && status.killSwitch !== killSwitchActive) setKillSwitch(status.killSwitch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.killSwitch]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCmdOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const updateTimes = () => {
@@ -162,6 +183,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       {/* Mobile: dimmed backdrop behind the slide-in menu */}
       {mobileNavOpen && (
         <div className="fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setMobileNavOpen(false)} />
@@ -281,7 +303,15 @@ export default function Layout() {
             >
               {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
-            <span className="text-blue-700 font-bold hidden sm:inline">TERMINAL FEED:</span>
+            <button
+            onClick={() => setCmdOpen(true)}
+            className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white text-slate-500 hover:text-slate-800 text-xs font-mono transition-colors"
+          >
+            <Search size={11} />
+            <span>Search…</span>
+            <span className="flex items-center gap-0.5 text-[9px] text-slate-400 bg-white border border-slate-200 px-1 py-0.5 rounded">⌘K</span>
+          </button>
+          <span className="text-blue-700 font-bold hidden sm:inline">TERMINAL FEED:</span>
             <span className="text-slate-600">{timeEst}</span>
             <span className="text-slate-300 hidden sm:inline">|</span>
             <span className="text-slate-600 hidden sm:inline">{timeUtc}</span>

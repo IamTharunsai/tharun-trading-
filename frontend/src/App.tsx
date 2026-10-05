@@ -22,6 +22,13 @@ import PolymarketPage from './pages/Polymarket';
 import CopyTradingPage from './pages/CopyTrading';
 import AlternativeDataPage from './pages/AlternativeData';
 import SettingsPage from './pages/Settings';
+import TearsheetPage from './pages/Tearsheet';
+import OptionsChainPage from './pages/OptionsChain';
+import MacroDashboardPage from './pages/MacroDashboard';
+import CryptoStrategyPage from './pages/CryptoStrategy';
+import PriceForecasterPage from './pages/PriceForecaster';
+import MultiAgentResearchPage from './pages/MultiAgentResearch';
+import QuotePanelPage from './pages/QuotePanel';
 import Layout from './components/common/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -61,6 +68,13 @@ export default function App() {
           <Route path="investment" element={<InvestmentPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="stocks" element={<StockUniversePage />} />
+          <Route path="tearsheet" element={<TearsheetPage />} />
+          <Route path="options" element={<OptionsChainPage />} />
+          <Route path="macro" element={<MacroDashboardPage />} />
+          <Route path="crypto-strategy" element={<CryptoStrategyPage />} />
+          <Route path="forecaster" element={<PriceForecasterPage />} />
+          <Route path="multi-agent" element={<MultiAgentResearchPage />} />
+          <Route path="quote" element={<QuotePanelPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
