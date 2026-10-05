@@ -1010,7 +1010,7 @@ async function closePosition(id: string, pos: GreedPosition, reason: string): Pr
 async function loadBankroll(): Promise<number> {
   try {
     // Load available cash from portfolio
-    const portfolio = await prisma.portfolio.findFirst({ orderBy: { createdAt: 'desc' } });
+    const portfolio = await prisma.portfolioSnapshot.findFirst({ orderBy: { timestamp: 'desc' } });
     // Use 20% of portfolio for Polymarket by default
     const availableForPolymarket = portfolio ? portfolio.totalValue * 0.20 : 1000;
     return Math.min(availableForPolymarket, 5_000); // Cap at $5k to start
@@ -1100,3 +1100,4 @@ function broadcastState() {
 export function getGreedAgentSnapshot(): GreedAgentSnapshot {
   return getSnapshot();
 }
+
