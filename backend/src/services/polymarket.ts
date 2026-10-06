@@ -96,8 +96,8 @@ export interface PolymarketMarket {
 
 export async function fetchActiveEvents(
   category?: string,
-  minLiquidity: number = 1000,
-  minVolume: number = 500
+  minLiquidity: number = 100,
+  minVolume: number = 50
 ): Promise<PolymarketEvent[]> {
   try {
     const response = await axios.get(`${POLYMARKET_GAMMA_API}/markets`, {
@@ -106,7 +106,7 @@ export async function fetchActiveEvents(
         closed: false,
         order: 'volume24hr',
         ascending: false,
-        limit: 50,
+        limit: 200,
         category: category || undefined,
         liquidity_num_min: minLiquidity,
       },
@@ -117,7 +117,8 @@ export async function fetchActiveEvents(
 
     // Filter for viable trading opportunities
     return markets
-      .filter((m: any) => Number(m.volume24hr) > minVolume && Number(m.liquidity) > minLiquidity)
+      .filter((m: any) => Number(m.volume24hr) >= minVolume && Number(m.liquidity) >= minLiquidity)
+
       .map((m: any) => ({
         id: m.id,
         title: m.question || m.title,
@@ -400,18 +401,22 @@ export async function scanPolymarketOpportunities(
   const analyses: ProbabilityAnalysis[] = [];
   const allAnalyses: ProbabilityAnalysis[] = [];
 
-  // Analyze top 10 events
-  const toAnalyze = events.slice(0, 10);
-  for (const event of toAnalyze) {
+  // Analyze ALL available markets — no artificial cap
+  for (const event of events) {
     for (const market of event.markets) {
-      const analysis = await analyzePolymarketEvent(market, portfolioValue);
-      allAnalyses.push(analysis);
-      if (analysis.recommendedSide !== 'SKIP' && analysis.betSizeUSD >= 1) {
-        analyses.push(analysis);
+      try {
+        const analysis = await analyzePolymarketEvent(market, portfolioValue);
+        allAnalyses.push(analysis);
+        if (analysis.recommendedSide !== 'SKIP' && analysis.betSizeUSD >= 1) {
+          analyses.push(analysis);
+        }
+      } catch {
+        // skip individual market errors
       }
-      await new Promise(r => setTimeout(r, 100)); // Rate limit
+      await new Promise(r => setTimeout(r, 80)); // Rate limit
     }
   }
+
 
   // Sort by expected profit
   analyses.sort((a, b) => b.expectedProfitUSD - a.expectedProfitUSD);
@@ -456,8 +461,14 @@ export async function scanPolymarketOpportunities(
     }).catch(() => {});
   }
 
-  // Return only actionable opportunities: the scheduler places paper bets on every
-  // returned entry, so SKIP-rated markets (persisted above for display) are excluded.
+  // Auto-place paper bets for all actionable opportunities
+  const actionableForBetting = allAnalyses.filter(a => a.recommendedSide !== 'SKIP' && a.betSizeUSD >= 1);
+  logger.info(`📊 Auto-placing ${actionableForBetting.length} paper bets...`);
+  for (const analysis of actionableForBetting) {
+    await placePolymarketBet(analysis, analysis.conditionId, true).catch(() => {});
+  }
+
+  // Return only actionable opportunities: SKIP-rated markets (persisted above for display) are excluded.
   return analyses;
 }
 
