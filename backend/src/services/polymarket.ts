@@ -257,7 +257,8 @@ function calculateBayesianEstimate(market: PolymarketMarket, portfolioValue: num
     ourEstimatedProbability: ourProbabilityYes,
     edge,
     confidence: topicConfidence,
-    recommendedSide: betSizeUSD >= 1 ? recommendedSide : 'SKIP',
+    // Keep recommendation based on signal quality, not bankroll size (zero balance = still scan)
+    recommendedSide,
     betSizeUSD: Math.max(0, Math.round(betSizeUSD * 100) / 100),
     expectedProfitUSD: parseFloat(expectedProfitUSD.toFixed(2)),
     reasoning: `Bayesian Oracle (${categoryName}): Market implies ${(marketImpliedProbability * 100).toFixed(1)}% vs model estimate ${(ourProbabilityYes * 100).toFixed(1)}% (${(absEdge * 100).toFixed(1)}¢ edge). Driven by ${primaryDriver}.`,
@@ -356,8 +357,10 @@ Respond ONLY in valid JSON:
     const betSizeUSD = Math.min(portfolioValue * halfKelly, portfolioValue * maxBetPct);
     const expectedProfitUSD = betSizeUSD * payout * ourP - betSizeUSD * (1 - ourP);
 
+    // Decouple recommendation quality from bankroll size:
+    // Only skip on poor edge or low confidence — zero balance still shows market intelligence
     let recommendation: 'YES' | 'NO' | 'SKIP' = parsed.recommendedSide;
-    if (absEdge < 0.08 || parsed.confidence < 60 || betSizeUSD < 1) {
+    if (absEdge < 0.08 || parsed.confidence < 60) {
       recommendation = 'SKIP';
     }
 
@@ -369,7 +372,7 @@ Respond ONLY in valid JSON:
       edge: parsed.edge || edge,
       confidence: parsed.confidence,
       recommendedSide: recommendation,
-      betSizeUSD: Math.max(1, Math.round(betSizeUSD * 100) / 100),
+      betSizeUSD: Math.round(betSizeUSD * 100) / 100,
       expectedProfitUSD,
       reasoning: parsed.reasoning,
       riskFactors: parsed.riskFactors || [],
@@ -397,45 +400,72 @@ export async function scanPolymarketOpportunities(
   const events = await fetchActiveEvents(undefined, 500, 200);
   logger.info(`   Found ${events.length} active markets`);
 
-  const analyses: ProbabilityAnalysis[] = [];
+  const allAnalyses: ProbabilityAnalysis[] = [];
 
   // Analyze top 10 events
   const toAnalyze = events.slice(0, 10);
   for (const event of toAnalyze) {
     for (const market of event.markets) {
       const analysis = await analyzePolymarketEvent(market, portfolioValue);
-      if (analysis.recommendedSide !== 'SKIP' && analysis.betSizeUSD >= 1) {
-        analyses.push(analysis);
-      }
+      // Always collect ALL analyses for display — filter only at bet placement
+      allAnalyses.push(analysis);
       await new Promise(r => setTimeout(r, 100)); // Rate limit
     }
   }
 
-  // Sort by expected profit
-  analyses.sort((a, b) => b.expectedProfitUSD - a.expectedProfitUSD);
+  // Sort by expected profit (actionable first, then by edge for informational)
+  allAnalyses.sort((a, b) => {
+    const aActionable = a.recommendedSide !== 'SKIP' && a.betSizeUSD >= 1 ? 1 : 0;
+    const bActionable = b.recommendedSide !== 'SKIP' && b.betSizeUSD >= 1 ? 1 : 0;
+    if (aActionable !== bActionable) return bActionable - aActionable;
+    return b.expectedProfitUSD - a.expectedProfitUSD;
+  });
 
-  logger.info(`\n✅ Found ${analyses.length} actionable Polymarket opportunities`);
+  const actionable = allAnalyses.filter(a => a.recommendedSide !== 'SKIP' && a.betSizeUSD >= 1);
+  const analyses = allAnalyses; // Return ALL for display; caller filters for betting
+
+  logger.info(`\n✅ Scanned ${allAnalyses.length} Polymarket markets — ${actionable.length} actionable`);
   analyses.slice(0, 3).forEach(a => {
     logger.info(`   ${a.recommendedSide} "${a.question.slice(0, 50)}..." — $${a.betSizeUSD} bet, EV: $${a.expectedProfitUSD.toFixed(2)}`);
   });
 
   getIO()?.emit('polymarket:scan-complete', { opportunities: analyses });
 
-  // Save to DB
-  for (const analysis of analyses) {
+  // Save ALL scanned markets to DB with full fields so the frontend can display them
+  // (previously only saved actionable ones with missing fields — hence all "—" on the Polymarket page)
+  // First delete stale POLYMARKET predictions so a fresh scan doesn't accumulate duplicates
+  await prisma.prediction.deleteMany({ where: { asset: 'POLYMARKET', resolvedAt: null } }).catch(() => {});
+
+  for (const analysis of allAnalyses) {
+    const noPrice = 1 - analysis.marketImpliedProbability;
+    const kelly = analysis.betSizeUSD > 0 && analysis.marketImpliedProbability > 0
+      ? Math.min(analysis.betSizeUSD / (analysis.marketImpliedProbability * 100 || 1), 0.1)
+      : 0;
     await prisma.prediction.create({
       data: {
         asset: 'POLYMARKET',
-        direction: analysis.recommendedSide === 'YES' ? 'UP' : 'DOWN',
+        market: 'polymarket',
+        title: analysis.question,
+        category: 'prediction',
+        direction: analysis.recommendedSide === 'YES' ? 'UP' : analysis.recommendedSide === 'NO' ? 'DOWN' : 'NEUTRAL',
         confidence: analysis.confidence,
+        yesPrice: analysis.marketImpliedProbability,
+        noPrice,
+        edge: analysis.edge,
+        recommendedBet: analysis.recommendedSide,
+        expectedValue: analysis.expectedProfitUSD,
+        kellyFraction: kelly,
         targetPrice: analysis.ourEstimatedProbability * 100,
         currentPrice: analysis.marketImpliedProbability * 100,
         timeHorizon: `${analysis.daysToResolution}D`,
-        keyRisks: analysis.riskFactors
+        keyRisks: analysis.riskFactors || [],
+        reasoning: analysis.reasoning || null,
+        status: 'ACTIVE',
       }
     }).catch(() => {});
   }
 
+  // Return ALL scanned markets so the frontend can display intelligence even with no balance
   return analyses;
 }
 

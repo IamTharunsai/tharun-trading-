@@ -566,7 +566,14 @@ marketRouter.get('/news', async (req: Request, res: Response) => {
 marketRouter.get('/predictions', async (req: Request, res: Response) => {
   try {
     const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null }, orderBy: { createdAt: 'desc' } });
-    res.json(predictions);
+    // Enrich with trueYesProbability so frontend normalizePrediction() works
+    // (targetPrice is stored as ourEstimatedProbability * 100)
+    const enriched = predictions.map((p: any) => ({
+      ...p,
+      trueYesProbability: p.targetPrice != null ? p.targetPrice / 100 : null,
+      noPrice: p.noPrice ?? (p.yesPrice != null ? 1 - p.yesPrice : null),
+    }));
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch predictions' });
   }
@@ -574,15 +581,29 @@ marketRouter.get('/predictions', async (req: Request, res: Response) => {
 
 marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
   try {
-    const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null } });
+    // Actually run the scanner — returns ALL scanned markets (not just actionable)
+    // so the UI can display market intelligence even when portfolio has no balance
+    const { scanPolymarketOpportunities } = await import('../services/polymarket');
+    const { getPortfolioState } = await import('../services/portfolio');
+
+    let portfolioValue = 0;
+    try {
+      const portfolio = await getPortfolioState();
+      portfolioValue = portfolio.totalValue ?? 0;
+    } catch { /* proceed with zero balance — scanner still returns market data */ }
+
+    const opportunities = await scanPolymarketOpportunities(portfolioValue);
+    const actionable = opportunities.filter(o => o.recommendedSide !== 'SKIP' && o.betSizeUSD >= 1);
+
     res.json({
       success: true,
-      message: `Polymarket scan complete — ${predictions.length} open market${predictions.length === 1 ? '' : 's'} tracked.`,
-      opportunities: predictions,
+      message: `Scanned ${opportunities.length} markets — ${actionable.length} actionable with current balance ($${portfolioValue.toFixed(0)}).`,
+      opportunities,
+      actionableCount: actionable.length,
       scannedAt: new Date().toISOString()
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Scan failed' });
+    res.status(500).json({ error: 'Scan failed', detail: err.message });
   }
 });
 
@@ -1213,21 +1234,70 @@ marketRouter.get('/options', async (req: Request, res: Response) => {
   }
 });
 
-// Market screener
+// Market screener — live data from Alpaca snapshots
 marketRouter.get('/screener', async (_req: Request, res: Response) => {
   try {
     const { getCurrentPrices } = await import('../services/marketData');
     const prices = getCurrentPrices();
-    const symbols = Object.keys(prices).slice(0, 50);
-    const data = symbols.map(sym => ({
-      symbol: sym,
-      price: prices[sym] ?? 0,
-      change1d: (Math.random() - 0.5) * 4,
-      volume: Math.floor(Math.random() * 10000000),
-      rsi: 30 + Math.random() * 40,
-      sector: 'N/A',
-    }));
-    res.json({ data, updatedAt: new Date().toISOString() });
+    const symbols = Object.keys(prices).filter(s => !s.includes('/')).slice(0, 50);
+
+    // Fetch real snapshots from Alpaca for change%, volume, VWAP
+    const ALPACA_KEY = process.env.ALPACA_API_KEY;
+    const ALPACA_SECRET = process.env.ALPACA_SECRET_KEY;
+
+    let snapshots: Record<string, any> = {};
+    if (ALPACA_KEY && ALPACA_SECRET && symbols.length > 0) {
+      try {
+        const { default: axios } = await import('axios');
+        const chunks = [];
+        for (let i = 0; i < symbols.length; i += 20) chunks.push(symbols.slice(i, i + 20));
+
+        for (const chunk of chunks) {
+          const resp = await axios.get('https://data.alpaca.markets/v2/stocks/snapshots', {
+            headers: { 'APCA-API-KEY-ID': ALPACA_KEY, 'APCA-API-SECRET-KEY': ALPACA_SECRET },
+            params: { symbols: chunk.join(',') },
+            timeout: 8000
+          });
+          Object.assign(snapshots, resp.data);
+        }
+      } catch { /* fall back to price-only mode */ }
+    }
+
+    const SECTOR_MAP: Record<string, string> = {
+      AAPL: 'Tech', MSFT: 'Tech', NVDA: 'Tech', GOOGL: 'Tech', META: 'Tech', AMZN: 'Tech', TSLA: 'Tech',
+      JPM: 'Finance', BAC: 'Finance', GS: 'Finance', MS: 'Finance',
+      JNJ: 'Healthcare', PFE: 'Healthcare', UNH: 'Healthcare',
+      XOM: 'Energy', CVX: 'Energy', COP: 'Energy',
+      SPY: 'ETF', QQQ: 'ETF', IWM: 'ETF', DIA: 'ETF',
+    };
+
+    const data = symbols.map(sym => {
+      const snap = snapshots[sym];
+      const price = prices[sym] ?? (snap?.latestTrade?.p ?? 0);
+      const prevClose = snap?.prevDailyBar?.c ?? price;
+      const change1d = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+      const volume = snap?.dailyBar?.v ?? snap?.prevDailyBar?.v ?? 0;
+      const vwap = snap?.dailyBar?.vw ?? 0;
+
+      // Compute RSI-14 approximation from daily close vs prev close
+      // (simplified: use price vs vwap as a directional proxy when no candles available)
+      const rsiProxy = vwap > 0
+        ? Math.min(80, Math.max(20, 50 + ((price - vwap) / vwap) * 300))
+        : 50;
+
+      return {
+        symbol: sym,
+        price: parseFloat(price.toFixed(2)),
+        change1d: parseFloat(change1d.toFixed(2)),
+        volume,
+        vwap: parseFloat(vwap.toFixed(2)),
+        rsi: parseFloat(rsiProxy.toFixed(1)),
+        sector: SECTOR_MAP[sym] ?? 'Other',
+        prevClose: parseFloat(prevClose.toFixed(2)),
+      };
+    });
+
+    res.json({ data, updatedAt: new Date().toISOString(), source: Object.keys(snapshots).length > 0 ? 'alpaca' : 'cache' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
