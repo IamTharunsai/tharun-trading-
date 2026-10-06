@@ -8,16 +8,23 @@ jobs:
   deploy-backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+
       - name: Install & Build Backend
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@localhost/placeholder
         run: |
-          cd backend
           npm install
+          npx prisma generate
           npm run build
+
       - name: Deploy to Railway
+        if: ${{ secrets.RAILWAY_TOKEN != '' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
@@ -27,16 +34,20 @@ jobs:
   deploy-frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+
       - name: Install & Build Frontend
+        working-directory: frontend
         run: |
-          cd frontend
           npm install
           npm run build
+
       - name: Deploy to Vercel
+        if: ${{ secrets.VERCEL_TOKEN != '' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |

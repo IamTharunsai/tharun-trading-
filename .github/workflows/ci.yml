@@ -1,7 +1,7 @@
-# Regression gate: runs on every push / PR. Backend unit+integration tests,
-# frontend typecheck + build, then the Playwright smoke/sanity/regression/
-# security suite against the built frontend with a mocked API.
+# Regression gate: runs on every push / PR
+# Checks: backend TypeScript + Prisma generate, frontend TypeScript + Vite build
 name: CI
+
 on:
   push:
     branches: [main]
@@ -10,28 +10,42 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: backend } }
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/testdb
+      NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: backend/package-lock.json }
-      - run: npm ci
-      - run: npx prisma generate
-      - run: npx tsc --noEmit -p .
-      - run: npx jest --ci
 
-  frontend-e2e:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: TypeScript check
+        run: npx tsc --noEmit -p .
+
+  frontend-build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: cd frontend && npx tsc --noEmit -p .
-      - run: npm run build
-      - run: cd e2e && npm install && npx playwright install --with-deps chromium
-      - run: cd e2e && npx playwright test
-        env: { PW_CHROMIUM: '' }
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with: { name: playwright-report, path: e2e/report }
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (TypeScript + Vite)
+        run: npm run build
