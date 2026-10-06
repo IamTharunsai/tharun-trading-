@@ -14,6 +14,7 @@
  */
 
 import type { AgentVote, VoteDirection } from './types';
+import { getTopicIntelligence, formatIntelligenceForPrompt, type TopicIntelligence } from '../services/polymarketIntelligence';
 
 export interface FirmDebateInput {
   asset: string;
@@ -182,11 +183,28 @@ export async function runFirmDebate(
   console.log(`[FIRM DEBATE] Starting 7-agent debate for ${input.asset}`);
 
   try {
+    // Layer 0: Polymarket Intelligence (read-only, no auth, TradingAgents approach)
+    // Fetch crowd wisdom prediction market signals to enrich agent debate context
+    let polymarketIntel: TopicIntelligence | null = null;
+    try {
+      polymarketIntel = await getTopicIntelligence(input.asset);
+      if (polymarketIntel) {
+        console.log(`[FIRM DEBATE] 🎯 Polymarket intel for ${input.asset}: ${polymarketIntel.markets.length} markets, sentiment=${polymarketIntel.overallSentiment}`);
+      }
+    } catch {
+      // Non-critical — debate proceeds without it
+    }
+
+    // Inject polymarket context into the research input
+    const enrichedInput: FirmDebateInput = polymarketIntel
+      ? { ...input, _polymarketContext: formatIntelligenceForPrompt(polymarketIntel) } as any
+      : input;
+
     // Layer 1: Research (parallel)
-    const research = await runResearchLayer(input);
+    const research = await runResearchLayer(enrichedInput);
 
     // Layer 2: Adversarial (parallel)
-    const adversarial = await runAdversarialLayer(input, research);
+    const adversarial = await runAdversarialLayer(enrichedInput, research);
 
     // Layer 3: Trader synthesis
     const traderDecision = await runTraderLayer(input, research, adversarial);
@@ -275,6 +293,7 @@ End with confidence score (0-100).`;
 }
 
 function buildTraderPrompt(input: FirmDebateInput, research: any, adversarial: any): string {
+  const polyCtx = (input as any)._polymarketContext ?? '';
   return `You are a PROFESSIONAL TRADER. Based on this research, make a clear trading decision.
 
 Asset: ${input.asset} @ $${input.price}
@@ -283,8 +302,8 @@ BULL CASE: ${adversarial.bullCase}
 BEAR CASE: ${adversarial.bearCase}
 TECHNICAL: ${JSON.stringify(research.technicalSignals)}
 SENTIMENT: ${research.sentimentScore}/100
-
-Your job: Weigh both cases and output BUY/SELL/HOLD with confidence (0-100) and rationale.
+${polyCtx}
+Your job: Weigh ALL evidence including prediction market crowd wisdom. Output BUY/SELL/HOLD with confidence (0-100) and rationale.
 Be decisive. The PM will review your call.`;
 }
 

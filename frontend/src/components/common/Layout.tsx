@@ -8,7 +8,8 @@ import {
   TrendingUp, BookOpen, Newspaper, Settings, LogOut,
   Power, Zap, Eye, MessageSquare, Users, Globe2,
   FileSpreadsheet, ShieldAlert, Cpu, Radio, Menu, X,
-  Activity, Layers, Search, Brain, LineChart, Bitcoin, Filter, FlaskConical
+  Activity, Layers, Search, Brain, LineChart, Bitcoin, Filter, FlaskConical,
+  User, CalendarDays, Tv
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 import ErrorBoundary from './ErrorBoundary';
@@ -68,6 +69,9 @@ const NAV_GROUPS = [
       { path: '/news', label: 'Bloomberg News Wire', icon: Newspaper },
       { path: '/journal', label: 'Trade Journal', icon: BookOpen },
       { path: '/investment', label: 'Investment Plan', icon: Cpu },
+      { path: '/insider', label: 'Insider Transactions', icon: User },
+      { path: '/recap', label: 'Daily Market Recap', icon: CalendarDays },
+      { path: '/live-tv', label: 'Live Financial TV', icon: Tv },
     ]
   },
   {

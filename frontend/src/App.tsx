@@ -31,6 +31,9 @@ import MultiAgentResearchPage from './pages/MultiAgentResearch';
 import QuotePanelPage from './pages/QuotePanel';
 import ScreenerPage from './pages/Screener';
 import BacktestHubPage from './pages/BacktestHub';
+import InsiderTransactionsPage from './pages/InsiderTransactions';
+import MarketRecapPage from './pages/MarketRecap';
+import LiveTVPage from './pages/LiveTV';
 import Layout from './components/common/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -79,6 +82,9 @@ export default function App() {
           <Route path="quote" element={<QuotePanelPage />} />
           <Route path="screener" element={<ScreenerPage />} />
           <Route path="backtest" element={<BacktestHubPage />} />
+          <Route path="insider" element={<InsiderTransactionsPage />} />
+          <Route path="recap" element={<MarketRecapPage />} />
+          <Route path="live-tv" element={<LiveTVPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
