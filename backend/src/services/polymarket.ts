@@ -398,12 +398,14 @@ export async function scanPolymarketOpportunities(
   logger.info(`   Found ${events.length} active markets`);
 
   const analyses: ProbabilityAnalysis[] = [];
+  const allAnalyses: ProbabilityAnalysis[] = [];
 
   // Analyze top 10 events
   const toAnalyze = events.slice(0, 10);
   for (const event of toAnalyze) {
     for (const market of event.markets) {
       const analysis = await analyzePolymarketEvent(market, portfolioValue);
+      allAnalyses.push(analysis);
       if (analysis.recommendedSide !== 'SKIP' && analysis.betSizeUSD >= 1) {
         analyses.push(analysis);
       }
@@ -413,6 +415,7 @@ export async function scanPolymarketOpportunities(
 
   // Sort by expected profit
   analyses.sort((a, b) => b.expectedProfitUSD - a.expectedProfitUSD);
+  allAnalyses.sort((a, b) => b.expectedProfitUSD - a.expectedProfitUSD);
 
   logger.info(`\n✅ Found ${analyses.length} actionable Polymarket opportunities`);
   analyses.slice(0, 3).forEach(a => {
@@ -421,23 +424,43 @@ export async function scanPolymarketOpportunities(
 
   getIO()?.emit('polymarket:scan-complete', { opportunities: analyses });
 
-  // Save to DB
-  for (const analysis of analyses) {
+  // Save ALL scanned markets to DB with full fields so the frontend can display them
+  // First delete stale POLYMARKET predictions so a fresh scan doesn't accumulate duplicates
+  await prisma.prediction.deleteMany({ where: { asset: 'POLYMARKET', resolvedAt: null } }).catch(() => {});
+  for (const analysis of allAnalyses) {
+    const noPrice = 1 - analysis.marketImpliedProbability;
+    const kelly = analysis.betSizeUSD > 0 && analysis.marketImpliedProbability > 0
+      ? Math.min(analysis.betSizeUSD / (analysis.marketImpliedProbability * 100 || 1), 0.1)
+      : 0;
     await prisma.prediction.create({
       data: {
         asset: 'POLYMARKET',
-        direction: analysis.recommendedSide === 'YES' ? 'UP' : 'DOWN',
+        market: 'polymarket',
+        title: analysis.question,
+        category: 'prediction',
+        direction: analysis.recommendedSide === 'YES' ? 'UP' : analysis.recommendedSide === 'NO' ? 'DOWN' : 'NEUTRAL',
         confidence: analysis.confidence,
+        yesPrice: analysis.marketImpliedProbability,
+        noPrice,
+        edge: analysis.edge,
+        recommendedBet: analysis.recommendedSide,
+        expectedValue: analysis.expectedProfitUSD,
+        kellyFraction: kelly,
         targetPrice: analysis.ourEstimatedProbability * 100,
         currentPrice: analysis.marketImpliedProbability * 100,
         timeHorizon: `${analysis.daysToResolution}D`,
-        keyRisks: analysis.riskFactors
+        keyRisks: analysis.riskFactors || [],
+        reasoning: analysis.reasoning || null,
+        status: 'ACTIVE',
       }
     }).catch(() => {});
   }
 
+  // Return only actionable opportunities: the scheduler places paper bets on every
+  // returned entry, so SKIP-rated markets (persisted above for display) are excluded.
   return analyses;
 }
+
 
 // ── PLACE POLYMARKET BET ──────────────────────────────────────────────────────
 

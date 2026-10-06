@@ -566,7 +566,12 @@ marketRouter.get('/news', async (req: Request, res: Response) => {
 marketRouter.get('/predictions', async (req: Request, res: Response) => {
   try {
     const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null }, orderBy: { createdAt: 'desc' } });
-    res.json(predictions);
+    const enriched = predictions.map((p: any) => ({
+      ...p,
+      trueYesProbability: p.targetPrice != null ? p.targetPrice / 100 : null,
+      noPrice: p.noPrice ?? (p.yesPrice != null ? 1 - p.yesPrice : null),
+    }));
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch predictions' });
   }
