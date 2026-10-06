@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { createPrivateKey, sign as cryptoSign } from 'crypto';
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
@@ -86,6 +87,9 @@ export interface PolymarketMarket {
   volume: number;
   liquidity: number;
   endDate: string;
+  tokenIdYes?: string;  // CLOB token ID for the YES outcome (Gamma clobTokenIds[0])
+  tokenIdNo?: string;   // CLOB token ID for the NO outcome (Gamma clobTokenIds[1])
+
   // Our calculated fields
   trueYesProbability?: number;  // Our estimate of true probability
   edge?: number;                 // Our edge vs market price
@@ -136,6 +140,9 @@ export async function fetchActiveEvents(
           volume: Number(m.volume24hr) || 0,
           liquidity: Number(m.liquidity) || 0,
           endDate: m.end_date_iso,
+          tokenIdYes: parseClobTokenIds(m.clobTokenIds)[0],
+          tokenIdNo: parseClobTokenIds(m.clobTokenIds)[1],
+
         }]
       }));
 
@@ -461,17 +468,67 @@ export async function scanPolymarketOpportunities(
     }).catch(() => {});
   }
 
-  // Auto-place paper bets for all actionable opportunities
+  // Auto-place bets for all actionable opportunities (paper unless POLYMARKET_US_LIVE === 'true')
+  const isPaper = process.env.POLYMARKET_US_LIVE !== 'true';
   const actionableForBetting = allAnalyses.filter(a => a.recommendedSide !== 'SKIP' && a.betSizeUSD >= 1);
-  logger.info(`📊 Auto-placing ${actionableForBetting.length} paper bets...`);
+  logger.info(`📊 Auto-placing ${actionableForBetting.length} ${isPaper ? 'paper' : 'LIVE'} bets...`);
   for (const analysis of actionableForBetting) {
-    await placePolymarketBet(analysis, analysis.conditionId, true).catch(() => {});
+    await placePolymarketBet(analysis, analysis.conditionId, isPaper).catch(() => {});
   }
+
 
   // Return only actionable opportunities: SKIP-rated markets (persisted above for display) are excluded.
   return analyses;
 }
 
+
+// ── POLYMARKET CLOB AUTH (Ed25519) ────────────────────────────────────────────
+
+function buildPolymarketAuthHeaders(): Record<string, string> {
+  const keyId = process.env.POLYMARKET_KEY_ID;
+  const secretKeyBase64 = process.env.POLYMARKET_SECRET_KEY;
+  if (!keyId || !secretKeyBase64) {
+    throw new Error('POLYMARKET_KEY_ID and POLYMARKET_SECRET_KEY must be set');
+  }
+  const timestamp = Date.now().toString();
+  // Secret key is 64 bytes (seed + public key); Ed25519 seed is first 32 bytes
+  const keyBytes = Buffer.from(secretKeyBase64, 'base64');
+  const seed = keyBytes.subarray(0, 32);
+  // Wrap seed in PKCS8 DER structure for Node.js createPrivateKey
+  const pkcs8Header = Buffer.from('302e020100300506032b657004220420', 'hex');
+  const pkcs8Der = Buffer.concat([pkcs8Header, seed]);
+  const privKey = createPrivateKey({ key: pkcs8Der, format: 'der', type: 'pkcs8' });
+  const signature = cryptoSign(null, Buffer.from(timestamp), privKey).toString('base64');
+  return {
+    'X-PM-Access-Key': keyId,
+    'X-PM-Timestamp': timestamp,
+    'X-PM-Signature': signature,
+    'Content-Type': 'application/json',
+  };
+}
+
+// Gamma returns clobTokenIds either as an array or as a JSON-encoded string
+function parseClobTokenIds(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function fetchClobTokenIds(conditionId: string): Promise<{ tokenIdYes?: string; tokenIdNo?: string }> {
+  const response = await axios.get(`${POLYMARKET_GAMMA_API}/markets`, {
+    params: { condition_ids: conditionId },
+    timeout: 10000,
+  });
+  const ids = parseClobTokenIds(response.data?.[0]?.clobTokenIds);
+  return { tokenIdYes: ids[0], tokenIdNo: ids[1] };
+}
 
 // ── PLACE POLYMARKET BET ──────────────────────────────────────────────────────
 
@@ -479,7 +536,7 @@ export async function placePolymarketBet(
   analysis: ProbabilityAnalysis,
   marketConditionId: string,
   isPaper: boolean = true
-): Promise<{ success: boolean; txHash?: string; message: string }> {
+): Promise<{ success: boolean; txHash?: string; orderId?: string; message: string }> {
 
   if (isPaper) {
     logger.info(`📄 PAPER BET: ${analysis.recommendedSide} $${analysis.betSizeUSD} on "${analysis.question.slice(0, 50)}..."`);
@@ -507,23 +564,100 @@ export async function placePolymarketBet(
     return { success: true, message: `Paper bet placed: ${analysis.recommendedSide} $${analysis.betSizeUSD}` };
   }
 
-  // Live betting would require actual Polygon transaction signing
-  // This is the framework — requires Polymarket CLOB API authentication
-  if (!wallet) {
-    return { success: false, message: 'Wallet not initialized — add POLYMARKET_PRIVATE_KEY to .env' };
+  // REAL CLOB order placement (Polymarket US, Ed25519-signed)
+  const isLive = process.env.POLYMARKET_US_LIVE === 'true';
+  const parsedMax = parseFloat(process.env.POLYMARKET_MAX_BET_USD || '5');
+  const maxBetUsd = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 5;
+  const conditionId = analysis.conditionId || marketConditionId;
+
+  if (!isLive) {
+    logger.info('[Polymarket] Paper trade (POLYMARKET_US_LIVE not set)');
+    return { success: true, message: 'Paper trade (POLYMARKET_US_LIVE not set)' };
+  }
+
+  if (analysis.recommendedSide === 'SKIP') {
+    return { success: false, message: 'No side recommended — nothing to place' };
   }
 
   try {
-    // NOTE: Full CLOB order placement requires Polymarket API authentication
-    // and EIP-712 signature. Framework is here — full implementation requires
-    // Polymarket API key from polymarket.com/profile
-    logger.warn('Live Polymarket betting requires additional API key setup at polymarket.com');
-    return { success: false, message: 'Polymarket live trading requires API key setup — see README' };
+    const tokens = await fetchClobTokenIds(conditionId);
+    const tokenId = analysis.recommendedSide === 'YES' ? tokens.tokenIdYes : tokens.tokenIdNo;
+    if (!tokenId) {
+      logger.error(`[Polymarket] No tokenId for market ${conditionId}`);
+      return { success: false, message: 'No tokenId available' };
+    }
+
+    const betAmount = Math.min(analysis.betSizeUSD ?? 1, maxBetUsd);
+    const price = analysis.recommendedSide === 'YES'
+      ? analysis.marketImpliedProbability
+      : 1 - analysis.marketImpliedProbability;
+    const size = betAmount / (price || 0.5);
+
+    const orderBody = {
+      order: {
+        salt: Date.now(),
+        maker: process.env.POLYMARKET_KEY_ID,
+        signer: process.env.POLYMARKET_KEY_ID,
+        taker: '0x0000000000000000000000000000000000000000',
+        tokenId,
+        makerAmount: Math.floor(betAmount * 1e6).toString(),
+        takerAmount: Math.floor(size * 1e6).toString(),
+        expiration: '0',
+        nonce: '0',
+        feeRateBps: '0',
+        side: 'BUY', // buying the YES or NO outcome token in both cases
+        signatureType: 0,
+        signature: '',
+      },
+      owner: process.env.POLYMARKET_KEY_ID,
+      orderType: 'FOK',
+    };
+
+    let headers: Record<string, string>;
+    try {
+      headers = buildPolymarketAuthHeaders();
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+
+    const resp = await axios.post(`${POLYMARKET_CLOB_API}/order`, orderBody, {
+      headers,
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+    const result = resp.data as any;
+    logger.info(`[Polymarket] CLOB order result: ${JSON.stringify(result)}`);
+
+    if (resp.status < 200 || resp.status >= 300) {
+      return { success: false, message: result?.error ?? resp.statusText ?? `HTTP ${resp.status}` };
+    }
+
+    const orderId: string | undefined = result?.orderID ?? result?.id;
+    await prisma.trade.create({
+      data: {
+        asset: 'POLYMARKET',
+        market: 'prediction',
+        type: analysis.recommendedSide === 'YES' ? 'BUY' : 'SELL',
+        entryPrice: price,
+        quantity: size,
+        status: 'OPEN',
+        stopLossPrice: 0,
+        takeProfitPrice: 1, // marker: share-based accounting (v2)
+        brokerOrderId: conditionId,
+      }
+    }).catch(() => {});
+
+    return {
+      success: true,
+      orderId,
+      message: `Live order placed: ${analysis.recommendedSide} $${betAmount.toFixed(2)}`,
+    };
   } catch (err: any) {
     logger.error('Polymarket bet failed', { err });
     return { success: false, message: `Bet failed: ${err.message}` };
   }
 }
+
 
 // ── RESOLUTION POLLING ────────────────────────────────────────────────────────
 // Nothing previously checked whether a Polymarket market had resolved in the
