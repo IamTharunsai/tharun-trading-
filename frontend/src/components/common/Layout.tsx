@@ -8,7 +8,7 @@ import {
   TrendingUp, BookOpen, Newspaper, Settings, LogOut,
   Power, Zap, Eye, MessageSquare, Users, Globe2,
   FileSpreadsheet, ShieldAlert, Cpu, Radio, Menu, X,
-  Activity, Layers, Search, Brain, LineChart, Bitcoin
+  Activity, Layers, Search, Brain, LineChart, Bitcoin, Filter, FlaskConical
 } from 'lucide-react';
 import LiveTicker from './LiveTicker';
 import ErrorBoundary from './ErrorBoundary';
@@ -63,6 +63,8 @@ const NAV_GROUPS = [
       { path: '/forecaster', label: 'Price Forecaster (ML)', icon: LineChart },
       { path: '/multi-agent', label: 'Multi-Agent Research', icon: Brain },
       { path: '/quote', label: 'Quote Panel', icon: Search },
+      { path: '/screener', label: 'Market Screener', icon: Filter },
+      { path: '/backtest', label: 'Backtest Hub', icon: FlaskConical },
       { path: '/news', label: 'Bloomberg News Wire', icon: Newspaper },
       { path: '/journal', label: 'Trade Journal', icon: BookOpen },
       { path: '/investment', label: 'Investment Plan', icon: Cpu },

@@ -29,6 +29,8 @@ import CryptoStrategyPage from './pages/CryptoStrategy';
 import PriceForecasterPage from './pages/PriceForecaster';
 import MultiAgentResearchPage from './pages/MultiAgentResearch';
 import QuotePanelPage from './pages/QuotePanel';
+import ScreenerPage from './pages/Screener';
+import BacktestHubPage from './pages/BacktestHub';
 import Layout from './components/common/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -75,6 +77,8 @@ export default function App() {
           <Route path="forecaster" element={<PriceForecasterPage />} />
           <Route path="multi-agent" element={<MultiAgentResearchPage />} />
           <Route path="quote" element={<QuotePanelPage />} />
+          <Route path="screener" element={<ScreenerPage />} />
+          <Route path="backtest" element={<BacktestHubPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
