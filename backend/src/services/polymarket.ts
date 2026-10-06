@@ -395,7 +395,7 @@ export async function scanPolymarketOpportunities(
   logger.info('\n🔍 SCANNING POLYMARKET FOR OPPORTUNITIES...');
   getIO()?.emit('polymarket:scanning', { portfolioValue });
 
-  const events = await fetchActiveEvents(undefined, 500, 200);
+  const events = await fetchActiveEvents(undefined, 100, 50);
   logger.info(`   Found ${events.length} active markets`);
 
   const analyses: ProbabilityAnalysis[] = [];
