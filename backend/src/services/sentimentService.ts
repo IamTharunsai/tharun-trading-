@@ -438,6 +438,14 @@ export interface GetSentimentOptions {
   persist?: boolean;    // write a SentimentSnapshot row (default true)
 }
 
+export function ageCachedSentiment(value: SentimentResult, now = Date.now()): SentimentResult {
+  const computed = Date.parse(value.computedAt);
+  const age = value.freshnessMinutes;
+  const freshnessMinutes = Number.isFinite(computed) && computed <= now && age !== null && Number.isFinite(age) && age >= 0
+    ? age + (now - computed) / 60000 : null;
+  return { ...value, freshnessMinutes };
+}
+
 export async function getSentiment(assetIn: string, opts: GetSentimentOptions = {}): Promise<SentimentResult> {
   const asset = String(assetIn || '').toUpperCase();
   const market: SentimentMarket = opts.market || 'stocks';
@@ -445,7 +453,7 @@ export async function getSentiment(assetIn: string, opts: GetSentimentOptions = 
   const ttl = Number(process.env.SENTIMENT_CACHE_TTL_SEC || 900);
   const cacheKey = `sentiment:v1:${market}:${asset}:${includeX ? 'x' : 'nx'}`;
   const cached = await cacheGet<SentimentResult>(cacheKey);
-  if (cached) return cached;
+  if (cached) return ageCachedSentiment(cached);
 
   const lookbackH = Math.max(1, Number(process.env.SENTIMENT_LOOKBACK_HOURS || 24));
   const since = new Date(Date.now() - lookbackH * 3_600_000);

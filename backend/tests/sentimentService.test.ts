@@ -238,3 +238,14 @@ describe('Polymarket headlines + config', () => {
     expect(buildXQuery('BTC', 'crypto')).toBe('($BTC OR #bitcoin OR "bitcoin") lang:en -is:retweet -is:reply');
   });
 });
+
+it('cached sentiment ages before it can affect a risk gate', () => {
+  const { ageCachedSentiment, evaluateSentimentGate } = require('../src/services/sentimentService');
+  const computed = Date.parse('2026-10-08T00:00:00Z');
+  const value = { score: -0.9, mentionCount: 100, freshnessMinutes: 30, computedAt: new Date(computed).toISOString() };
+  const aged = ageCachedSentiment(value, computed + 24 * 3600000);
+  expect(aged.freshnessMinutes).toBe(1470);
+  expect(evaluateSentimentGate('BUY', aged).veto).toBe(false);
+  expect(value.freshnessMinutes).toBe(30);
+  expect(ageCachedSentiment({ ...value, computedAt: 'invalid' }, computed).freshnessMinutes).toBeNull();
+});

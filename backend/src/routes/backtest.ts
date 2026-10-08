@@ -4,9 +4,9 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { runBacktest, evaluateBacktestResults, BacktestConfig } from '../trading/backtestingEngine';
+import { runBacktest, evaluateBacktestResults, backtestConfigSchema } from '../trading/backtestingEngine';
+import { historicalRange } from '../trading/historicalBars';
 import { logger } from '../utils/logger';
-import { prisma } from '../utils/prisma';
 import { requireAuth } from '../middleware/auth';
 
 const router = Router();
@@ -18,18 +18,12 @@ router.use(requireAuth);
  */
 router.post('/run', async (req: Request, res: Response) => {
   try {
-    const config: BacktestConfig = {
-      startDate: req.body.startDate || '2025-10-15',
-      endDate: req.body.endDate || '2026-04-15',
-      initialCapital: req.body.initialCapital || 100000,
-      symbols: req.body.symbols || ['AAPL', 'BTC/USDT', 'ETH/USDT'],
-      riskPerTrade: req.body.riskPerTrade || 1,
-      maxPositionSize: req.body.maxPositionSize || 10,
-      brokerFeesPct: req.body.brokerFeesPct || 0.1,
-    };
-
-    logger.info('Starting backtest...', config);
-    const results = await runBacktest(config);
+    const parsed = backtestConfigSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid backtest configuration', issues: parsed.error.issues });
+    try { historicalRange(parsed.data.startDate, parsed.data.endDate); }
+    catch { return res.status(400).json({ error: 'Dates must identify 1–366 completed UTC days' }); }
+    logger.info('Starting dated research replay', { strategy: parsed.data.strategy, symbols: parsed.data.symbols });
+    const results = await runBacktest(parsed.data);
 
     // Evaluate go/no-go decision
     const evaluation = evaluateBacktestResults(results);
@@ -39,8 +33,8 @@ router.post('/run', async (req: Request, res: Response) => {
       results,
       evaluation,
       recommendation: evaluation.canGoLive
-        ? '✅ SAFE TO DEPLOY - All metrics meet requirements'
-        : '❌ DO NOT DEPLOY - Issues detected',
+        ? 'Current qualification passed; review the registered evidence before release'
+        : 'Unqualified research simulation — not a live deployment authorization',
     });
   } catch (error) {
     logger.error('Backtest failed', { error });
@@ -54,8 +48,9 @@ router.post('/run', async (req: Request, res: Response) => {
  */
 router.get('/status', (req: Request, res: Response) => {
   res.json({
-    status: 'ready',
-    message: 'No active backtest running. Use POST /api/backtest/run to start.',
+    status: 'available',
+    jobTracking: false,
+    message: 'Synchronous research endpoint; active and completed jobs are not tracked by this status response.',
   });
 });
 
@@ -65,33 +60,14 @@ router.get('/status', (req: Request, res: Response) => {
  */
 router.post('/validate', (req: Request, res: Response) => {
   try {
-    const config = req.body;
-
-    // Basic validation
-    const errors: string[] = [];
-
-    if (!config.startDate) errors.push('startDate is required');
-    if (!config.endDate) errors.push('endDate is required');
-    if (config.initialCapital && config.initialCapital < 1000) {
-      errors.push('initialCapital must be >= $1,000');
-    }
-    if (!config.symbols || config.symbols.length === 0) {
-      errors.push('symbols array must not be empty');
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({ valid: false, errors });
-    }
+    const parsed = backtestConfigSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ valid: false, issues: parsed.error.issues });
+    historicalRange(parsed.data.startDate, parsed.data.endDate);
 
     res.json({
       valid: true,
-      config: {
-        ...config,
-        riskPerTrade: config.riskPerTrade || 1,
-        maxPositionSize: config.maxPositionSize || 10,
-        brokerFeesPct: config.brokerFeesPct || 0.1,
-      },
-      message: 'Configuration is valid. Ready to run backtest.',
+      config: parsed.data,
+      message: 'Research configuration is valid; provider coverage and live qualification are not established.',
     });
   } catch (error) {
     res.status(400).json({ valid: false, error: 'Invalid configuration' });
@@ -112,7 +88,7 @@ router.get('/requirements', (req: Request, res: Response) => {
       },
       winRate: {
         target: '>55%',
-        description: 'Percentage of profitable trades',
+        description: 'Percentage of profitable trades; does not establish expectancy or statistical significance',
         current: 'Run backtest to see',
       },
       maxDrawdown: {
@@ -127,7 +103,7 @@ router.get('/requirements', (req: Request, res: Response) => {
       },
     },
     recommendation:
-      '✅ GO LIVE IF all metrics meet targets. ❌ IMPROVE AGENTS if any metric misses.',
+      'Metric thresholds alone cannot authorize live trading. Verified leakage, trial-count/statistical correction, walk-forward, costs, execution, accounting and current health evidence are required.',
   });
 });
 
@@ -146,18 +122,18 @@ router.get('/guide', (req: Request, res: Response) => {
         '1.5-2': 'Good - strong risk-adjusted returns',
         '>2': 'Excellent - exceptional risk-adjusted performance',
       },
-      note: 'Higher is always better. We target > 1.5',
+      note: 'Requires a verified periodic return series, matching risk-free units, sufficient observations and correction for strategy selection. Currently unavailable in this replay.',
     },
     winRate: {
       name: 'Win Rate (%)',
       formula: '(Winning Trades / Total Trades) × 100',
       interpretation: {
-        '<50%': 'Losing strategy - more losses than wins',
-        '50-55%': 'Breakeven or slight edge',
-        '55-60%': 'Good edge - sustainable strategy',
-        '>60%': 'Strong edge - but verify not overfitted',
+        '<50%': 'Fewer winning trades; net expectancy depends on payoff sizes and all costs',
+        '50-55%': 'Win frequency alone cannot establish breakeven or an edge',
+        '55-60%': 'More winning trades; losses and costs can still exceed wins',
+        '>60%': 'High win frequency does not establish sustainable or statistically significant profit',
       },
-      note: 'We target > 55% to ensure statistical edge',
+      note: 'Evaluate net win/loss payoffs, costs, sample uncertainty and out-of-sample evidence together.',
     },
     maxDrawdown: {
       name: 'Max Drawdown (%)',
@@ -166,7 +142,7 @@ router.get('/guide', (req: Request, res: Response) => {
         '>40%': 'Unacceptable risk - too much capital lost',
         '20-40%': 'Risky but might be acceptable',
         '10-20%': 'Manageable risk for active trading',
-        '<10%': 'Conservative - very safe',
+        '<10%': 'Small observed historical drawdown; future loss and gap risk can be larger',
       },
       note: 'We target < 20% to avoid catastrophic loss',
     },

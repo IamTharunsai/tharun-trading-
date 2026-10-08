@@ -30,3 +30,4 @@ describe('buildAgentDecisionData', () => {
     expect(data.regime).toBe('TRENDING_BULL');
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

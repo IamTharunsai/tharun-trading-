@@ -38,3 +38,4 @@ describe('calculateStochastic — real %D', () => {
     expect(Number.isNaN(d)).toBe(false);
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

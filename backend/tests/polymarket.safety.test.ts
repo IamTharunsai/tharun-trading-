@@ -59,7 +59,8 @@ describe('live gate for Polymarket', () => {
   it('POLYMARKET_US_LIVE=true alone books PAPER and sends nothing', async () => {
     process.env.POLYMARKET_US_LIVE = 'true';
     const r = await placePolymarketBet(analysis({ marketSlug: 'us-slug' }), 'cond-1', false);
-    expect(r.message).toMatch(/Paper/);
+    expect(r.success).toBe(false);
+    expect(prismaMock.trade.create).not.toHaveBeenCalled();
     expect(placeUS).not.toHaveBeenCalled();
     expect((axios as any).post).not.toHaveBeenCalled();
   });
@@ -67,15 +68,17 @@ describe('live gate for Polymarket', () => {
   it('even with the full gate, scanner markets without a US slug stay paper', async () => {
     Object.assign(process.env, LIVE_ENV);
     const r = await placePolymarketBet(analysis(), 'cond-1', false);
-    expect(r.message).toMatch(/Paper/);
+    expect(r.success).toBe(false);
+    expect(prismaMock.trade.create).not.toHaveBeenCalled();
     expect(placeUS).not.toHaveBeenCalled();
   });
 
-  it('with the full gate AND a US slug, routes through polymarketUS.ts (official SDK) only', async () => {
+  it('legacy research cannot authorize live US execution or fabricate accepted-order fills', async () => {
     Object.assign(process.env, LIVE_ENV);
     const r = await placePolymarketBet(analysis({ marketSlug: 'us-slug' }), 'cond-1', false);
-    expect(placeUS).toHaveBeenCalledWith(expect.objectContaining({ marketSlug: 'us-slug', side: 'YES', price: 0.4 }));
-    expect(r.orderId).toBe('us-order-1');
+    expect(r.success).toBe(false);
+    expect(placeUS).not.toHaveBeenCalled();
+    expect(prismaMock.trade.create).not.toHaveBeenCalled();
     expect((axios as any).post).not.toHaveBeenCalled(); // no hand-built CLOB order
   });
 
@@ -95,7 +98,7 @@ describe('scanPolymarketOpportunities', () => {
     expect(mod.isPolymarketScanRunning()).toBe(true);
     expect(await mod.scanPolymarketOpportunities(1000)).toEqual([]); // overlapping tick skipped
     release({ data: [] });
-    await first;
+    await expect(first).rejects.toThrow('No prediction research');
     expect(mod.isPolymarketScanRunning()).toBe(false);
     expect(prismaMock.trade.create).not.toHaveBeenCalled();
   });

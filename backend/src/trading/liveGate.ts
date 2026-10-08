@@ -89,8 +89,10 @@ export function polymarketLiveAllowed(
  */
 export function getPolymarketMaxOrderUsd(env: NodeJS.ProcessEnv = process.env): number {
   for (const name of ['POLYMARKET_US_MAX_ORDER_USD', 'POLYMARKET_MAX_BET_USD']) {
-    const n = parseFloat(clean(env[name]));
-    if (Number.isFinite(n) && n > 0) return n;
+    if (env[name] === undefined) continue;
+    const n = Number(clean(env[name]));
+    if (!Number.isFinite(n) || n <= 0) throw new Error('Invalid Polymarket US order limit');
+    return n;
   }
   return 5;
 }

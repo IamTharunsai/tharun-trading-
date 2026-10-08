@@ -5,11 +5,12 @@ import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
 import { runDailyScreen } from '../services/stockScreener';
 import { runInvestmentCommitteeDebate } from '../agents/debateEngine';
 import { detectMarketRegime } from '../services/regimeDetector';
-import { executeTradeSignal, markToMarketOpenPositions } from '../trading/executionEngine';
+import { executeTradeSignal, markToMarketOpenPositions, reconcileExecutionIntents } from '../trading/executionEngine';
 import { validateTradeSignal } from '../trading/riskManager';
 import { runPostTradeAnalysis, generateWeeklyReport } from '../services/selfLearning';
 import { getPortfolioState } from '../services/portfolio';
 import { checkStopLosses } from '../trading/riskManager';
+import { reconcilePositionExits } from '../trading/positionExits';
 import { generateDailyJournal } from '../services/journalGenerator';
 import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
@@ -22,13 +23,14 @@ const analyzedTradeIds = new Set<string>();
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
 
-export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean } = {}) {
+export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY' } = {}) {
   if (isKillSwitchActive()) return;
   const lockKey = `${asset}:${market}`;
   if (debateLocks.has(lockKey)) return;
 
   // Skip if open position already exists for this asset
-  const openPos = await prisma.position.findFirst({ where: { asset, status: 'OPEN' } });
+  const currentPortfolio = await getPortfolioState();
+  const openPos = currentPortfolio.positions.find(position => position.asset === asset);
   if (openPos) {
     logger.info(`⏭️ Skipping debate for ${asset} — position already open (side: ${openPos.side})`);
     return;
@@ -48,7 +50,9 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
         if (svc.isSentimentEnabled()) gateSentiment = await svc.getSentiment(asset, { market, includeX: false });
       } catch { gateSentiment = null; }
     }
-    const gate = opts.bypassGate ? { pass: true, setup: 'MANUAL', reason: 'manually triggered' } : preDebateGate({ ...(snapshot as any), sentiment: gateSentiment });
+    const gate = opts.bypassGate ? { pass: true,
+      setup: opts.executionLane === 'INTRADAY' ? 'INTRADAY_PREFILTER' : 'MANUAL',
+      reason: opts.executionLane === 'INTRADAY' ? 'autonomous intraday setup forwarded to shared council' : 'manually triggered' } : preDebateGate({ ...(snapshot as any), sentiment: gateSentiment });
     if (!gate.pass) {
       logger.info(`⏭️ ${asset}: skipped before debate — ${gate.reason} (saved ~30 LLM calls)`);
       return;
@@ -63,8 +67,13 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       volumeAvg20: snapshot.indicators.volumeAvg20, atr14: snapshot.indicators.atr14,
     });
     const portfolio = await getPortfolioState();
-    const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime);
+    const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime, opts.executionLane ?? 'COUNCIL');
     if (transcript.executionApproved && transcript.finalDecision !== 'HOLD') {
+      if (!transcript.decisionId) {
+        transcript.executionApproved = false;
+        transcript.blockReason = 'Current decision has no persisted identity';
+        return transcript;
+      }
       const signal: TradeSignal = {
         asset, market,
         direction: transcript.finalDecision as 'BUY' | 'SELL',
@@ -72,16 +81,22 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
         entryPrice: snapshot.price,
         stopLossPrice: transcript.stopLossPrice,
         takeProfitPrice: transcript.takeProfitPrice,
-        positionSizePct: transcript.positionSizePct,
+        positionSizePct: opts.maximumNotionalUsd === undefined ? transcript.positionSizePct
+          : Math.min(transcript.positionSizePct, opts.maximumNotionalUsd / portfolio.totalValue * 100),
         reasoning: transcript.masterSynthesis.slice(0, 500),
-        agentDecisionId: transcript.agentDecisionId || ''
+        agentDecisionId: transcript.decisionId,
+        voteCounts: {
+          supporting: transcript.agentVotes.filter(v => v.vote === transcript.finalDecision && v.executionEligible !== false).length,
+          opposing: transcript.agentVotes.filter(v => v.vote !== transcript.finalDecision && v.vote !== 'HOLD' && v.executionEligible !== false).length,
+          abstaining: transcript.agentVotes.filter(v => v.vote === 'HOLD' || v.executionEligible === false).length,
+        },
       };
       const riskCheck = await validateTradeSignal(signal, portfolio);
       if (riskCheck.approved && typeof riskCheck.adjustedSize === 'number') {
         signal.positionSizePct = riskCheck.adjustedSize; // clamped to MAX_POSITION_SIZE_PCT
       }
       if (riskCheck.approved) {
-        const executed = await executeTradeSignal(signal, portfolio);
+        const executed = await executeTradeSignal({ ...signal, positionSizePct: riskCheck.adjustedSize ?? signal.positionSizePct }, portfolio);
         transcript.tradeExecuted = executed;
         if (executed) {
           logger.info(`✅ Trade executed: ${transcript.finalDecision} ${asset} @ $${snapshot.price}`);
@@ -99,7 +114,7 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
     logger.error('Debate failed', { error: (error as Error)?.message || error, stack: (error as Error)?.stack, asset });
     throw error;
   } finally {
-    setTimeout(() => debateLocks.delete(lockKey), 80000);
+    setTimeout(() => debateLocks.delete(lockKey), 80000).unref();
   }
 }
 
@@ -129,6 +144,14 @@ async function pickDynamicSymbols(count: number, skip = 0): Promise<string[]> {
 }
 
 export function initScheduler() {
+  // Research remains server-side and independent of opening a chat. The
+  // durable service selects current-account holdings due for specialist review.
+  cron.schedule('* * * * *', async () => {
+    try {
+      const { reviewOpenPositions } = await import('../services/positionResearch');
+      await reviewOpenPositions();
+    } catch (error) { logger.error('Held-position research unavailable', { error }); }
+  });
 
   // ── MARKET OPEN 9:35 AM ET — weekdays (Mon–Fri) ─────────────────────────
   // node-cron's timezone option resolves ET vs UTC (incl. DST) itself —
@@ -265,6 +288,11 @@ export function initScheduler() {
 
   // ── EVERY 10 SECONDS: Stop Loss Monitor ──────────────────────────────────
   cron.schedule('*/10 * * * * *', async () => {
+    await reconcilePositionExits().catch(err => logger.error('Exit reconciliation unavailable', { error: err?.message }));
+    if (isKillSwitchActive()) {
+      const { liquidateCurrentAccount } = await import('../trading/killLiquidation');
+      await liquidateCurrentAccount().catch(err => logger.error('Kill-switch exits unavailable', { error: err?.message }));
+    }
     const prices = getCurrentPrices();
     await checkStopLosses(prices).catch(err => logger.error('Stop loss check failed', { err }));
   });
@@ -272,6 +300,7 @@ export function initScheduler() {
   // ── EVERY 5 MINUTES: Mark-to-market + Portfolio Snapshot ─────────────────
   cron.schedule('*/5 * * * *', async () => {
     try {
+      await reconcileExecutionIntents();
       // Update P&L on all open trades with real current prices
       // Triggers SL/TP closes automatically when prices cross levels
       await markToMarketOpenPositions().catch(err =>
@@ -282,6 +311,7 @@ export function initScheduler() {
       await prisma.portfolioSnapshot.create({
         data: {
           totalValue: portfolio.totalValue,
+          accountId: portfolio.accountId, brokerMode: portfolio.brokerMode, source: 'BROKER_ACCOUNT_OBSERVATION',
           cashBalance: portfolio.cashBalance,
           invested: portfolio.invested,
           pnlDay: portfolio.pnlDay,
@@ -300,7 +330,8 @@ export function initScheduler() {
     // Investment Plan showed "No cached regime read yet" for NVDA/AMZN
     // indefinitely, since the blind rotation could take weeks to reach them
     // out of the full ~7000-stock universe.
-    const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true, market: true } });
+    const currentAccount = await getPortfolioState();
+    const openPositions = currentAccount.positions;
     const heldAssets = openPositions.map((p: any) => ({ asset: p.asset, market: p.market as 'crypto' | 'stocks' }));
     const heldSymbols = new Set(heldAssets.map((a: any) => a.asset));
 

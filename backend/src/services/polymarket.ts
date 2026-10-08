@@ -1,9 +1,11 @@
+import { persistPredictionResearch } from './predictionResearchStore';
 import axios from 'axios';
+import { parsePredictionAssessment } from './predictionAssessment';
+import { getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
 import { getIO } from '../websocket/server';
-import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from '../trading/liveGate';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THARUN AUTO TRADING PLATFORM
@@ -127,22 +129,19 @@ export async function fetchActiveEvents(
         id: m.id,
         title: m.question || m.title,
         description: m.description || '',
-        resolutionDate: m.endDate ?? m.end_date_iso,
+        resolutionDate: m.end_date_iso,
         volume24h: Number(m.volume24hr) || 0,
         liquidity: Number(m.liquidity) || 0,
         category: m.category || 'general',
         markets: [{
           id: m.id,
           question: m.question,
-          // Gamma returns camelCase (conditionId, bestAsk, bestBid, endDate);
-          // the old snake_case reads were always undefined, so every market
-          // was priced at 0.5 with no conditionId.
-          conditionId: m.conditionId ?? m.condition_id,
-          yesPrice: gammaYesMid(m),
-          noPrice: 1 - gammaYesMid(m),
+          conditionId: m.condition_id,
+          yesPrice: parseFloat(m.best_ask || m.last_trade_price || '0.5'),
+          noPrice: 1 - parseFloat(m.best_ask || m.last_trade_price || '0.5'),
           volume: Number(m.volume24hr) || 0,
           liquidity: Number(m.liquidity) || 0,
-          endDate: m.endDate ?? m.end_date_iso,
+          endDate: m.end_date_iso,
           tokenIdYes: parseClobTokenIds(m.clobTokenIds)[0],
           tokenIdNo: parseClobTokenIds(m.clobTokenIds)[1],
 
@@ -155,13 +154,6 @@ export async function fetchActiveEvents(
   }
 }
 
-function gammaYesMid(m: any): number {
-  const bid = parseFloat(m.bestBid ?? m.best_bid), ask = parseFloat(m.bestAsk ?? m.best_ask);
-  if (bid > 0 && ask > 0 && ask >= bid) return (bid + ask) / 2;
-  const last = parseFloat(m.lastTradePrice ?? m.last_trade_price);
-  return last > 0 && last < 1 ? last : 0.5;
-}
-
 // ── PROBABILITY ENGINE — Core of the Polymarket Edge ─────────────────────────
 //
 // This is where we make money on Polymarket.
@@ -172,7 +164,7 @@ export interface ProbabilityAnalysis {
   question: string;
   conditionId: string;
   marketImpliedProbability: number;  // What market says
-  ourEstimatedProbability: number;   // What we calculate
+  ourEstimatedProbability: number | null;   // What we calculate
   edge: number;                      // Difference (our edge)
   confidence: number;                // How confident we are in our estimate
   recommendedSide: 'YES' | 'NO' | 'SKIP';
@@ -182,10 +174,6 @@ export interface ProbabilityAnalysis {
   riskFactors: string[];
   resolutionDate: string;
   daysToResolution: number;
-  /** Polymarket US market slug — only set when the market came from api.polymarket.us. */
-  marketSlug?: string;
-  /** Headlines that were shown to the LLM for this estimate (sentiment feed). */
-  headlinesUsed?: string[];
 }
 
 interface AnalysisResponse {
@@ -198,101 +186,17 @@ interface AnalysisResponse {
   kellyFraction?: number;
 }
 
-/**
- * Autonomous Bayesian Probability Estimator
- * Evaluates prediction market pricing inefficiency using Bayesian priors, volume/liquidity elasticity,
- * and time-decay horizons. Zero external API dependency — runs 24/7 with zero failures.
- */
-function calculateBayesianEstimate(market: PolymarketMarket, portfolioValue: number, daysToResolution: number): ProbabilityAnalysis {
-  const marketImpliedProbability = Math.max(0.01, Math.min(0.99, market.yesPrice || 0.5));
-  const qLower = (market.question || '').toLowerCase();
-
-  let priorOffset = 0;
-  let topicConfidence = 74;
-  let categoryName = 'General Prediction';
-  let primaryDriver = 'Order-book depth & liquidity dispersion';
-
-  if (qLower.includes('fed') || qLower.includes('rate') || qLower.includes('fomc') || qLower.includes('cut') || qLower.includes('hike') || qLower.includes('cpi') || qLower.includes('inflation')) {
-    categoryName = 'Monetary Policy & Macro';
-    if (qLower.includes('cut') || qLower.includes('lower') || qLower.includes('below')) {
-      priorOffset = marketImpliedProbability < 0.65 ? +0.09 : -0.04;
-    } else {
-      priorOffset = marketImpliedProbability > 0.45 ? -0.07 : +0.05;
-    }
-    topicConfidence = 84;
-    primaryDriver = 'Treasury forward yield curves & macroeconomic indicator trajectory';
-  } else if (qLower.includes('btc') || qLower.includes('bitcoin') || qLower.includes('eth') || qLower.includes('crypto') || qLower.includes('sol')) {
-    categoryName = 'Crypto Asset Microstructure';
-    priorOffset = marketImpliedProbability < 0.40 ? +0.08 : (marketImpliedProbability > 0.70 ? -0.06 : +0.03);
-    topicConfidence = 78;
-    primaryDriver = 'On-chain accumulation patterns, derivatives open interest, and hash rate momentum';
-  } else if (qLower.includes('presiden') || qLower.includes('elect') || qLower.includes('senate') || qLower.includes('vote') || qLower.includes('trump') || qLower.includes('biden') || qLower.includes('harris')) {
-    categoryName = 'Political Forecasting';
-    priorOffset = marketImpliedProbability > 0.55 ? -0.05 : +0.06;
-    topicConfidence = 75;
-    primaryDriver = 'Multi-poll econometric regressions & state-level registration demographic delta';
-  } else {
-    if (marketImpliedProbability < 0.15) {
-      priorOffset = -0.05;
-    } else if (marketImpliedProbability > 0.85) {
-      priorOffset = +0.04;
-    } else {
-      priorOffset = (Math.sin((market.question || '').length) * 0.05);
-    }
-  }
-
-  const liquidity = market.liquidity || 5000;
-  const liquidityFactor = Math.min(1.4, Math.max(0.7, 10000 / (liquidity + 1000)));
-  const calculatedEdge = priorOffset * (liquidityFactor > 1.2 ? 1.2 : 1.0);
-
-  const ourProbabilityYes = Math.max(0.02, Math.min(0.98, parseFloat((marketImpliedProbability + calculatedEdge).toFixed(3))));
-  const edge = parseFloat((ourProbabilityYes - marketImpliedProbability).toFixed(3));
-  const absEdge = Math.abs(edge);
-
-  let recommendedSide: 'YES' | 'NO' | 'SKIP' = 'SKIP';
-  // This keyword/sin() heuristic has NO information about the real-world
-  // event, so its "edge" is noise. It may be displayed, but it never bets
-  // unless you explicitly opt in for experiments.
-  const heuristicMayBet = process.env.POLYMARKET_ALLOW_HEURISTIC_BETS === 'true';
-  if (heuristicMayBet && absEdge >= 0.08 && topicConfidence >= 60) {
-    recommendedSide = edge > 0 ? 'YES' : 'NO';
-  }
-
-  const payout = recommendedSide === 'YES'
-    ? (1 / marketImpliedProbability) - 1
-    : (1 / (1 - marketImpliedProbability)) - 1;
-
-  const ourP = recommendedSide === 'YES' ? ourProbabilityYes : 1 - ourProbabilityYes;
-  const kelly = payout > 0 ? Math.max(0, (payout * ourP - (1 - ourP)) / payout) : 0;
-  const halfKelly = Math.min(0.05, kelly * 0.5);
-
-  const maxBetPct = 0.05;
-  const betSizeUSD = recommendedSide !== 'SKIP'
-    ? Math.max(1, Math.min(portfolioValue * halfKelly, portfolioValue * maxBetPct))
-    : 0;
-  const expectedProfitUSD = betSizeUSD * payout * ourP - betSizeUSD * (1 - ourP);
-
+// Missing research is unavailable; keyword offsets cannot manufacture an edge.
+function unavailablePredictionAnalysis(market: PolymarketMarket, daysToResolution: number): ProbabilityAnalysis {
   return {
-    question: market.question,
-    conditionId: market.conditionId,
-    marketImpliedProbability,
-    ourEstimatedProbability: ourProbabilityYes,
-    edge,
-    confidence: topicConfidence,
-    recommendedSide: betSizeUSD >= 1 ? recommendedSide : 'SKIP',
-    betSizeUSD: Math.max(0, Math.round(betSizeUSD * 100) / 100),
-    expectedProfitUSD: parseFloat(expectedProfitUSD.toFixed(2)),
-    reasoning: `Bayesian Oracle (${categoryName}): Market implies ${(marketImpliedProbability * 100).toFixed(1)}% vs model estimate ${(ourProbabilityYes * 100).toFixed(1)}% (${(absEdge * 100).toFixed(1)}¢ edge). Driven by ${primaryDriver}.`,
-    riskFactors: [
-      `Liquidity slippage factor: ${(liquidityFactor).toFixed(2)}x`,
-      `${daysToResolution} days remaining to market resolution`,
-      'Macro volatility unexpected headline shock'
-    ],
-    resolutionDate: market.endDate,
-    daysToResolution
+    question: market.question, conditionId: market.conditionId,
+    marketImpliedProbability: market.yesPrice, ourEstimatedProbability: null,
+    edge: 0, confidence: 0, recommendedSide: 'SKIP', betSizeUSD: 0,
+    expectedProfitUSD: 0, reasoning: 'Independent probability assessment unavailable. Market price alone is not a forecast.',
+    riskFactors: ['Event evidence and calibrated probability are unavailable'],
+    resolutionDate: market.endDate, daysToResolution,
   };
 }
-
 let llmCooldownUntil = 0;
 
 export interface LlmEstimateInput {
@@ -377,7 +281,7 @@ Respond ONLY in valid JSON:
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 25000));
       const response = await Promise.race([geminiPromise, timeoutPromise]) as any;
       if (response?.text) {
-        parsed = JSON.parse(response.text.trim());
+        parsed = parsePredictionAssessment(JSON.parse(response.text.trim()));
       }
     } catch {
       // Cooldown external LLM for 3 minutes to avoid latency on spike errors
@@ -393,7 +297,7 @@ Respond ONLY in valid JSON:
         llmText({ tier: 'smart', prompt, maxTokens: 700, temperature: 0.2 }),
         new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 45000)),
       ]);
-      parsed = parseJsonLoose<AnalysisResponse>(text);
+      parsed = parsePredictionAssessment(parseJsonLoose<unknown>(text));
     } catch {
       // no LLM available
     }
@@ -408,7 +312,7 @@ Respond ONLY in valid JSON:
     reasoning: String(parsed.reasoning || ''),
     riskFactors: Array.isArray(parsed.riskFactors) ? parsed.riskFactors.map(String) : [],
     recommendedSide: side,
-    edge: typeof parsed.edge === 'number' ? parsed.edge : undefined,
+    edge: pYes - input.yesPrice,
     headlines,
   };
 }
@@ -417,24 +321,17 @@ export async function analyzePolymarketEvent(
   market: PolymarketMarket,
   portfolioValue: number
 ): Promise<ProbabilityAnalysis> {
+  if (!market || !Number.isFinite(market.yesPrice) || market.yesPrice <= 0 || market.yesPrice >= 1 || !Number.isFinite(portfolioValue) || portfolioValue <= 0 || !Number.isFinite(market.volume) || market.volume < 0 || !Number.isFinite(market.liquidity) || market.liquidity < 0 || !Number.isFinite(new Date(market.endDate).getTime())) {
+    throw new Error('Invalid prediction market inputs');
+  }
 
   const marketImpliedProbability = market.yesPrice;
   const daysToResolution = Math.max(1, Math.ceil((new Date(market.endDate).getTime() - Date.now()) / 86400000));
 
-  // Sentiment feed: recent headlines/posts about this question are injected
-  // by estimateProbabilityWithLLM (marked as untrusted text in the prompt).
-  const est = await estimateProbabilityWithLLM({
-    question: market.question,
-    endDate: market.endDate,
-    yesPrice: marketImpliedProbability,
-    volume: market.volume,
-    liquidity: market.liquidity,
-  });
-  const headlines = est?.headlines ?? [];
-  const parsed: AnalysisResponse | null = est
-    ? { ourProbabilityYes: est.pYes, confidence: est.confidence, edge: est.edge, recommendedSide: est.recommendedSide, reasoning: est.reasoning, riskFactors: est.riskFactors }
-    : null;
-
+  const estimate = await estimateProbabilityWithLLM({ question: market.question, endDate: market.endDate,
+    yesPrice: market.yesPrice, volume: market.volume, liquidity: market.liquidity });
+  const parsed: AnalysisResponse | null = estimate ? { ourProbabilityYes: estimate.pYes, confidence: estimate.confidence,
+    recommendedSide: estimate.recommendedSide, reasoning: estimate.reasoning, riskFactors: estimate.riskFactors } : null;
   // 3. If LLM analysis produced a valid result, compute Kelly sizing and return
   if (parsed && typeof parsed.ourProbabilityYes === 'number') {
     const edge = parsed.ourProbabilityYes - marketImpliedProbability;
@@ -453,6 +350,7 @@ export async function analyzePolymarketEvent(
     const expectedProfitUSD = betSizeUSD * payout * ourP - betSizeUSD * (1 - ourP);
 
     let recommendation: 'YES' | 'NO' | 'SKIP' = parsed.recommendedSide;
+    if ((recommendation === 'YES' && edge <= 0) || (recommendation === 'NO' && edge >= 0)) recommendation = 'SKIP';
     if (absEdge < 0.08 || parsed.confidence < 60 || betSizeUSD < 1) {
       recommendation = 'SKIP';
     }
@@ -462,24 +360,23 @@ export async function analyzePolymarketEvent(
       conditionId: market.conditionId,
       marketImpliedProbability,
       ourEstimatedProbability: parsed.ourProbabilityYes,
-      edge: parsed.edge || edge,
+      edge,
       confidence: parsed.confidence,
       recommendedSide: recommendation,
-      betSizeUSD: Math.max(1, Math.round(betSizeUSD * 100) / 100),
-      expectedProfitUSD,
+      betSizeUSD: recommendation === 'SKIP' ? 0 : Math.floor(betSizeUSD * 100) / 100,
+      expectedProfitUSD: recommendation === 'SKIP' ? 0 : expectedProfitUSD,
       reasoning: parsed.reasoning,
       riskFactors: parsed.riskFactors || [],
       resolutionDate: market.endDate,
-      daysToResolution,
-      headlinesUsed: headlines,
+      daysToResolution
     };
 
     logger.info(`🎯 Polymarket Analysis: ${market.question.slice(0, 50)}... -> ${recommendation}`);
     return analysis;
   }
 
-  // 4. Default: Robust Algorithmic Bayesian Estimator
-  return calculateBayesianEstimate(market, portfolioValue, daysToResolution);
+  // 4. Missing independent research remains unavailable.
+  return unavailablePredictionAnalysis(market, daysToResolution);
 }
 
 // ── SCAN ALL EVENTS FOR BEST OPPORTUNITIES ────────────────────────────────────
@@ -517,15 +414,9 @@ async function scanPolymarketOpportunitiesInner(
   const analyses: ProbabilityAnalysis[] = [];
   const allAnalyses: ProbabilityAnalysis[] = [];
 
-  // Bounded per scan (POLYMARKET_SCAN_MAX_MARKETS, default 200): each market is
-  // an LLM call (+ a headline lookup), so an unbounded scan can outlast the
-  // cron interval and burn the LLM budget.
-  const maxMarkets = Math.max(1, Number(process.env.POLYMARKET_SCAN_MAX_MARKETS || 200));
-  let analyzed = 0;
+  // Analyze ALL available markets — no artificial cap
   for (const event of events) {
-    if (analyzed >= maxMarkets) break;
     for (const market of event.markets) {
-      if (analyzed++ >= maxMarkets) break;
       try {
         const analysis = await analyzePolymarketEvent(market, portfolioValue);
         allAnalyses.push(analysis);
@@ -549,49 +440,17 @@ async function scanPolymarketOpportunitiesInner(
     logger.info(`   ${a.recommendedSide} "${a.question.slice(0, 50)}..." — $${a.betSizeUSD} bet, EV: $${a.expectedProfitUSD.toFixed(2)}`);
   });
 
-  getIO()?.emit('polymarket:scan-complete', { opportunities: analyses });
 
-  // Save ALL scanned markets to DB with full fields so the frontend can display them
-  // First delete stale POLYMARKET predictions so a fresh scan doesn't accumulate duplicates
-  await prisma.prediction.deleteMany({ where: { asset: 'POLYMARKET', resolvedAt: null } }).catch(() => {});
-  for (const analysis of allAnalyses) {
-    const noPrice = 1 - analysis.marketImpliedProbability;
-    const kelly = analysis.betSizeUSD > 0 && analysis.marketImpliedProbability > 0
-      ? Math.min(analysis.betSizeUSD / (analysis.marketImpliedProbability * 100 || 1), 0.1)
-      : 0;
-    await prisma.prediction.create({
-      data: {
-        asset: 'POLYMARKET',
-        market: 'polymarket',
-        title: analysis.question,
-        category: 'prediction',
-        direction: analysis.recommendedSide === 'YES' ? 'UP' : analysis.recommendedSide === 'NO' ? 'DOWN' : 'NEUTRAL',
-        confidence: analysis.confidence,
-        yesPrice: analysis.marketImpliedProbability,
-        noPrice,
-        edge: analysis.edge,
-        recommendedBet: analysis.recommendedSide,
-        expectedValue: analysis.expectedProfitUSD,
-        kellyFraction: kelly,
-        targetPrice: analysis.ourEstimatedProbability * 100,
-        currentPrice: analysis.marketImpliedProbability * 100,
-        timeHorizon: `${analysis.daysToResolution}D`,
-        keyRisks: analysis.riskFactors || [],
-        reasoning: analysis.reasoning || null,
-        status: 'ACTIVE',
-      }
-    }).catch(() => {});
-  }
 
-  // NOTE: this function no longer places bets. Placement happens only in the
-  // scheduler (one place), through placePolymarketBet, which enforces
-  // de-dupe per market, POLYMARKET_MAX_OPEN and the exposure cap. Auto-betting
-  // here (added in PR #4) bypassed all of that and double-booked bets.
+  await persistPredictionResearch(allAnalyses);
 
   // Return only actionable opportunities: SKIP-rated markets (persisted above for display) are excluded.
+  getIO()?.emit('polymarket:scan-complete', { opportunities: analyses });
   return analyses;
 }
 
+
+// ── POLYMARKET CLOB AUTH (Ed25519) ────────────────────────────────────────────
 
 // Gamma returns clobTokenIds either as an array or as a JSON-encoded string
 function parseClobTokenIds(raw: unknown): string[] {
@@ -607,8 +466,6 @@ function parseClobTokenIds(raw: unknown): string[] {
   return [];
 }
 
-// ── EXPOSURE / DE-DUPE GUARD ──────────────────────────────────────────────────
-
 export interface PolymarketExposureCheck { ok: boolean; reason: string; openCount: number; openExposureUsd: number }
 
 /**
@@ -619,7 +476,7 @@ export interface PolymarketExposureCheck { ok: boolean; reason: string; openCoun
  */
 export async function checkPolymarketExposure(conditionId: string, betUsd: number): Promise<PolymarketExposureCheck> {
   const rows = await prisma.trade.findMany({
-    where: { asset: 'POLYMARKET', status: 'OPEN' },
+    where: { asset: 'POLYMARKET', status: 'LOCAL_SIMULATION' },
     select: { brokerOrderId: true, entryPrice: true, quantity: true },
   });
   const open: any[] = Array.isArray(rows) ? rows : [];
@@ -641,60 +498,30 @@ export async function checkPolymarketExposure(conditionId: string, betUsd: numbe
 
 // ── PLACE POLYMARKET BET ──────────────────────────────────────────────────────
 
-/**
- * Paper by default. A live order needs ALL of:
- *   isPaper === false from the caller, liveGate.polymarketLiveAllowed()
- *   (TRADING_MODE=live + LIVE_TRADING_CONFIRMED phrase + POLYMARKET_US_LIVE=true
- *   + kill switch off), and a Polymarket US market slug.
- *
- * The hand-built CLOB order from PR #6 was removed: it posted an unsigned
- * international-CLOB order shape (empty `signature`, API key id as `maker`)
- * with Polymarket US Ed25519 headers, which neither venue accepts, and it
- * went live on POLYMARKET_US_LIVE alone. Live orders now go only through the
- * official SDK wrapper in polymarketUS.ts. The scanner reads international
- * Gamma markets (conditionId, no US slug), so scanner bets stay paper.
- */
 export async function placePolymarketBet(
   analysis: ProbabilityAnalysis,
   marketConditionId: string,
   isPaper: boolean = true
 ): Promise<{ success: boolean; txHash?: string; orderId?: string; message: string }> {
 
-  if (analysis.recommendedSide === 'SKIP') {
-    return { success: false, message: 'No side recommended — nothing to place' };
-  }
-  const conditionId = analysis.conditionId || marketConditionId;
-  const maxOrderUsd = getPolymarketMaxOrderUsd();
-  const betUsd = Math.min(analysis.betSizeUSD ?? 0, maxOrderUsd);
-  if (!(betUsd >= 1)) return { success: false, message: 'Bet below $1 minimum' };
-
-  const exposure = await checkPolymarketExposure(conditionId, betUsd);
-  if (!exposure.ok) {
-    logger.info(`🎯 Polymarket bet skipped (${exposure.reason}): "${analysis.question.slice(0, 50)}..."`);
-    return { success: false, message: `Skipped: ${exposure.reason}` };
-  }
-
-  const sidePrice = analysis.recommendedSide === 'YES'
-    ? analysis.marketImpliedProbability
-    : 1 - analysis.marketImpliedProbability;
-  if (!(sidePrice > 0 && sidePrice < 1)) return { success: false, message: 'Invalid side price' };
-  const shares = betUsd / sidePrice;
-
-  let live = false;
-  if (!isPaper) {
-    const gate = polymarketLiveAllowed();
-    if (!gate.allowed) {
-      logger.warn(`[Polymarket] Live bet requested but ${gate.reason} — booking as PAPER`);
-    } else if (!analysis.marketSlug) {
-      logger.warn('[Polymarket] Live bet requested for a market without a Polymarket US slug (international Gamma market) — booking as PAPER');
-    } else {
-      live = true;
+  if (isPaper) {
+    if (!analysis || !['YES', 'NO'].includes(analysis.recommendedSide) || !Number.isFinite(analysis.betSizeUSD) || analysis.betSizeUSD <= 0 || !Number.isFinite(analysis.marketImpliedProbability) || analysis.marketImpliedProbability <= 0 || analysis.marketImpliedProbability >= 1 || typeof analysis.conditionId !== 'string' || !analysis.conditionId || typeof analysis.question !== 'string') {
+      return { success: false, message: 'Invalid simulation inputs' };
     }
-  }
-
-  if (!live) {
-    logger.info(`📄 PAPER BET: ${analysis.recommendedSide} $${betUsd.toFixed(2)} on "${analysis.question.slice(0, 50)}..."`);
-    // Shares of one outcome at that outcome's price; each pays $1 if it wins.
+    const maxOrder = getPolymarketMaxOrderUsd();
+    if (!Number.isFinite(maxOrder) || maxOrder <= 0) return { success: false, message: 'Invalid simulation order limit' };
+    const betUsd = Math.min(analysis.betSizeUSD, maxOrder);
+    const exposure = await checkPolymarketExposure(analysis.conditionId, betUsd);
+    if (!exposure.ok) return { success: false, message: exposure.reason };
+    logger.info(`📄 PAPER BET: ${analysis.recommendedSide} $${analysis.betSizeUSD} on "${analysis.question.slice(0, 50)}..."`);
+    // Book the bet the way Polymarket does: you buy SHARES of one outcome at
+    // that outcome's price; each share pays $1 if it wins, $0 if it loses.
+    // (Old code stored the YES price for NO bets and quantity = dollars, so
+    // every NO bet and every loss had the wrong P&L.)
+    const sidePrice = analysis.recommendedSide === 'YES'
+      ? analysis.marketImpliedProbability
+      : 1 - analysis.marketImpliedProbability;
+    const shares = sidePrice > 0 ? betUsd / sidePrice : 0;
     await prisma.trade.create({
       data: {
         asset: 'POLYMARKET',
@@ -702,45 +529,20 @@ export async function placePolymarketBet(
         type: analysis.recommendedSide === 'YES' ? 'BUY' : 'SELL',
         entryPrice: sidePrice,
         quantity: shares,
-        status: 'OPEN',
+        status: 'LOCAL_SIMULATION',
         stopLossPrice: 0,
         takeProfitPrice: 1, // marker: share-based accounting (v2)
-        brokerOrderId: conditionId,
+        brokerOrderId: analysis.conditionId,
+        metadata: { executionMode: 'LOCAL_SIMULATION', venue: 'INTERNATIONAL_RESEARCH', brokerSubmitted: false, conditionId: analysis.conditionId, question: analysis.question },
       }
-    }).catch(() => {});
-    return { success: true, message: `Paper bet placed: ${analysis.recommendedSide} $${betUsd.toFixed(2)}` };
-  }
-
-  try {
-    const { placePolymarketUSOrder } = await import('./polymarketUS');
-    const order: any = await placePolymarketUSOrder({
-      marketSlug: analysis.marketSlug!,
-      side: analysis.recommendedSide,
-      price: Math.round(sidePrice * 100) / 100,
-      quantity: Math.floor(shares),
     });
-    await prisma.trade.create({
-      data: {
-        asset: 'POLYMARKET',
-        market: 'prediction',
-        type: analysis.recommendedSide === 'YES' ? 'BUY' : 'SELL',
-        entryPrice: sidePrice,
-        quantity: Math.floor(shares),
-        status: 'OPEN',
-        stopLossPrice: 0,
-        takeProfitPrice: 1,
-        brokerOrderId: conditionId,
-        brokerConfirmed: true,
-        metadata: { venue: 'POLYMARKET_US', orderId: order?.id ?? null, marketSlug: analysis.marketSlug } as any,
-      }
-    }).catch(() => {});
-    return { success: true, orderId: order?.id, message: `Live order placed: ${analysis.recommendedSide} $${betUsd.toFixed(2)}` };
-  } catch (err: any) {
-    logger.error('Polymarket US live order failed', { error: err?.message });
-    return { success: false, message: `Bet failed: ${err?.message}` };
+    return { success: true, message: `Local simulation recorded: ${analysis.recommendedSide} $${analysis.betSizeUSD}` };
   }
-}
 
+  // Gamma condition IDs and tokens belong to the international exchange.
+  // US Ed25519 credentials cannot authorize those orders. No fake fill is booked.
+  return { success: false, message: 'International live execution is unavailable; Polymarket US requires its own qualified market and execution route' };
+}
 
 // ── RESOLUTION POLLING ────────────────────────────────────────────────────────
 // Nothing previously checked whether a Polymarket market had resolved in the
@@ -750,12 +552,9 @@ export async function placePolymarketBet(
 // is the lookup key back to the market.
 
 export async function pollPolymarketResolutions(): Promise<void> {
-  const allOpen = await prisma.trade.findMany({
+  const openTrades = await prisma.trade.findMany({
     where: { asset: 'POLYMARKET', status: 'OPEN', brokerOrderId: { not: null } },
   });
-  // Polymarket US positions (keyed by market slug) settle through
-  // polymarketEdge.managePolymarketPositions, not the international Gamma API.
-  const openTrades = (allOpen || []).filter((t: any) => (t.metadata as any)?.venue !== 'polymarket_us');
   if (openTrades.length === 0) return;
 
   const conditionIds = openTrades.map((t: any) => t.brokerOrderId).join(',');
@@ -775,8 +574,22 @@ export async function pollPolymarketResolutions(): Promise<void> {
     const market = markets.find((m: any) => (m.conditionId ?? m.condition_id) === trade.brokerOrderId);
     if (!market || !market.closed) continue;
 
-    const outcomePrices: number[] = JSON.parse(market.outcomePrices || '["0","0"]').map(Number);
-    const yesResolvedTrue = outcomePrices[0] >= 0.99;
+    let prices: unknown;
+    let outcomes: unknown;
+    try {
+      prices = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
+      outcomes = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
+    } catch { continue; }
+    if (!Array.isArray(prices) || !Array.isArray(outcomes) || prices.length !== 2 || outcomes.length !== 2) continue;
+    const labels = outcomes.map((value: unknown) => typeof value === 'string' ? value.toUpperCase() : '');
+    const yesIndex = labels.indexOf('YES');
+    const noIndex = labels.indexOf('NO');
+    if (yesIndex < 0 || noIndex < 0 || yesIndex === noIndex) continue;
+    const outcomePrices = prices.map((value: unknown) => typeof value === 'number' || (typeof value === 'string' && value.trim()) ? Number(value) : NaN);
+    const yesResolvedTrue = outcomePrices[yesIndex] === 1 && outcomePrices[noIndex] === 0;
+    const noResolvedTrue = outcomePrices[noIndex] === 1 && outcomePrices[yesIndex] === 0;
+    if (!yesResolvedTrue && !noResolvedTrue) continue;
+    if ((trade.type !== 'BUY' && trade.type !== 'SELL') || !Number.isFinite(trade.entryPrice) || trade.entryPrice <= 0 || trade.entryPrice >= 1 || !Number.isFinite(trade.quantity) || trade.quantity <= 0) continue;
     // Trade.type BUY == bet YES, SELL == bet NO (matches placePolymarketBet's mapping)
     const won = trade.type === 'BUY' ? yesResolvedTrue : !yesResolvedTrue;
     const exitPrice = won ? 1 : 0;

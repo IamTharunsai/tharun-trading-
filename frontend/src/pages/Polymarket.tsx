@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { RefreshCw, Sparkles, PieChart, Activity, ArrowUpRight, Zap, AlertTriangle } from 'lucide-react';
 import {
-  getPredictions, scanPredictions, wagerPrediction, getPortfolioBreakdown, getTrades,
+  getPredictions, scanPredictions, wagerPrediction, getPortfolioBreakdown, getTrades, getPredictionSimulations,
 } from '../services/api';
 import LastUpdated from '../components/common/LastUpdated';
 import { useSystemStatus } from '../hooks/useSystemStatus';
@@ -94,6 +94,8 @@ export default function PolymarketPage() {
     retry: 1,
   });
   const statusQ = useSystemStatus();
+  const [simulationPage, setSimulationPage] = useState(1);
+  const simulationsQ = useQuery({ queryKey: ['prediction-simulations', simulationPage], queryFn: () => getPredictionSimulations(simulationPage), refetchInterval: 30000, retry: false });
 
   const predictions: Pred[] = useMemo(() => {
     const raw: any[] = Array.isArray(predsQ.data) ? predsQ.data : Array.isArray((predsQ.data as any)?.predictions) ? (predsQ.data as any).predictions : [];
@@ -179,6 +181,7 @@ export default function PolymarketPage() {
       toast.success(res?.message || `Wager recorded: $${wagerAmount} on ${wagerOutcome} @ ${cents(selectedPrice)}`);
       setSelected(null);
       qc.invalidateQueries({ queryKey: ['polymarket-trades'] });
+      qc.invalidateQueries({ queryKey: ['prediction-simulations'] });
     } catch (err: any) {
       toast.error(err?.response?.data?.error || err?.message || 'Failed to place wager');
     } finally {
@@ -201,7 +204,7 @@ export default function PolymarketPage() {
               <>
                 <span className="text-slate-300">·</span>
                 <span className={`text-xs font-mono font-semibold ${usConnected ? 'text-emerald-600' : 'text-slate-500'}`}>
-                  POLYMARKET US API {usConnected ? 'CONNECTED' : 'NOT CONNECTED'}
+                  POLYMARKET US API {usConnected ? 'VERIFIED' : statusQ.data?.polymarket?.usConfigured ? 'UNVERIFIED' : 'NOT CONFIGURED'}
                 </span>
               </>
             )}
@@ -437,7 +440,7 @@ export default function PolymarketPage() {
           ) : (
             <>
               <div className="flex justify-between"><span className="text-slate-500">Execution mode</span><span className="font-bold">{pmMode}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Polymarket US API</span><span className={`font-bold ${usConnected ? 'text-emerald-600' : 'text-slate-500'}`}>{usConnected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Polymarket US API</span><span className={`font-bold ${usConnected ? 'text-emerald-600' : 'text-slate-500'}`}>{usConnected ? 'VERIFIED' : statusQ.data?.polymarket?.usConfigured ? 'UNVERIFIED' : 'NOT CONFIGURED'}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Scheduler</span><span className="font-bold">{String(statusQ.data?.scheduler || '—').toUpperCase()}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Wallet (portfolio breakdown)</span><span className="font-bold">{walletConnected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div>
             </>
@@ -445,13 +448,19 @@ export default function PolymarketPage() {
         </div>
       )}
 
+      <section className="p-5 rounded-xl bg-white border border-slate-200 space-y-3" aria-label="Local simulation ledger">
+        <h2 className="font-semibold text-slate-900">Local research simulations</h2>
+        <p className="text-sm text-slate-500">International research only. These records do not submit orders or show broker profit. Settlement tracking is not connected yet.</p>
+        {simulationsQ.isError ? <p role="alert">Simulation ledger unavailable.</p> : simulationsQ.isLoading ? <p role="status">Loading simulations…</p> : !Array.isArray(simulationsQ.data?.simulations) ? <p>Simulation data unavailable.</p> : simulationsQ.data.simulations.length === 0 ? <p>No simulations on this page.</p> : <div className="overflow-x-auto"><table className="w-full text-sm text-left"><caption className="sr-only">Recorded simulations</caption><thead><tr><th>Market</th><th>Outcome</th><th>Modelled stake</th><th>Recorded</th></tr></thead><tbody>{simulationsQ.data.simulations.map((row: any) => <tr key={row.id}><td className="py-2">{tradeAssetLabel(row)}</td><td>{row.type === 'BUY' ? 'YES' : row.type === 'SELL' ? 'NO' : 'Unknown'}</td><td>{usd(num(row.entryPrice) !== null && num(row.quantity) !== null ? Number(row.entryPrice) * Number(row.quantity) : null)}</td><td>{safeDate(row.openedAt)?.toLocaleString() ?? '—'}</td></tr>)}</tbody></table></div>}
+        <div className="flex items-center gap-3"><button type="button" disabled={simulationPage <= 1 || simulationsQ.isFetching} onClick={() => setSimulationPage(page => page - 1)}>Previous</button><span>Page {simulationPage}</span><button type="button" disabled={simulationsQ.isFetching || simulationsQ.isError || simulationPage >= (simulationsQ.data?.pages ?? 0)} onClick={() => setSimulationPage(page => page + 1)}>Next</button></div>
+      </section>
       {/* Wager modal */}
       {selected && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-testid="pm-wager-modal">
           <div className="w-full max-w-lg p-6 rounded-2xl bg-white border border-slate-200 shadow-xl space-y-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <span className="text-xs font-mono text-blue-700 font-bold uppercase tracking-wider">Record wager{pmMode ? ` (${pmMode})` : ''}</span>
+                <span className="text-xs font-mono text-blue-700 font-bold uppercase tracking-wider">Record local simulation</span>
                 <h3 className="text-base font-bold text-slate-900 mt-1">{selected.title}</h3>
               </div>
               <button onClick={() => setSelected(null)} aria-label="Close" className="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
@@ -495,7 +504,7 @@ export default function PolymarketPage() {
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-mono font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {wagerLoading ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
-              <span>CONFIRM WAGER</span>
+              <span>RECORD SIMULATION</span>
             </button>
           </div>
         </div>

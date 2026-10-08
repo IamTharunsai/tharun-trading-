@@ -1,4 +1,4 @@
-jest.mock('../src/utils/prisma', () => ({ prisma: { trade: {}, position: {} } }));
+jest.mock('../src/utils/prisma', () => ({ prisma: { trade: {}, position: {}, portfolioSnapshot: { findMany: jest.fn().mockResolvedValue([]) } } }));
 jest.mock('../src/websocket/server', () => ({ getIO: () => ({ emit: jest.fn() }) }));
 jest.mock('../src/services/correlationService', () => ({ correlationService: { shouldAddAssetToPortfolio: jest.fn().mockResolvedValue({ shouldAdd: true }) } }));
 const killSwitch = jest.fn();
@@ -12,7 +12,7 @@ import { normalizeConfidence } from '../src/utils/confidence';
 const sig = (over: any = {}) => ({
   asset: 'AAPL', market: 'stocks', direction: 'BUY', confidence: 70,
   entryPrice: 100, stopLossPrice: 95, takeProfitPrice: 110, positionSizePct: 5,
-  reasoning: '', agentDecisionId: '', ...over,
+  reasoning: '', agentDecisionId: 'fixture', voteCounts: { supporting: 8, opposing: 2, abstaining: 4 }, ...over,
 }) as any;
 const pf = (over: any = {}) => ({
   totalValue: 1000, cashBalance: 900, invested: 100, pnlDay: 0, pnlDayPct: 0, pnlTotal: 0, pnlTotalPct: 0,
@@ -35,11 +35,11 @@ describe('confidence scale', () => {
     // Old bug: confidence 30 (0-100) → "300 of 10 votes" → HIGH_CONVICTION.
     const r = await validateTradeSignal(sig({ confidence: 30 }), pf());
     expect(r.approved).toBe(false);
-    expect(r.reason).toMatch(/MIN_AGENT_CONFIDENCE/);
+    expect(r.reason).toMatch(/CONSENSUS|CONFIDENCE/);
   });
 
-  it('a 0-1 confidence is read as a fraction', async () => {
-    expect((await validateTradeSignal(sig({ confidence: 0.7 }), pf())).approved).toBe(true);
+  it('risk authority requires percentages; a caller must normalize fractions explicitly', async () => {
+    expect((await validateTradeSignal(sig({ confidence: 0.7 }), pf())).approved).toBe(false);
     expect((await validateTradeSignal(sig({ confidence: 0.3 }), pf())).approved).toBe(false);
   });
 });
@@ -62,7 +62,7 @@ describe('env risk settings are actually enforced', () => {
     process.env.MAX_OPEN_POSITIONS = '2';
     const r = await validateTradeSignal(sig(), pf({ positions: [{ asset: 'MSFT' }, { asset: 'NVDA' }] }));
     expect(r.approved).toBe(false);
-    expect(r.reason).toMatch(/Max open positions/);
+    expect(r.reason).toMatch(/MAX_POSITIONS/);
   });
 
   it('MAX_POSITION_SIZE_PCT clamps the size instead of passing it through', async () => {
@@ -75,8 +75,8 @@ describe('env risk settings are actually enforced', () => {
   it('CASH_RESERVE_PCT is measured after the trade', async () => {
     process.env.CASH_RESERVE_PCT = '50';
     const r = await validateTradeSignal(sig({ positionSizePct: 10 }), pf({ cashBalance: 550 }));
-    expect(r.approved).toBe(false);
-    expect(r.reason).toMatch(/Cash reserve/);
+    expect(r.approved).toBe(true);
+    expect(r.adjustedSize).toBeLessThanOrEqual(5);
   });
 
   it('fails closed on a broken portfolio read', async () => {

@@ -192,3 +192,4 @@ describe('FRED macro', () => {
     expect(m.vixLevel).toBe(18);
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

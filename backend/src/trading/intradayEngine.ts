@@ -1,34 +1,17 @@
-// ── INTRADAY FAST LANE ────────────────────────────────────────────────────────
-// Goal: 100–150 small, high-quality paper day-trades per session without paying
-// for a 30-call committee debate on each one.
-//
-//   every 2 min (market hours) ──► universe.intradayCandidates()  (live most-actives,
-//        │                           gainers, losers — no hardcoded tickers)
-//        ▼
-//   ONE batched Alpaca call for 5-minute bars of all candidates
-//        ▼
-//   deterministic setup scorer (VWAP, EMA9/21, RSI14, RVOL, ATR, high-of-day)
-//        ▼  top-scoring setups only
-//   "fast council": ONE LLM call per candidate in which three lenses
-//   (Technician · Risk Manager · Devil's Advocate) each vote → majority + risk veto
-//        ▼
-//   small bracket order (DAY) sized in dollars, stop = 1.5×ATR(5m), target = 2R
-//        ▼
-//   exits: broker bracket · app stop monitor · time stop · 15:50 ET flatten
-//
-// The full 14-agent committee (debateEngine) is still used for swing/long-term
-// entries; this lane never touches it.
+// Intraday candidate discovery and deterministic pre-screening. Qualified setups
+// enter through the shared persisted council, risk, account/symbol claim and fill
+// lifecycle. This lane no longer sends an independent broker order or fabricates
+// an unconfirmed local position. Its dollar cap can only reduce council sizing.
+// Time-stop and end-of-day requests use the broker-confirmed exit lifecycle.
 import axios from 'axios';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { appConfig } from '../utils/config';
 import { universe } from '../services/universeService';
 import { routedMessagesCreate, parseJsonLoose, stripReasoning } from '../utils/llmRouter';
-import { getTradingBroker, getActiveMode } from './brokerRouter';
-import { confirmOrderFill } from './executionEngine';
 import { closePosition } from './riskManager';
+import { getVerifiedAccountScope } from './accountScope';
 import { isKillSwitchActive } from '../agents/orchestrator';
-import { getIO } from '../websocket/server';
 
 // ── configuration (all overridable from Railway env) ──────────────────────────
 export function intradayConfig() {
@@ -255,77 +238,16 @@ export async function getIntradayStatus() {
 }
 
 // ── entry ─────────────────────────────────────────────────────────────────────
-async function enter(s: SetupScore, verdict: FastVerdict | null, cfg: ReturnType<typeof intradayConfig>): Promise<boolean> {
-  const broker: any = getTradingBroker();
-  const stopDist = Math.min(Math.max(1.5 * s.atr, s.price * 0.004), s.price * 0.02);
-  const stop = +(s.price - stopDist).toFixed(2);
-  const target = +(s.price + 2 * stopDist).toFixed(2);
-  const wholeQty = Math.floor(cfg.notionalUsd / s.price);
-  const asset = universe.get(s.symbol);
-  const qty = wholeQty >= 1 ? wholeQty : (asset?.fractionable ? Math.floor((cfg.notionalUsd / s.price) * 10000) / 10000 : 0);
-  if (!(qty > 0)) { logger.info(`⚡ ${s.symbol}: $${s.price.toFixed(2)} too expensive for $${cfg.notionalUsd} and not fractionable`); return false; }
-
-  const decision = await prisma.agentDecision.create({
-    data: {
-      asset: s.symbol, signal: 'BUY', finalVote: 'BUY', horizon: 'INTRADAY',
-      totalVotes: verdict?.votes.length || 0,
-      goVotes: verdict?.votes.filter(v => v.vote === 'BUY').length || 0,
-      noGoVotes: verdict?.votes.filter(v => v.vote !== 'BUY').length || 0,
-      avgConfidence: verdict?.confidence ?? s.score,
-      agentVotes: (verdict?.votes || []) as any,
-      marketSnapshot: { lane: 'INTRADAY', ...s } as any,
-      regime: s.setup,
-      executionReason: `Intraday ${s.setup} score ${s.score}`,
-    },
-  }).catch(() => null);
-
-  const trade = await prisma.trade.create({
-    data: {
-      asset: s.symbol, market: 'stocks', type: 'BUY', entryPrice: s.price, quantity: qty, status: 'PENDING',
-      stopLossPrice: stop, takeProfitPrice: target,
-      ...(decision ? { agentDecisionId: decision.id } : {}),
-      metadata: { lane: 'INTRADAY', setup: s.setup, score: s.score, reasons: s.reasons, llm: verdict ? { confidence: verdict.confidence, votes: verdict.votes } : null } as any,
-    },
+async function enter(s: SetupScore, _verdict: FastVerdict | null, cfg: ReturnType<typeof intradayConfig>): Promise<boolean> {
+  if (process.env.DRY_RUN === 'true') return false;
+  const { runDebateForAsset } = await import('../jobs/scheduler');
+  const transcript = await runDebateForAsset(s.symbol, 'stocks', {
+    bypassGate: true, maximumNotionalUsd: cfg.notionalUsd, executionLane: 'INTRADAY',
   });
-
-  let fillPrice = s.price, fillQty = qty, brokerOrderId = `local-sim-${Date.now()}`, brokerConfirmed = false;
-  let protection = 'APPLICATION_MONITORED';
-  if (broker) {
-    const payload: any = wholeQty >= 1
-      ? { symbol: s.symbol, qty: wholeQty, side: 'buy', type: 'market', time_in_force: 'day', order_class: 'bracket', take_profit: { limit_price: target }, stop_loss: { stop_price: stop }, client_order_id: trade.id }
-      : { symbol: s.symbol, qty, side: 'buy', type: 'market', time_in_force: 'day', client_order_id: trade.id };
-    try {
-      const t0 = Date.now();
-      const placed = await broker.createOrder(payload);
-      brokerOrderId = placed.id;
-      const fill = await confirmOrderFill(broker, placed.id, 8, 750);
-      fillPrice = fill.fillPrice; fillQty = fill.fillQty; brokerConfirmed = true;
-      protection = wholeQty >= 1 ? 'BROKER_HOSTED' : 'APPLICATION_MONITORED';
-      await prisma.trade.update({ where: { id: trade.id }, data: { fillLatencyMs: Date.now() - t0 } }).catch(() => {});
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err.message;
-      await prisma.trade.update({ where: { id: trade.id }, data: { status: 'REJECTED', exitReason: `Broker rejected: ${msg}`, brokerOrderId } });
-      logger.warn(`⚡ ${s.symbol}: order rejected — ${msg}`);
-      return false;
-    }
-  } else if (getActiveMode() === 'live') {
-    await prisma.trade.update({ where: { id: trade.id }, data: { status: 'FAILED', exitReason: 'Live mode without live broker' } });
-    return false;
-  }
-
-  await prisma.trade.update({ where: { id: trade.id }, data: { status: 'OPEN', entryPrice: fillPrice, quantity: fillQty, brokerOrderId, brokerConfirmed, reconciliationStatus: brokerConfirmed ? 'BROKER_RECONCILED' : 'UNCONFIRMED_LOCAL_SIMULATION' } });
-  await prisma.position.upsert({
-    where: { asset: s.symbol },
-    create: { asset: s.symbol, market: 'stocks', side: 'BUY', quantity: fillQty, entryPrice: fillPrice, currentPrice: fillPrice, stopLossPrice: stop, takeProfitPrice: target, protectionStatus: protection, status: 'OPEN' },
-    update: { side: 'BUY', quantity: fillQty, entryPrice: fillPrice, currentPrice: fillPrice, stopLossPrice: stop, takeProfitPrice: target, protectionStatus: protection, status: 'OPEN', openedAt: new Date() },
-  });
-  if (decision) await prisma.agentDecision.update({ where: { id: decision.id }, data: { executed: true } }).catch(() => {});
+  if (!transcript?.tradeExecuted) return false;
   cooldown.set(s.symbol, Date.now());
-  getIO()?.emit('trade:executed', { trade: { id: trade.id, asset: s.symbol, type: 'BUY', entryPrice: fillPrice, quantity: fillQty, status: 'OPEN', lane: 'INTRADAY' } });
-  logger.info(`⚡ INTRADAY ENTRY ${s.symbol} ${fillQty} @ $${fillPrice.toFixed(2)} (stop $${stop}, target $${target}, ${s.setup} ${s.score}${verdict ? `, council ${verdict.confidence}%` : ''})`);
   return true;
 }
-
 /** One scan cycle. Returns what happened (also exposed via lastScan for the UI). */
 export async function runIntradayScan(opts: { force?: boolean } = {}) {
   const cfg = intradayConfig();
@@ -389,12 +311,13 @@ export async function runIntradayScan(opts: { force?: boolean } = {}) {
 /** Time stop + end-of-day flatten for intraday-lane positions. */
 export async function manageIntradayExits(opts: { flattenAll?: boolean } = {}) {
   const cfg = intradayConfig();
-  const openTrades = await prisma.trade.findMany({ where: { status: 'OPEN', market: 'stocks' } });
+  const scope = await getVerifiedAccountScope();
+  const openTrades = await prisma.trade.findMany({ where: { status: 'OPEN', market: 'stocks', accountId: scope.accountId, brokerMode: scope.mode } });
   const lane = openTrades.filter((t: any) => (t.metadata as any)?.lane === 'INTRADAY');
   for (const t of lane) {
     const ageMin = (Date.now() - new Date(t.openedAt).getTime()) / 60_000;
     if (!opts.flattenAll && ageMin < cfg.maxHoldMin) continue;
-    const pos = await prisma.position.findFirst({ where: { asset: t.asset, status: 'OPEN' } });
+    const pos = t.positionId ? await prisma.position.findUnique({ where: { id: t.positionId } }) : null;
     if (!pos) continue;
     const reason = opts.flattenAll ? 'intraday_eod_flatten' : 'intraday_time_stop';
     await closePosition(pos, pos.currentPrice, reason).catch((err: any) => logger.error(`Intraday exit failed ${t.asset}`, { error: err?.message }));

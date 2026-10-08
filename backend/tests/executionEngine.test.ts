@@ -1,3 +1,6 @@
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
+jest.mock('../src/services/marketData', () => ({ getCurrentPrice: jest.fn(), buildMarketSnapshot: jest.fn() }));
 import { confirmOrderFill } from '../src/trading/executionEngine';
 
 // Regression coverage for the two bugs a code review caught in this exact
@@ -16,6 +19,18 @@ function mockClient(responses: any[]) {
 }
 
 describe('confirmOrderFill', () => {
+  it('rejects a filled status with an invalid price or quantity', async () => {
+    await expect(confirmOrderFill(mockClient([{ status: 'filled', filled_avg_price: 'NaN', filled_qty: '5' }]), 'o', 1, 0)).rejects.toThrow('valid fill');
+    await expect(confirmOrderFill(mockClient([{ status: 'filled', filled_avg_price: '100', filled_qty: '0' }]), 'o', 1, 0)).rejects.toThrow('valid fill');
+  });
+
+  it('retains partial-fill evidence in the timeout error without treating it as complete', async () => {
+    const partial = { status: 'partially_filled', filled_avg_price: '100', filled_qty: '2' };
+    await expect(confirmOrderFill(mockClient([partial]), 'o', 1, 0)).rejects.toMatchObject({
+      orderId: 'o', lastState: partial,
+    });
+  });
+
   it('returns the real fill price/qty once the order reaches filled status', async () => {
     const client = mockClient([{ status: 'filled', filled_avg_price: '206.92', filled_qty: '49.31' }]);
     const result = await confirmOrderFill(client, 'order-1', 5, 1);

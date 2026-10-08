@@ -41,3 +41,4 @@ describe('buildMacroData response shaping', () => {
     expect(result.note.length).toBeGreaterThan(0);
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

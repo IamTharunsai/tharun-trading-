@@ -1,10 +1,11 @@
 // Honest trade classification helpers shared by Trades, Analytics and dashboard widgets.
 
-export type Outcome = 'WIN' | 'LOSS' | 'FLAT' | 'OPEN' | 'PENDING' | 'REJECTED';
+export type Outcome = 'WIN' | 'LOSS' | 'FLAT' | 'OPEN' | 'PENDING' | 'REJECTED' | 'SIMULATION';
 
 /** Outcome from real fields only — a broker rejection is never a WIN. */
 export function tradeOutcome(t: any): Outcome {
   const status = String(t?.status || '').toUpperCase();
+  if (status === 'LOCAL_SIMULATION') return 'SIMULATION';
   const reason = String(t?.exitReason || '').toLowerCase();
   if (['REJECTED', 'FAILED', 'CANCELLED', 'CANCELED'].includes(status) || /broker rejected|rejected|failed to (submit|place)/.test(reason)) return 'REJECTED';
   if (status === 'OPEN') return 'OPEN';
@@ -17,6 +18,7 @@ export function tradeOutcome(t: any): Outcome {
 }
 
 export const OUTCOME_CLS: Record<Outcome, string> = {
+  SIMULATION: 'bg-slate-100 text-slate-600 border border-slate-200',
   WIN: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   LOSS: 'bg-red-50 text-red-700 border border-red-200',
   FLAT: 'bg-slate-100 text-slate-600 border border-slate-200',

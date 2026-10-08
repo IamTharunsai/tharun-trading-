@@ -5,7 +5,7 @@ const sdk = {
   markets: { book: jest.fn(), bbo: jest.fn(), settlement: jest.fn() },
   orders: { create: jest.fn().mockResolvedValue({ id: 'ord-1' }), cancel: jest.fn().mockResolvedValue(undefined) },
 };
-jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn().mockImplementation(() => sdk) }));
+jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn().mockImplementation(() => sdk) }), { virtual: true });
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: () => false }));
 jest.mock('axios');
 import axios from 'axios';

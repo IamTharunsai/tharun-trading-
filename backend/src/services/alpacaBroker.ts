@@ -8,12 +8,6 @@ import axios, { AxiosInstance } from 'axios';
 import { logger } from '../utils/logger';
 import { isPlaceholderKey } from '../utils/apiKeys';
 
-let alpacaAuthDisabled = false;
-
-export function disableAlpacaAuth() {
-  alpacaAuthDisabled = true;
-}
-
 interface AlpacaOrderRequest {
   symbol: string;
   qty?: number;
@@ -68,7 +62,7 @@ interface AlpacaPosition {
   symbol: string;
   exchange: string;
   asset_class: string;
-  avg_fill_price: string;
+  avg_entry_price: string;
   qty: string;
   side: 'long' | 'short';
   market_value: string;
@@ -133,8 +127,7 @@ export class AlpacaBroker {
       return response.data;
     } catch (error: any) {
       if (error?.response?.status === 401 || error?.response?.status === 403) {
-        disableAlpacaAuth();
-        logger.warn('Alpaca: Authentication failed (401/403). Operating in local paper trading mode.');
+        logger.warn('Alpaca: Account authentication failed (401/403); broker evidence unavailable.');
       } else {
         logger.error('Alpaca: Failed to get account', { error: error?.message || error });
       }
@@ -214,6 +207,17 @@ export class AlpacaBroker {
     }
   }
 
+  /** Official Trading API recovery key; a transport failure must not mean no order. */
+  async getOrderByClientOrderId(clientOrderId: string): Promise<AlpacaOrder | null> {
+    try {
+      const response = await this.client.get('/v2/orders:by_client_order_id', { params: { client_order_id: clientOrderId } });
+      return response.data;
+    } catch (error: any) {
+      if (error?.response?.status === 404) return null;
+      throw error;
+    }
+  }
+
   /**
    * Get all orders (open + closed)
    */
@@ -230,6 +234,19 @@ export class AlpacaBroker {
       logger.error('Alpaca: Failed to get orders', { error });
       return [];
     }
+  }
+
+  /** Unavailable evidence must never be represented as a flat account. */
+  async listPositionsVerified(): Promise<AlpacaPosition[]> {
+    const response = await this.client.get('/v2/positions');
+    if (!Array.isArray(response.data)) throw new Error('Broker positions response is not an array');
+    return response.data;
+  }
+
+  async listOrdersVerified(status: 'open' | 'closed' | 'all' = 'open', limit = 500): Promise<AlpacaOrder[]> {
+    const response = await this.client.get('/v2/orders', { params: { status, limit, nested: true } });
+    if (!Array.isArray(response.data)) throw new Error('Broker orders response is not an array');
+    return response.data;
   }
 
   /**
@@ -334,8 +351,7 @@ export class AlpacaBroker {
       return true;
     } catch (error: any) {
       if (error?.response?.status === 401 || error?.response?.status === 403) {
-        disableAlpacaAuth();
-        logger.warn('⚠️ Alpaca credentials invalid (401/403). Operating in local paper trading mode.');
+        logger.warn('Alpaca: Credentials rejected (401/403); account verification failed.');
       } else {
         logger.error('❌ Alpaca authentication failed', { error: error?.message || error });
       }
@@ -347,17 +363,20 @@ export class AlpacaBroker {
    * Get portfolio value + cash
    */
   async getPortfolioSummary(): Promise<{
+    account_id: string;
+    last_equity: number;
     portfolio_value: number;
     cash: number;
     buying_power: number;
     equity: number;
   } | null> {
-    if (alpacaAuthDisabled) {
-      return null;
-    }
+    // Verify this account on each observation. A failure on another account,
+    // or an earlier failure on this one, must not permanently disable recovery.
     try {
       const account = await this.getAccount();
       return {
+          account_id: account.id,
+          last_equity: Number(account.last_equity),
         portfolio_value: parseFloat(account.portfolio_value),
         cash: parseFloat(account.cash),
         buying_power: parseFloat(account.buying_power),
@@ -365,8 +384,7 @@ export class AlpacaBroker {
       };
     } catch (error: any) {
       if (error?.response?.status === 401 || error?.response?.status === 403) {
-        disableAlpacaAuth();
-        logger.warn('Alpaca: Authentication failed (401/403), falling back to local paper portfolio');
+        logger.warn('Alpaca: Authentication failed (401/403); portfolio remains unavailable.');
       } else {
         logger.error('Alpaca: Failed to get portfolio summary', { error: error?.message || error });
       }
@@ -382,9 +400,6 @@ export class AlpacaBroker {
  * LIVE_TRADING_CONFIRMED gate. The router decides paper vs live now.
  */
 export function createAlpacaBroker(_paperMode: boolean = true): AlpacaBroker | null {
-  if (alpacaAuthDisabled) {
-    return null;
-  }
   // Lazy require avoids an import cycle (brokerRouter imports this module).
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { getTradingBroker } = require('../trading/brokerRouter');

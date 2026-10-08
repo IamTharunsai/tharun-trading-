@@ -1,3 +1,4 @@
+import { entryDecisionWhere } from '../trading/decisionVisibility';
 import { Router, Request, Response } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
@@ -159,6 +160,7 @@ agentMonitorRouter.get('/context', async (req: AuthRequest, res: Response) => {
 agentMonitorRouter.get('/recent-decisions', async (req: AuthRequest, res: Response) => {
   try {
     const decisions = await prisma.agentDecision.findMany({
+      where: entryDecisionWhere(),
       orderBy: { timestamp: 'desc' },
       take: 20,
     });
@@ -195,7 +197,7 @@ agentMonitorRouter.get('/status', async (_req: AuthRequest, res: Response) => {
     const [openPositions, todayTrades, recentDecisions] = await Promise.all([
       prisma.position.count({ where: { status: 'OPEN' } }),
       prisma.trade.count({ where: { openedAt: { gte: new Date(new Date().setHours(0,0,0,0)) } } }),
-      prisma.agentDecision.count({ where: { timestamp: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } } }),
+      prisma.agentDecision.count({ where: entryDecisionWhere({ timestamp: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } }) }),
     ]);
     return res.json({
       openPositions,

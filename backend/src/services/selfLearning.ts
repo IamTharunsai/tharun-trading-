@@ -1,3 +1,4 @@
+import { entryDecisionWhere } from '../trading/decisionVisibility';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { updateStockMemory } from './stockMemoryService';
@@ -179,7 +180,7 @@ Respond in JSON:
       asset: trade.asset,
       originalVote: vote,
       originalConfidence: agentVote.confidence,
-      originalReasoning: agentVote.reasoning,
+      originalReasoning: agentVote.finalReason || agentVote.reasoning || agentVote.openingArgument || '',
       tradeOutcome: outcome,
       pnlPct,
       exitReason: trade.exitReason || '',
@@ -348,7 +349,7 @@ export async function generateWeeklyReport(): Promise<string> {
 
     const [trades, decisions] = await Promise.all([
       prisma.trade.findMany({ where: { openedAt: { gte: weekAgo } }, orderBy: { openedAt: 'desc' } }),
-      prisma.agentDecision.findMany({ where: { timestamp: { gte: weekAgo } }, orderBy: { timestamp: 'desc' } })
+      prisma.agentDecision.findMany({ where: entryDecisionWhere({ timestamp: { gte: weekAgo } }), orderBy: { timestamp: 'desc' } })
     ]);
 
     const closedTrades = trades.filter((t: any) => t.status === 'CLOSED');

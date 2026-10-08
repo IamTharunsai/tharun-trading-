@@ -1,3 +1,4 @@
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
 import {
   liveTradingConfirmed, alpacaLiveAllowed, getAlpacaMode, polymarketLiveAllowed,
   getPolymarketMaxOrderUsd, LIVE_CONFIRM_PHRASE,
@@ -45,7 +46,7 @@ describe('liveGate — one rule for real money', () => {
     expect(getPolymarketMaxOrderUsd({})).toBe(5);
     expect(getPolymarketMaxOrderUsd({ POLYMARKET_MAX_BET_USD: '3' })).toBe(3);
     expect(getPolymarketMaxOrderUsd({ POLYMARKET_MAX_BET_USD: '3', POLYMARKET_US_MAX_ORDER_USD: '7' })).toBe(7);
-    expect(getPolymarketMaxOrderUsd({ POLYMARKET_US_MAX_ORDER_USD: 'abc' })).toBe(5);
+    expect(() => getPolymarketMaxOrderUsd({ POLYMARKET_US_MAX_ORDER_USD: 'abc' })).toThrow('order limit');
   });
 });
 

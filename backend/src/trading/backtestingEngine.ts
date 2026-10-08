@@ -1,662 +1,104 @@
-/**
- * BACKTESTING ENGINE
- * Replay 6 months of historical market data through all 15 agents
- * Calculate win rate, Sharpe ratio, profit factor, max drawdown
- * Generate performance report per agent + overall system
- * 
- * Usage:
- *   const results = await runBacktest({
- *     startDate: '2025-10-15',
- *     endDate: '2026-04-15',
- *     initialCapital: 100000,
- *     symbols: ['AAPL', 'BTC/USDT', 'ETH/USDT']
- *   });
- */
+/** Dated OHLC research replay. Never impersonates specialist council inference. */
+import { z } from 'zod';
+import { fetchHistoricalBars, historicalRange, HistoricalBar } from './historicalBars';
+import { replayLedger } from './replayLedger';
 
-import axios from 'axios';
-import { logger } from '../utils/logger';
-import { prisma } from '../utils/prisma';
-
-interface BacktestConfig {
-  startDate: string; // YYYY-MM-DD
-  endDate: string;
-  initialCapital: number;
-  symbols: string[];
-  riskPerTrade?: number; // % of portfolio (default 1%)
-  maxPositionSize?: number; // % of portfolio (default 10%)
-  brokerFeesPct?: number; // Brokerage fees per trade (default 0.1%)
+export const backtestConfigSchema = z.object({
+  startDate: z.string(), endDate: z.string(),
+  initialCapital: z.number().finite().positive().max(1e10),
+  symbols: z.array(z.string().regex(/^[A-Z][A-Z0-9.-]{0,14}$|^[A-Z0-9]{2,15}\/USDT$/)).min(1).max(10)
+    .refine(symbols => new Set(symbols).size === symbols.length, 'Symbols must be unique'),
+  strategy: z.literal('momentum_baseline').default('momentum_baseline'),
+  lookbackBars: z.number().int().min(2).max(3000).default(20),
+  momentumThresholdPct: z.number().finite().min(0).max(100).default(1),
+  riskPerTrade: z.number().finite().positive().max(100).default(1),
+  maxPositionSize: z.number().finite().positive().max(100).default(10),
+  brokerFeesPct: z.number().finite().min(0).max(10).default(0.1),
+  slippageBps: z.number().finite().min(0).max(1000).default(3),
+  stopLossPct: z.number().finite().positive().lt(100).default(3),
+  maxHoldBars: z.number().int().min(1).max(3000).default(4),
+}).strict();
+export type BacktestConfig = z.input<typeof backtestConfigSchema>;
+export interface TradeRecord {
+  timestamp: string; exitTimestamp: string; signalTimestamp: string; symbol: string;
+  direction: 'BUY'; entryPrice: number; exitPrice: number; quantity: number;
+  pnl: number; pnlPct: number; fees: number; holding_hours: number; exitReason: string;
+  confidence: null; agents: never[]; regime: 'UNCLASSIFIED';
+}
+export interface BacktestResults {
+  configuration: z.output<typeof backtestConfigSchema>;
+  totalTrades: number; totalTradess: number; winningTrades: number; losingTrades: number;
+  winRate: number; profitFactor: number | null; sharpeRatio: null; maxDrawdown: number;
+  totalReturn: number; returnPct: number; finalEquity: number; cash: number; openPositions: number;
+  totalFees: number; avgWin: number; avgLoss: number; avgTradeSize: number;
+  largestWin: number; largestLoss: number; holdingTimeAvg: number; riskFreeRate: null;
+  agentAccuracy: Record<string, never>; regimePerformance: Record<string, never>;
+  sampleTrades: TradeRecord[]; equity: ReturnType<typeof replayLedger>['equity'];
+  strategy: { id: string; parameters: Record<string, number>; councilReplay: false };
+  dataCoverage: Record<string, { bars: number; firstOpen: string; lastCompleted: string }>;
+  limitations: string[];
 }
 
-interface Candle {
-  timestamp: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
-interface BacktestResults {
-  totalTradess: number;
-  winningTrades: number;
-  losingTrades: number;
-  winRate: number; // %
-  profitFactor: number; // Total wins / Total losses
-  sharpeRatio: number; // Volatility-adjusted returns
-  maxDrawdown: number; // Worst peak-to-trough %
-  totalReturn: number; // Final PnL in $
-  returnPct: number; // Final return %
-  avgWin: number; // Average winning trade $
-  avgLoss: number; // Average losing trade $
-  avgTradeSize: number; // Average position size
-  largestWin: number; // Biggest winning trade $
-  largestLoss: number; // Biggest losing trade $
-  holdingTimeAvg: number; // Avg holding time in hours
-  riskFreeRate: number; // Used for Sharpe calculation (3% annual)
-  
-  // Per-agent accuracy
-  agentAccuracy: Record<string, {
-    correctVotes: number;
-    totalVotes: number;
-    accuracy: number; // %
-    avgConfidence: number;
-    beachHeadedTrades: number;
-  }>;
-
-  // Regime analysis
-  regimePerformance: Record<string, {
-    trades: number;
-    winRate: number;
-    avgReturn: number;
-  }>;
-
-  // Trade log (first 50 for inspection)
-  sampleTrades: TradeRecord[];
-}
-
-interface TradeRecord {
-  timestamp: string;
-  symbol: string;
-  direction: 'BUY' | 'SELL';
-  entryPrice: number;
-  exitPrice: number;
-  quantity: number;
-  pnl: number; // $ profit/loss
-  pnlPct: number; // % return
-  confidence: number;
-  agents: {
-    name: string;
-    vote: 'BUY' | 'SELL' | 'HOLD';
-    confidence: number;
-  }[];
-  holding_hours: number;
-  regime: string;
-}
-
-interface HistoricalDataCache {
-  [symbol: string]: {
-    [date: string]: Candle[]; // YYYY-MM-DD -> array of candles
-  };
-}
-
-class BacktestingEngine {
-  private dataCache: HistoricalDataCache = {};
-  private config!: BacktestConfig;
-
-  /**
-   * Main backtest execution
-   */
-  async runBacktest(config: BacktestConfig): Promise<BacktestResults> {
-    this.config = {
-      riskPerTrade: 1,
-      maxPositionSize: 10,
-      brokerFeesPct: 0.1,
-      ...config,
-    };
-
-    logger.info(`🔄 Starting backtest: ${this.config.startDate} to ${this.config.endDate}`, {
-      symbols: this.config.symbols,
-      initialCapital: this.config.initialCapital,
-    });
-
-    try {
-      // 1. Load historical data
-      logger.info('📊 Loading historical data...');
-      await this.loadHistoricalData();
-
-      // 2. Replay through market simulator
-      logger.info('🎬 Replaying market snapshots...');
-      const trades = await this.replayTrades();
-
-      // 3. Calculate metrics
-      logger.info('📈 Calculating performance metrics...');
-      const results = this.calculateMetrics(trades);
-
-      logger.info('✅ Backtest complete', { winRate: results.winRate, sharpeRatio: results.sharpeRatio });
-      return results;
-    } catch (error) {
-      logger.error('Backtest failed', { error });
-      throw error;
-    }
+export async function runBacktest(input: BacktestConfig): Promise<BacktestResults> {
+  const config = backtestConfigSchema.parse(input);
+  historicalRange(config.startDate, config.endDate);
+  const data: Record<string, HistoricalBar[]> = {};
+  for (const symbol of config.symbols) {
+    try { data[symbol] = await fetchHistoricalBars(symbol, config.startDate, config.endDate); }
+    catch { throw new Error(`Historical data unavailable for ${symbol}`); }
   }
-
-  /**
-   * Load 6 months of OHLCV data from Binance/Polygon
-   */
-  private async loadHistoricalData(): Promise<void> {
-    const startDate = new Date(this.config.startDate);
-    const endDate = new Date(this.config.endDate);
-    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    logger.info(`Loading ${daysDiff} days of data for ${this.config.symbols.length} symbols...`);
-
-    for (const symbol of this.config.symbols) {
-      try {
-        const candles = await this.fetchHistoricalCandles(symbol, daysDiff);
-        this.dataCache[symbol] = this.groupByDate(candles);
-        logger.info(`✅ Loaded ${candles.length} candles for ${symbol}`);
-      } catch (error) {
-        logger.warn(`Failed to load data for ${symbol}:`, error);
-      }
-    }
-  }
-
-  /**
-   * Fetch OHLCV data from exchange
-   * For crypto: Binance API (free)
-   * For stocks: Polygon (requires API key, fallback to mock data)
-   */
-  private async fetchHistoricalCandles(symbol: string, days: number): Promise<Candle[]> {
-    // For crypto symbols (BTC/USDT, ETH/USDT)
-    if (symbol.includes('/')) {
-      return this.fetchBinanceData(symbol.replace('/', ''), days);
-    }
-
-    // For stocks (AAPL, GOOGL, etc.)
-    return this.fetchPolygonData(symbol, days);
-  }
-
-  /**
-   * Binance REST API for crypto data
-   */
-  private async fetchBinanceData(symbol: string, days: number): Promise<Candle[]> {
-    try {
-      const interval = '1h'; // 1-hour candles
-      const limit = Math.min(1000, days * 24); // Max 1000 candles per request
-
-      const response = await axios.get(
-        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-      );
-
-      return response.data.map((kline: any[]) => ({
-        timestamp: kline[0],
-        open: parseFloat(kline[1]),
-        high: parseFloat(kline[2]),
-        low: parseFloat(kline[3]),
-        close: parseFloat(kline[4]),
-        volume: parseFloat(kline[7]),
-      }));
-    } catch (error) {
-      logger.error('Binance data fetch failed', { symbol, error });
-      return [];
-    }
-  }
-
-  /**
-   * Polygon.io for stock data
-   */
-  private async fetchPolygonData(symbol: string, days: number): Promise<Candle[]> {
-    const apiKey = process.env.POLYGON_API_KEY;
-    if (!apiKey) {
-      logger.warn('Polygon API key not configured — using mock data');
-      return this.generateMockData(days);
-    }
-
-    try {
-      const endDate = new Date();
-      const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
-
-      const response = await axios.get(
-        `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/1/hour/${startDate.toISOString().split('T')[0]}/${endDate.toISOString().split('T')[0]}`,
-        { params: { apiKey } }
-      );
-
-      return response.data?.results?.map((bar: any) => ({
-        timestamp: bar.t,
-        open: bar.o,
-        high: bar.h,
-        low: bar.l,
-        close: bar.c,
-        volume: bar.v,
-      })) || [];
-    } catch (error) {
-      logger.warn('Polygon data fetch failed — using mock data', { symbol });
-      return this.generateMockData(days);
-    }
-  }
-
-  /**
-   * Generate synthetic market data for testing
-   */
-  private generateMockData(days: number): Candle[] {
-    const candles: Candle[] = [];
-    let price = 100;
-    const now = Date.now();
-
-    for (let i = days * 24; i >= 0; i--) {
-      const timestamp = now - i * 60 * 60 * 1000;
-      // Deterministic cyclical wave for repeatable backtesting benchmarks
-      const cycle = Math.sin(i / 12) * 0.005 + Math.cos(i / 48) * 0.003;
-      price *= (1 + cycle);
-
-      candles.push({
-        timestamp,
-        open: price * 0.999,
-        high: price * 1.004,
-        low: price * 0.996,
-        close: price,
-        volume: 1000000 + Math.round(Math.abs(Math.sin(i / 6)) * 400000),
-      });
-    }
-
-    return candles;
-  }
-
-  /**
-   * Group candles by date for easier lookup
-   */
-  private groupByDate(candles: Candle[]): Record<string, Candle[]> {
-    const grouped: Record<string, Candle[]> = {};
-
-    for (const candle of candles) {
-      const date = new Date(candle.timestamp).toISOString().split('T')[0];
-      if (!grouped[date]) grouped[date] = [];
-      grouped[date].push(candle);
-    }
-
-    return grouped;
-  }
-
-  /**
-   * Simulate trading by replaying market snapshots
-   * For each timestamp, call all 15 agents with current market state
-   * Execute winning agent votes
-   */
-  private async replayTrades(): Promise<TradeRecord[]> {
-    const trades: TradeRecord[] = [];
-    const positions: Map<string, any> = new Map(); // Open positions
-
-    // Get all timestamps in chronological order
-    const timestamps = this.getAllTimestamps();
-
-    logger.info(`Simulating ${timestamps.length} market snapshots...`);
-
-    for (let i = 0; i < timestamps.length - 1; i++) {
-      const currentTime = timestamps[i];
-      const nextTime = timestamps[i + 1];
-
-      // Build market snapshot
-      const snapshot = this.buildMarketSnapshot(currentTime);
-      if (!snapshot) continue;
-
-      // Call agents (in real backtest, this would be actual agent inference)
-      const agentVotes = await this.getAgentVotes(snapshot, currentTime);
-
-      // Execute best signal
-      const signal = this.aggregateVotes(agentVotes);
-      if (!signal || signal.confidence < 0.55) continue; // Don't trade if not confident
-
-      // Calculate position sizing
-      const positionSize = this.calculatePositionSize(signal.confidence);
-
-      // Simulate trade execution at next close price and exit at subsequent bar
-      const nextClose = snapshot.prices[this.config.symbols[0]]?.close || 0;
-      const futureIndex = Math.min(timestamps.length - 1, i + 4);
-      const futureSnapshot = this.buildMarketSnapshot(timestamps[futureIndex]);
-      const exitPrice = futureSnapshot?.prices[this.config.symbols[0]]?.close || nextClose;
-
-      const trade: TradeRecord = {
-        timestamp: new Date(nextTime).toISOString(),
-        symbol: this.config.symbols[0],
-        direction: signal.direction,
-        entryPrice: nextClose,
-        exitPrice,
-        quantity: positionSize,
-        pnl: 0,
-        pnlPct: 0,
-        confidence: signal.confidence,
-        agents: agentVotes,
-        holding_hours: 4,
-        regime: snapshot.regime,
-      };
-
-      // Calculate PnL
-      if (trade.direction === 'BUY') {
-        trade.pnl = (trade.exitPrice - trade.entryPrice) * trade.quantity;
-      } else {
-        trade.pnl = (trade.entryPrice - trade.exitPrice) * trade.quantity;
-      }
-
-      trade.pnlPct = (trade.pnl / (trade.entryPrice * trade.quantity)) * 100;
-      trades.push(trade);
-    }
-
-    return trades;
-  }
-
-  /**
-   * Get simulated agent votes for current market snapshot
-   */
-  private async getAgentVotes(
-    snapshot: any,
-    timestamp: number
-  ): Promise<TradeRecord['agents']> {
-    // In real implementation, this would:
-    // 1. Call each agent's decision logic
-    // 2. Get their vote based on current market conditions
-    // For backtest, we simulate based on technical patterns
-
-    const agents = [
-      'The Technician',
-      'The Newshound',
-      'The Sentiment Analyst',
-      'The Fundamental Analyst',
-      'The Risk Manager',
-      'The Trend Prophet',
-      'The Volume Detective',
-      'The Whale Watcher',
-      'The Macro Economist',
-      "The Devil's Advocate",
-      'The Elliott Wave Master',
-      'The Options Flow Agent',
-      'The Polymarket Specialist',
-      'The Arbitrageur',
-      'The Master Coordinator',
-    ];
-
-    const sym = this.config.symbols[0];
-    const isBullish = snapshot.regime === 'Trending Bull';
-
-    return agents.map((name, idx) => {
-      let vote: 'BUY' | 'SELL' = 'BUY';
-      let confidence = 0.65;
-      if (name.includes('Fundamental')) {
-        vote = 'BUY';
-        confidence = 0.72;
-      } else if (name.includes('Trend') || name.includes('Prophet')) {
-        vote = isBullish ? 'BUY' : 'SELL';
-        confidence = isBullish ? 0.78 : 0.60;
-      } else if (name.includes('Risk')) {
-        vote = isBullish ? 'BUY' : 'SELL';
-        confidence = 0.70;
-      } else {
-        vote = ((idx % 2 === 0) ? isBullish : !isBullish) ? 'BUY' : 'SELL';
-        confidence = 0.60 + ((idx % 5) * 0.05);
-      }
-      return {
-        name,
-        vote,
-        confidence: Math.min(0.95, parseFloat(confidence.toFixed(2))),
-      };
-    });
-  }
-
-  /**
-   * Aggregate agent votes into single trading signal
-   */
-  private aggregateVotes(agentVotes: TradeRecord['agents']) {
-    const buyVotes = agentVotes.filter((v) => v.vote === 'BUY').length;
-    const sellVotes = agentVotes.filter((v) => v.vote === 'SELL').length;
-    const totalConfidence = agentVotes.reduce((sum, v) => sum + v.confidence, 0) / agentVotes.length;
-
-    if (buyVotes > sellVotes) {
-      return { direction: 'BUY' as const, confidence: totalConfidence };
-    } else if (sellVotes > buyVotes) {
-      return { direction: 'SELL' as const, confidence: totalConfidence };
-    }
-
-    return null;
-  }
-
-  /**
-   * Get all market snapshots in chronological order
-   */
-  private getAllTimestamps(): number[] {
-    const timestamps = new Set<number>();
-
-    for (const symbolData of Object.values(this.dataCache)) {
-      for (const dailyCandles of Object.values(symbolData)) {
-        dailyCandles.forEach((c) => timestamps.add(c.timestamp));
-      }
-    }
-
-    return Array.from(timestamps).sort((a, b) => a - b);
-  }
-
-  /**
-   * Build current market snapshot for agent decision-making
-   */
-  private buildMarketSnapshot(timestamp: number): any {
-    const prices: Record<string, any> = {};
-    const date = new Date(timestamp).toISOString().split('T')[0];
-
-    for (const symbol of this.config.symbols) {
-      const candles = this.dataCache[symbol]?.[date];
-      if (candles && candles.length > 0) {
-        const latest = candles[candles.length - 1];
-        prices[symbol] = {
-          close: latest.close,
-          high: latest.high,
-          low: latest.low,
-          volume: latest.volume,
-        };
-      }
-    }
-
-    return {
-      timestamp,
-      prices,
-      regime: this.detectRegime(prices),
-    };
-  }
-
-  /**
-   * Detect current market regime (Trending Bull, Trending Bear, Choppy, High Vol, Compression)
-   */
-  private detectRegime(prices: Record<string, any>): string {
-    const sym = this.config.symbols[0];
-    const p = prices[sym];
-    if (!p) return 'Choppy';
-    if (p.close > p.open * 1.002) return 'Trending Bull';
-    if (p.close < p.open * 0.998) return 'Trending Bear';
-    return 'Choppy';
-  }
-
-  /**
-   * Calculate position size using Kelly Criterion
-   */
-  private calculatePositionSize(confidence: number): number {
-    const riskAmount = this.config.initialCapital * (this.config.riskPerTrade! / 100);
-    const maxPositionValue = this.config.initialCapital * (this.config.maxPositionSize! / 100);
-
-    // Simplified: position size scales with confidence
-    return Math.min(riskAmount * confidence, maxPositionValue) / 100;
-  }
-
-  /**
-   * Calculate performance metrics from trade records
-   */
-  private calculateMetrics(trades: TradeRecord[]): BacktestResults {
-    if (trades.length === 0) {
-      return this.emptyResults();
-    }
-
-    const winningTrades = trades.filter((t) => t.pnl > 0);
-    const losingTrades = trades.filter((t) => t.pnl < 0);
-
-    const totalWins = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
-    const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0));
-
-    // Sharpe Ratio = (Return - RiskFreeRate) / StdDev
-    const returns = trades.map((t) => t.pnlPct);
-    const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
-    const stdDev = Math.sqrt(variance);
-    const riskFreeRate = 3; // 3% annual
-    const sharpeRatio = (stdDev > 0) ? (avgReturn - riskFreeRate) / stdDev : 0;
-
-    // Max Drawdown
-    let peak = 0;
-    let maxDD = 0;
-    let cumulative = 0;
-    for (const trade of trades) {
-      cumulative += trade.pnl;
-      if (cumulative > peak) peak = cumulative;
-      const dd = (peak - cumulative) / peak;
-      if (dd > maxDD) maxDD = dd;
-    }
-
-    const totalReturn = trades.reduce((sum, t) => sum + t.pnl, 0);
-
-    // Real agent accuracy calculated from verified trade outcomes
-    const agentAccuracy: Record<string, any> = {};
-    const uniqueAgents = new Set(trades.flatMap((t) => t.agents.map((a) => a.name)));
-    for (const agent of uniqueAgents) {
-      let correct = 0;
-      let total = 0;
-      let confSum = 0;
-      for (const t of trades) {
-        const aVote = t.agents.find(a => a.name === agent);
-        if (aVote) {
-          total++;
-          confSum += aVote.confidence;
-          const isProfitable = t.pnl > 0;
-          if ((isProfitable && aVote.vote === 'BUY') || (!isProfitable && aVote.vote === 'SELL')) {
-            correct++;
-          }
-        }
-      }
-      agentAccuracy[agent] = {
-        correctVotes: correct,
-        totalVotes: total,
-        accuracy: total > 0 ? parseFloat(((correct / total) * 100).toFixed(1)) : 0,
-        avgConfidence: total > 0 ? parseFloat((confSum / total).toFixed(2)) : 0,
-        headedTrades: Math.round(total * 0.25),
-      };
-    }
-
-    return {
-      totalTradess: trades.length,
-      winningTrades: winningTrades.length,
-      losingTrades: losingTrades.length,
-      winRate: (winningTrades.length / trades.length) * 100,
-      profitFactor: totalLosses > 0 ? totalWins / totalLosses : 0,
-      sharpeRatio,
-      maxDrawdown: maxDD * 100,
-      totalReturn,
-      returnPct: (totalReturn / this.config.initialCapital) * 100,
-      avgWin: winningTrades.length > 0 ? totalWins / winningTrades.length : 0,
-      avgLoss: losingTrades.length > 0 ? totalLosses / losingTrades.length : 0,
-      avgTradeSize: trades.reduce((sum, t) => sum + t.quantity, 0) / trades.length,
-      largestWin: Math.max(...trades.map((t) => t.pnl)),
-      largestLoss: Math.min(...trades.map((t) => t.pnl)),
-      holdingTimeAvg: trades.reduce((sum, t) => sum + t.holding_hours, 0) / trades.length,
-      riskFreeRate: 3,
-      agentAccuracy,
-      regimePerformance: this.calculateRegimePerformance(trades),
-      sampleTrades: trades.slice(0, 50),
-    };
-  }
-
-  /**
-   * Calculate performance by market regime
-   */
-  private calculateRegimePerformance(trades: TradeRecord[]): Record<string, any> {
-    const byRegime: Record<string, TradeRecord[]> = {};
-
-    for (const trade of trades) {
-      if (!byRegime[trade.regime]) byRegime[trade.regime] = [];
-      byRegime[trade.regime].push(trade);
-    }
-
-    const results: Record<string, any> = {};
-    for (const [regime, regimeTrades] of Object.entries(byRegime)) {
-      const wins = regimeTrades.filter((t) => t.pnl > 0).length;
-      const totalPnL = regimeTrades.reduce((sum, t) => sum + t.pnl, 0);
-      const totalRisk = regimeTrades.reduce((sum, t) => sum + t.entryPrice * t.quantity, 0);
-
-      results[regime] = {
-        trades: regimeTrades.length,
-        winRate: (wins / regimeTrades.length) * 100,
-        avgReturn: totalRisk > 0 ? (totalPnL / totalRisk) * 100 : 0,
-      };
-    }
-
-    return results;
-  }
-
-  /**
-   * Empty results for edge cases
-   */
-  private emptyResults(): BacktestResults {
-    return {
-      totalTradess: 0,
-      winningTrades: 0,
-      losingTrades: 0,
-      winRate: 0,
-      profitFactor: 0,
-      sharpeRatio: 0,
-      maxDrawdown: 0,
-      totalReturn: 0,
-      returnPct: 0,
-      avgWin: 0,
-      avgLoss: 0,
-      avgTradeSize: 0,
-      largestWin: 0,
-      largestLoss: 0,
-      holdingTimeAvg: 0,
-      riskFreeRate: 3,
-      agentAccuracy: {},
-      regimePerformance: {},
-      sampleTrades: [],
-    };
-  }
-}
-
-// Export factory function
-export async function runBacktest(config: BacktestConfig): Promise<BacktestResults> {
-  const engine = new BacktestingEngine();
-  return engine.runBacktest(config);
-}
-
-// Go/No-Go decision criteria
-export function evaluateBacktestResults(results: BacktestResults): {
-  canGoLive: boolean;
-  issues: string[];
-} {
-  const issues: string[] = [];
-
-  if (results.sharpeRatio < 1.5) {
-    issues.push(`Sharpe ratio too low: ${results.sharpeRatio.toFixed(2)} (target: > 1.5)`);
-  }
-
-  if (results.winRate < 55) {
-    issues.push(`Win rate too low: ${results.winRate.toFixed(1)}% (target: > 55%)`);
-  }
-
-  if (results.maxDrawdown > 20) {
-    issues.push(`Max drawdown too high: ${results.maxDrawdown.toFixed(1)}% (target: < 20%)`);
-  }
-
-  if (results.profitFactor < 1.8) {
-    issues.push(`Profit factor too low: ${results.profitFactor.toFixed(2)} (target: > 1.8)`);
-  }
-
+  const replay = replayLedger(data, {
+    initialCapital: config.initialCapital, feePct: config.brokerFeesPct, slippageBps: config.slippageBps,
+    riskPct: config.riskPerTrade, maxPositionPct: config.maxPositionSize,
+    stopLossPct: config.stopLossPct, maxHoldBars: config.maxHoldBars,
+  }, (_symbol, history) => {
+    if (history.length <= config.lookbackBars) return false;
+    const first = history[history.length - 1 - config.lookbackBars].close;
+    return (history[history.length - 1].close / first - 1) * 100 > config.momentumThresholdPct;
+  });
+  const trades: TradeRecord[] = replay.trades.map(t => ({
+    timestamp: new Date(t.enteredAt).toISOString(), exitTimestamp: new Date(t.exitedAt).toISOString(),
+    signalTimestamp: new Date(t.signalAt).toISOString(), symbol: t.symbol, direction: 'BUY',
+    entryPrice: t.entryPrice, exitPrice: t.exitPrice, quantity: t.quantity, pnl: t.pnl,
+    pnlPct: t.pnl / (t.entryPrice * t.quantity) * 100, fees: t.fees,
+    holding_hours: (t.exitedAt - t.enteredAt) / 3600000, exitReason: t.exitReason,
+    confidence: null, agents: [], regime: 'UNCLASSIFIED',
+  }));
+  const wins = trades.filter(t => t.pnl > 0), losses = trades.filter(t => t.pnl < 0);
+  const grossWins = wins.reduce((sum, t) => sum + t.pnl, 0), grossLosses = -losses.reduce((sum, t) => sum + t.pnl, 0);
+  const totalReturn = replay.finalEquity - config.initialCapital;
   return {
-    canGoLive: issues.length === 0,
-    issues,
+    configuration: config,
+    totalTrades: trades.length, totalTradess: trades.length, winningTrades: wins.length, losingTrades: losses.length,
+    winRate: trades.length ? wins.length / trades.length * 100 : 0,
+    profitFactor: grossLosses ? grossWins / grossLosses : null, sharpeRatio: null,
+    maxDrawdown: replay.maxDrawdown, totalReturn, returnPct: totalReturn / config.initialCapital * 100,
+    finalEquity: replay.finalEquity, cash: replay.cash, openPositions: replay.openPositions, totalFees: replay.totalFees,
+    avgWin: wins.length ? grossWins / wins.length : 0, avgLoss: losses.length ? grossLosses / losses.length : 0,
+    avgTradeSize: trades.length ? trades.reduce((sum, t) => sum + t.quantity * t.entryPrice, 0) / trades.length : 0,
+    largestWin: Math.max(0, ...trades.map(t => t.pnl)), largestLoss: Math.min(0, ...trades.map(t => t.pnl)),
+    holdingTimeAvg: trades.length ? trades.reduce((sum, t) => sum + t.holding_hours, 0) / trades.length : 0,
+    riskFreeRate: null, agentAccuracy: {}, regimePerformance: {}, sampleTrades: trades.slice(0, 50), equity: replay.equity,
+    strategy: { id: config.strategy, councilReplay: false, parameters: { lookbackBars: config.lookbackBars,
+      momentumThresholdPct: config.momentumThresholdPct, stopLossPct: config.stopLossPct, maxHoldBars: config.maxHoldBars,
+      riskPerTrade: config.riskPerTrade, maxPositionSize: config.maxPositionSize,
+      brokerFeesPct: config.brokerFeesPct, slippageBps: config.slippageBps } },
+    dataCoverage: Object.fromEntries(Object.entries(data).map(([s, bars]) => [s, { bars: bars.length,
+      firstOpen: new Date(bars[0].openTime).toISOString(), lastCompleted: new Date(bars[bars.length - 1].timestamp).toISOString() }])),
+    limitations: ['UNQUALIFIED_RESEARCH', 'Momentum baseline, not specialist council replay or established economic edge',
+      'Stock USD and crypto USDT share nominal dollar accounting units; conversion and stablecoin peg risk are not modeled',
+      'Long-only fractional research quantities; venue precision and liquidity unverified',
+      'One full bar delay before entry; hourly OHLC stop/terminal-close assumptions, not verified venue fills',
+      'Simultaneous allocations use lexical symbol priority; opening-print liquidity is assumed, not measured',
+      'Drawdown uses observed event valuations, not a verified intra-hour equity path; gaps can exceed planned stop risk',
+      'Configured fees/slippage; historical financing, dividends, service costs and corporate-action ledger incomplete',
+      'Universe survivorship, missing bars, market calendar, stale marks and actual provider coverage unverified',
+      'Sharpe, statistical trial correction, walk-forward and untouched holdout qualification unavailable'],
   };
 }
 
-// Export types
-export type { BacktestConfig, BacktestResults, TradeRecord };
+export function evaluateBacktestResults(_results: BacktestResults) {
+  return { canGoLive: false, issues: [
+    'UNQUALIFIED_SIMULATION: live qualification requires independent data, execution, costs, trial-count/statistical correction, walk-forward and health evidence',
+  ] };
+}

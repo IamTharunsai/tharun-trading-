@@ -33,7 +33,7 @@ jest.mock('../src/services/regimeDetector', () => ({
 }));
 jest.mock('../src/services/selfLearning', () => ({ runPostTradeAnalysis: jest.fn(), generateWeeklyReport: jest.fn() }));
 jest.mock('../src/services/portfolio', () => ({
-  getPortfolioState: jest.fn().mockResolvedValue({ totalValue: 100000, pnlDayPct: 0 }),
+  getPortfolioState: jest.fn().mockResolvedValue({ totalValue: 100000, pnlDayPct: 0, positions: [] }),
 }));
 jest.mock('../src/services/journalGenerator', () => ({ generateDailyJournal: jest.fn() }));
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: jest.fn(() => false) }));
@@ -41,7 +41,7 @@ jest.mock('../src/services/polymarket', () => ({ scanPolymarketOpportunities: je
 jest.mock('../src/utils/prisma', () => ({
   prisma: {
     position: { findFirst: jest.fn().mockResolvedValue(null) },
-    agentDecision: { findFirst: jest.fn().mockResolvedValue({ id: 'decision-1' }) },
+    agentDecision: { findFirst: jest.fn().mockResolvedValue({ id: 'unrelated-old-decision' }) },
   },
 }));
 jest.mock('../src/trading/riskManager', () => ({
@@ -50,6 +50,8 @@ jest.mock('../src/trading/riskManager', () => ({
 }));
 
 const baseTranscript = {
+  decisionId: 'current-decision',
+  agentVotes: Array.from({ length: 14 }, (_, i) => ({ agentId: i + 1, vote: 'BUY', confidence: 80, executionEligible: true })),
   round1: [], round2: [], round3: [],
   masterSynthesis: 'test',
   finalDecision: 'BUY' as const,
@@ -73,6 +75,8 @@ describe('runDebateForAsset — tradeExecuted reflects the real execution outcom
     (executeTradeSignal as jest.Mock).mockResolvedValue(true);
     const transcript = await runDebateForAsset('AAPL', 'stocks', { bypassGate: true });
     expect(transcript?.tradeExecuted).toBe(true);
+    expect((executeTradeSignal as jest.Mock).mock.calls[0][0].agentDecisionId).toBe('current-decision');
+    expect(require('../src/utils/prisma').prisma.agentDecision.findFirst).not.toHaveBeenCalled();
   });
 
   it('sets tradeExecuted false when executeTradeSignal is blocked/rejected, even though the debate approved', async () => {
@@ -80,5 +84,15 @@ describe('runDebateForAsset — tradeExecuted reflects the real execution outcom
     const transcript = await runDebateForAsset('TCBK', 'stocks', { bypassGate: true });
     expect(transcript?.executionApproved).toBe(true);
     expect(transcript?.tradeExecuted).toBe(false);
+  });
+
+  it('never substitutes an older decision when the current identity is missing', async () => {
+    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
+    runInvestmentCommitteeDebate.mockResolvedValueOnce({ ...baseTranscript, decisionId: undefined });
+    (executeTradeSignal as jest.Mock).mockClear();
+    const transcript = await runDebateForAsset('MSFT', 'stocks', { bypassGate: true });
+    expect(transcript?.executionApproved).toBe(false);
+    expect(executeTradeSignal).not.toHaveBeenCalled();
+    expect(require('../src/utils/prisma').prisma.agentDecision.findFirst).not.toHaveBeenCalled();
   });
 });

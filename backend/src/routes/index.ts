@@ -1,3 +1,5 @@
+import { recordPredictionSimulation, listPredictionSimulations } from './predictionSimulation';
+import { entryDecisionWhere } from '../trading/decisionVisibility';
 // ── AUTH ROUTES ───────────────────────────────────────────────────────────────
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
@@ -246,14 +248,15 @@ tradesRouter.post('/:id/close', requireOwner, async (req: Request, res: Response
   if (!trade || trade.status !== 'OPEN') {
     return res.status(404).json({ error: 'Open trade not found' });
   }
-  const position = await prisma.position.findFirst({ where: { asset: trade.asset, status: 'OPEN' } });
+  const position = trade.positionId ? await prisma.position.findUnique({ where: { id: trade.positionId } }) : null;
   if (!position) {
     return res.status(404).json({ error: 'No open position for this trade\'s asset' });
   }
   // Never trust a client-supplied exit price (it let the caller write any P&L).
   const exitPrice = getCurrentPrices()[trade.asset] ?? position.currentPrice ?? trade.entryPrice;
   const result: any = await closePosition(position, exitPrice, 'manual_close');
-  if (result.closed === false) return res.status(502).json({ error: 'Broker exit failed — position still open' });
+  if (!result.closed) return res.status(result.pending ? 202 : 502).json({ closed: false, pending: !!result.pending,
+    orderId: result.orderId, error: result.error || 'Broker exit is not confirmed; position remains under monitoring' });
   res.json({ closed: true, pnl: result.pnl, pnlPct: result.pnlPct });
 });
 
@@ -314,11 +317,29 @@ portfolioRouter.get('/snapshots', async (req: Request, res: Response) => {
 
 portfolioRouter.get('/positions', async (_req: Request, res: Response) => {
   try {
-    const positions = await prisma.position.findMany({ where: { status: 'OPEN' } });
-    res.json(Array.isArray(positions) ? positions : []);
+    const portfolio = await getPortfolioState();
+    res.json(portfolio.positions);
   } catch (err: any) {
-    res.json([]);
+    res.status(503).json({ error: 'Verified current-account positions unavailable' });
   }
+});
+
+portfolioRouter.get('/position-research', requireOwner, async (_req: Request, res: Response) => {
+  try {
+    const { getPositionResearchStatus } = await import('../services/positionResearch');
+    res.json({ reviews: await getPositionResearchStatus(), executionAuthority: false });
+  } catch {
+    res.status(503).json({ error: 'Current-account position research is unavailable' });
+  }
+});
+
+portfolioRouter.get('/position-research/:decisionId', requireOwner, async (req: Request, res: Response) => {
+  try {
+    const { getPositionResearchDecision } = await import('../services/positionResearch');
+    const result = await getPositionResearchDecision(req.params.decisionId);
+    if (!result) return res.status(404).json({ error: 'Current-account position research not found' });
+    res.json(result);
+  } catch { res.status(503).json({ error: 'Current-account position research is unavailable' }); }
 });
 
 portfolioRouter.get('/live-accounts', async (_req: Request, res: Response) => {
@@ -425,12 +446,12 @@ agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Resp
 agentsRouter.get('/decisions', async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query;
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-  const decisions = await prisma.agentDecision.findMany({ skip, take: parseInt(limit as string), orderBy: { timestamp: 'desc' } });
+  const decisions = await prisma.agentDecision.findMany({ where: entryDecisionWhere(), skip, take: parseInt(limit as string), orderBy: { timestamp: 'desc' } });
   res.json(decisions);
 });
 
 agentsRouter.get('/decisions/:id', async (req: Request, res: Response) => {
-  const decision = await prisma.agentDecision.findUnique({ where: { id: req.params.id } });
+  const decision = await prisma.agentDecision.findFirst({ where: entryDecisionWhere({ id: req.params.id }) });
   if (!decision) return res.status(404).json({ error: 'Not found' });
   res.json(decision);
 });
@@ -443,7 +464,7 @@ marketRouter.use(requireAuth);
 async function portfolioAndWatchlist(): Promise<{ portfolio: string[]; watchlist: string[] }> {
   const [positions, decisions] = await Promise.all([
     prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true } }).catch(() => []),
-    prisma.agentDecision.findMany({ orderBy: { timestamp: 'desc' }, take: 200, select: { asset: true } }).catch(() => []),
+    prisma.agentDecision.findMany({ where: entryDecisionWhere(), orderBy: { timestamp: 'desc' }, take: 200, select: { asset: true } }).catch(() => []),
   ]);
   let broker: string[] = [];
   try {
@@ -635,47 +656,8 @@ marketRouter.get('/polymarket/edge/predictions', async (req: Request, res: Respo
   }
 });
 
-marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: Response) => {
-  try {
-    const { predictionId, outcome = 'YES', amount = 10 } = req.body;
-    const pred = await prisma.prediction.findUnique({ where: { id: predictionId } });
-    if (!pred) return res.status(404).json({ error: 'Prediction market not found' });
-
-    const price = outcome === 'YES' ? pred.yesPrice : pred.noPrice;
-    if (!price || price <= 0 || price >= 1) return res.status(400).json({ error: 'Prediction has no valid price for that outcome' });
-    const shares = parseFloat((amount / price).toFixed(2));
-
-    const trade = await prisma.trade.create({
-      data: {
-        id: `poly-wager-${Date.now()}`,
-        asset: 'POLYMARKET',
-        market: 'polymarket',
-        type: outcome === 'YES' ? 'BUY' : 'SELL',
-        entryPrice: price,
-        quantity: shares,
-        status: 'OPEN',
-        stopLossPrice: 0,
-        takeProfitPrice: 1, // share-based accounting marker (see polymarket.ts)
-        metadata: {
-          title: pred.title,
-          predictionId: pred.id,
-          expectedValue: pred.expectedValue,
-          kellyFraction: pred.kellyFraction,
-          wagerUsd: amount,
-          outcome
-        }
-      }
-    });
-
-    res.json({
-      success: true,
-      trade,
-      message: `✅ Polymarket Wager Placed: $${amount.toFixed(2)} on ${outcome} @ ${(price * 100).toFixed(0)}¢ (Est. Payout: $${shares.toFixed(2)})`
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Wager execution failed' });
-  }
-});
+marketRouter.post('/predictions/wager', requireOwner, recordPredictionSimulation);
+marketRouter.get('/predictions/simulations', requireOwner, listPredictionSimulations);
 
 marketRouter.post('/ai-deep-dive', async (req: Request, res: Response) => {
   try {
@@ -807,11 +789,12 @@ marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
   try {
     const [rawDecisions, allFundamentals, allTrades, openPositions, memories] = await Promise.all([
       (prisma.agentDecision?.groupBy ? prisma.agentDecision.groupBy({
+        where: entryDecisionWhere(),
         by: ['asset', 'signal'],
         _count: { asset: true },
         _max: { timestamp: true, avgConfidence: true },
         orderBy: { _max: { timestamp: 'desc' } }
-      }) : prisma.agentDecision.findMany().then((decs: any[]) => {
+      }) : prisma.agentDecision.findMany({ where: entryDecisionWhere() }).then((decs: any[]) => {
         const m = new Map<string, any>();
         for (const d of decs || []) {
           const k = `${d.asset}_${d.signal}`;
@@ -938,7 +921,7 @@ marketRouter.get('/stock/:symbol', async (req: Request, res: Response) => {
     const [fund, trades, decisions, memory, position] = await Promise.all([
       prisma.companyFundamentals.findUnique({ where: { symbol } }),
       prisma.trade.findMany({ where: { asset: symbol }, orderBy: { openedAt: 'desc' }, take: 30 }),
-      prisma.agentDecision.findMany({ where: { asset: symbol }, orderBy: { timestamp: 'desc' }, take: 5 }),
+      prisma.agentDecision.findMany({ where: entryDecisionWhere({ asset: symbol }), orderBy: { timestamp: 'desc' }, take: 5 }),
       prisma.stockMemory.findUnique({ where: { symbol } }),
       prisma.position.findFirst({ where: { asset: symbol, status: 'OPEN' } }),
     ]);
@@ -1079,36 +1062,12 @@ killSwitchRouter.use(requireAuth);
 
 killSwitchRouter.post('/activate', async (_req: Request, res: Response) => {
   activateKillSwitch();
-  // Actually flatten at the broker. The old version only flipped DB rows to
-  // CLOSED in live mode, leaving every real position and order open.
-  const result: any = { active: true, timestamp: new Date().toISOString(), broker: 'not-connected' };
-  try {
-    const { getTradingBroker } = await import('../trading/brokerRouter');
-    const broker = getTradingBroker();
-    if (broker) {
-      await broker.cancelAllOrders().catch(() => {});
-      const closed = await broker.closeAllPositions();
-      result.broker = 'flattened';
-      result.brokerOrders = closed.length;
-    }
-  } catch (err: any) {
-    result.broker = 'FLATTEN_FAILED — close positions manually in Alpaca';
-    result.error = err?.response?.data?.message || err.message;
-  }
-  const open = await prisma.position.findMany({ where: { status: 'OPEN' } });
-  const prices = getCurrentPrices();
-  for (const p of open) {
-    await prisma.position.update({ where: { id: p.id }, data: { status: 'CLOSED' } });
-    const t = await prisma.trade.findFirst({ where: { asset: p.asset, status: 'OPEN' } });
-    if (t) {
-      const px = prices[p.asset] ?? p.currentPrice;
-      const pnl = (p.side === 'SELL' ? p.entryPrice - px : px - p.entryPrice) * p.quantity;
-      await prisma.trade.update({ where: { id: t.id }, data: { status: 'CLOSED', exitPrice: px, pnl, pnlPct: (pnl / (p.entryPrice * p.quantity)) * 100, closedAt: new Date(), exitReason: 'kill_switch' } });
-    }
-  }
-  res.json(result);
+  const { liquidateCurrentAccount } = await import('../trading/killLiquidation');
+  const result = await liquidateCurrentAccount();
+  res.status(result.pending.length || result.errors.length ? 202 : 200).json({
+    active: true, timestamp: new Date().toISOString(), ...result,
+  });
 });
-
 // Resuming trading is owner-only.
 killSwitchRouter.post('/deactivate', requireOwner, async (_req: Request, res: Response) => {
   deactivateKillSwitch();
