@@ -4,7 +4,7 @@ This draft captures reliability, research and Polymarket repairs on codex/bhishm
 
 Current offline regression: 43 suites / 269 tests passed (95.221 seconds). PostgreSQL integration and lifecycleStateMachine suites were excluded. Most broker/provider/database paths use fixtures and mocks; Jest disables TypeScript diagnostics. Sandbox enforces no external network, read-only source/dependencies, scratch writes, dummy environment and resource/time limits.
 
-Focused Polymarket/research/credential run: 7 suites / 54 tests passed. Latest frontend full type check and initial research server render passed; no browser layout, interaction, mobile or accessibility proof. Backend strict generated-client type check is being refreshed before publication; previous run reported four missing declared dependency modules in the borrowed dependency tree (@google/genai in three imports, polymarket-us in one). No dependency stubs or installs were introduced.
+Focused Polymarket/research/credential run: 7 suites / 54 tests passed. Latest frontend full type check and initial research server render passed; no browser layout, interaction, mobile or accessibility proof. Fresh backend strict generated-client type check generated Prisma successfully and reported exactly four missing declared dependency modules in the borrowed dependency tree (@google/genai in three imports, polymarket-us in one), with no other diagnostics. No dependency stubs or installs were introduced.
 
 Database migrations remain unapplied; real locking, concurrency, rollback and RLS remain unverified. Exact dependency build is not verified. No live broker/provider tests, live orders or production deployment occurred.
 
