@@ -3,8 +3,10 @@
 // (X-PM-Access-Key / X-PM-Timestamp / X-PM-Signature) from
 // POLYMARKET_KEY_ID + POLYMARKET_SECRET_KEY. Read-only calls are always
 // allowed; real orders are refused unless ALL of these hold:
-//   TRADING_MODE=live (with fail-closed config), POLYMARKET_US_LIVE=true,
-//   kill switch off, and notional <= POLYMARKET_US_MAX_ORDER_USD (default $5).
+//   TRADING_MODE=live + LIVE_TRADING_CONFIRMED=I_ACCEPT_REAL_MONEY_RISK,
+//   POLYMARKET_US_LIVE=true, kill switch off, and notional <=
+//   POLYMARKET_US_MAX_ORDER_USD (alias POLYMARKET_MAX_BET_USD, default $5).
+//   See trading/liveGate.ts.
 //
 // NOTE: the autonomous Polymarket scanner (services/polymarket.ts) reads the
 // international Gamma API, whose markets are identified by conditionId, not by
@@ -12,8 +14,8 @@
 // markets directly.
 import { PolymarketUS } from 'polymarket-us';
 import { logger } from '../utils/logger';
-import { appConfig } from '../utils/config';
 import { isKillSwitchActive } from '../agents/orchestrator';
+import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from '../trading/liveGate';
 
 let client: PolymarketUS | null = null;
 let publicClient: PolymarketUS | null = null;
@@ -68,10 +70,14 @@ export interface PmUsOrderRequest {
 }
 
 export async function placePolymarketUSOrder(req: PmUsOrderRequest) {
-  const maxUsd = Number(process.env.POLYMARKET_US_MAX_ORDER_USD || 5);
+  const maxUsd = getPolymarketMaxOrderUsd();
   const notional = req.price * req.quantity;
-  if (appConfig.TRADING_MODE !== 'live' || process.env.POLYMARKET_US_LIVE !== 'true') {
-    throw new Error('Polymarket US live orders are disabled (need TRADING_MODE=live and POLYMARKET_US_LIVE=true)');
+  // Same rule as every other live path: TRADING_MODE=live + LIVE_TRADING_CONFIRMED
+  // phrase + POLYMARKET_US_LIVE=true + kill switch off. (Previously this checked
+  // appConfig.TRADING_MODE, which also required Alpaca live keys.)
+  const gate = polymarketLiveAllowed(process.env, isKillSwitchActive());
+  if (!gate.allowed) {
+    throw new Error(`Polymarket US live orders are disabled: ${gate.reason}`);
   }
   if (isKillSwitchActive()) throw new Error('Kill switch active');
   if (!(req.price > 0 && req.price < 1) || !(req.quantity > 0)) throw new Error('Invalid price/quantity');

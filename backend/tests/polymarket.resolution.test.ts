@@ -12,6 +12,7 @@ jest.mock('axios');
 
 describe('placePolymarketBet — stores conditionId', () => {
   it('writes analysis.conditionId into Trade.brokerOrderId for paper bets', async () => {
+    (prisma.trade.findMany as jest.Mock).mockResolvedValueOnce([]); // no open bets yet
     const { placePolymarketBet } = require('../src/services/polymarket');
     const analysis = {
       question: 'Will X happen?', marketImpliedProbability: 0.4, ourEstimatedProbability: 0.6,

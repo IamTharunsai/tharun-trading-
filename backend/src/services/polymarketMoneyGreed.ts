@@ -704,7 +704,12 @@ function detectMomentum(conditionId: string, currentPrice: number): number {
 // ─── ORDER EXECUTION ─────────────────────────────────────────────────────────
 
 async function executeTrade(opp: EdgeOpportunity): Promise<void> {
-  const isDryRun = !process.env.POLYMARKET_API_KEY_ID;
+  // Live only through the shared gate (TRADING_MODE=live + LIVE_TRADING_CONFIRMED
+  // + POLYMARKET_US_LIVE=true + kill switch off) AND a key. A key alone used
+  // to be enough to send real orders.
+  const { polymarketLiveAllowed } = await import('../trading/liveGate');
+  const liveGate = polymarketLiveAllowed();
+  const isDryRun = !process.env.POLYMARKET_API_KEY_ID || !liveGate.allowed;
 
   // ── COMPLIANCE GATE ──────────────────────────────────────────────────────────
   const complianceViolation = complianceCheck(
@@ -977,7 +982,12 @@ async function updateOpenPositions(): Promise<void> {
 
 async function closePosition(id: string, pos: GreedPosition, reason: string): Promise<void> {
   const pnl = pos.unrealizedPnL;
-  const isDryRun = !process.env.POLYMARKET_API_KEY_ID;
+  // Live only through the shared gate (TRADING_MODE=live + LIVE_TRADING_CONFIRMED
+  // + POLYMARKET_US_LIVE=true + kill switch off) AND a key. A key alone used
+  // to be enough to send real orders.
+  const { polymarketLiveAllowed } = await import('../trading/liveGate');
+  const liveGate = polymarketLiveAllowed();
+  const isDryRun = !process.env.POLYMARKET_API_KEY_ID || !liveGate.allowed;
 
   logger.info(`[GREED] Closing position ${id} — reason: ${reason} — P&L: $${pnl.toFixed(2)}`);
 

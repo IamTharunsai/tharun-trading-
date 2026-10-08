@@ -179,14 +179,50 @@ export function getLlmSpendToday(): { usd: number; calls: number; budget: number
 export interface CommitteeTranscript {
   executionApproved: boolean;
   finalDecision: 'BUY' | 'SELL' | 'HOLD';
-  finalConfidence: number;
+  finalConfidence: number;          // 0-100
   stopLossPrice: number;
   takeProfitPrice: number;
   positionSizePct: number;
   masterSynthesis: string;
   agentVotes: AgentVote[];
   tradeExecuted?: boolean;
+  agentDecisionId?: string;
+  sentiment?: { score: number; mentionCount: number; volumeZScore: number; multiplier: number; veto: boolean; reason: string } | null;
+  blockReason?: string | null;
 }
+
+/** Shape of the AgentDecision row written for every committee decision. */
+export function buildAgentDecisionData(args: {
+  asset: string;
+  finalDecision: 'BUY' | 'SELL' | 'HOLD';
+  finalConfidence: number;
+  blockReason: string | null;
+  agentArguments: any[];
+  snapshot: any;
+  marketRegime: string;
+  buyCount: number;
+  sellCount: number;
+  holdCount: number;
+  sentiment?: any;
+}) {
+  const goVotes = args.finalDecision === 'SELL' ? args.sellCount : args.buyCount;
+  return {
+    asset: args.asset,
+    signal: args.finalDecision,
+    finalVote: args.finalDecision,
+    totalVotes: args.agentArguments.length,
+    goVotes,
+    noGoVotes: Math.max(0, args.agentArguments.length - goVotes),
+    avgConfidence: args.finalConfidence,
+    executed: false,
+    executionReason: args.blockReason || null,
+    agentVotes: args.agentArguments as any,
+    marketSnapshot: { ...(args.snapshot || {}), candles: undefined, sentiment: args.sentiment ?? null } as any,
+    regime: args.marketRegime,
+    horizon: 'SWING',
+  };
+}
+export const __test__buildAgentDecisionData = buildAgentDecisionData;
 
 export async function runInvestmentCommitteeDebate(
   snapshot: MarketSnapshot,
@@ -215,7 +251,8 @@ export async function runInvestmentCommitteeDebate(
 
   const tier1Votes = await runTier1FallbackDebate(asset, marketData);
 
-  // Tally votes
+  // Tally votes (technical agents only — the sentiment vote below is a
+  // filter/sizer and is deliberately NOT counted, so it can never create a trade)
   const buyVotes = tier1Votes.filter(v => v.vote === 'BUY');
   const sellVotes = tier1Votes.filter(v => v.vote === 'SELL');
   const avgConf = tier1Votes.reduce((s, v) => s + v.confidence, 0) / (tier1Votes.length || 1);
@@ -230,7 +267,75 @@ export async function runInvestmentCommitteeDebate(
 
   // Weekly drawdown gate
   const weeklyDD = portfolio?.weeklyDrawdownPct ?? 0;
-  const executionApproved = finalDecision !== 'HOLD' && weeklyDD < 5;
+  let executionApproved = finalDecision !== 'HOLD' && weeklyDD < 5;
+  let blockReason: string | null = finalDecision === 'HOLD' ? null : (weeklyDD >= 5 ? `weekly drawdown ${weeklyDD}%` : null);
+  let positionSizePct = executionApproved ? Math.min(5 * (avgConf / 100), 10) : 0;
+
+  // ── Sentiment (X + news): veto / size only, never a trigger ────────────────
+  let sentimentSummary: CommitteeTranscript['sentiment'] = null;
+  const agentVotes: AgentVote[] = [...tier1Votes];
+  if (finalDecision !== 'HOLD') {
+    try {
+      const svc = await import('../services/sentimentService');
+      if (svc.isSentimentEnabled()) {
+        const s = await svc.getSentiment(asset, { market: snapshot.market as any, includeX: true });
+        const gate = svc.evaluateSentimentGate(finalDecision, s);
+        sentimentSummary = { score: s.score, mentionCount: s.mentionCount, volumeZScore: s.volumeZScore, multiplier: gate.multiplier, veto: gate.veto, reason: gate.reason };
+        const sv: VoteDirection = gate.meaningful ? (s.score > 0.1 ? 'BUY' : s.score < -0.1 ? 'SELL' : 'HOLD') : 'HOLD';
+        agentVotes.push({
+          agentId: 'sentiment-x-news',
+          agentName: 'Sentiment (X + news)',
+          vote: sv,
+          signal: sv,
+          confidence: Math.round(s.confidence * 100),
+          reasoning: gate.reason,
+          keyFactors: s.headlines.slice(0, 3),
+          riskWarnings: gate.veto ? [gate.reason] : [],
+          executionTime: 0,
+          timestamp: Date.now(),
+          tier: 1,
+          countsTowardTally: false,
+          sentimentScore: s.score,
+          mentionCount: s.mentionCount,
+          volumeZScore: s.volumeZScore,
+          sourceCounts: s.sourceCounts,
+        });
+        if (gate.veto) {
+          executionApproved = false;
+          positionSizePct = 0;
+          blockReason = gate.reason;
+        } else if (executionApproved) {
+          positionSizePct = Math.min(positionSizePct * gate.multiplier, 10);
+        }
+      }
+    } catch (err: any) {
+      // Sentiment is advisory: an outage must not block or create trades.
+      console.warn(`[DEBATE] sentiment unavailable for ${asset}: ${err?.message}`);
+    }
+  }
+
+  const masterSynthesis = `[${regime}] ${tier1Votes.length} technical agents: ${buyVotes.length}B/${sellVotes.length}S/${tier1Votes.length - buyVotes.length - sellVotes.length}H. Avg confidence ${avgConf.toFixed(1)}%. Decision: ${finalDecision}.`
+    + (sentimentSummary ? ` Sentiment: ${sentimentSummary.reason}.` : '');
+
+  // Log every committee decision (scheduler previously grabbed "the latest
+  // AgentDecision for this asset", which this function never wrote).
+  let agentDecisionId: string | undefined;
+  try {
+    const { prisma } = await import('../utils/prisma');
+    const row = await prisma.agentDecision.create({
+      data: buildAgentDecisionData({
+        asset, finalDecision, finalConfidence: Math.round(avgConf), blockReason,
+        agentArguments: agentVotes, snapshot, marketRegime: regime,
+        buyCount: buyVotes.length, sellCount: sellVotes.length,
+        holdCount: tier1Votes.length - buyVotes.length - sellVotes.length,
+        sentiment: sentimentSummary,
+      }) as any,
+    });
+    agentDecisionId = row?.id;
+  } catch (err: any) {
+    console.warn(`[DEBATE] could not record AgentDecision for ${asset}: ${err?.message}`);
+  }
+  void regimeData;
 
   return {
     executionApproved,
@@ -238,9 +343,12 @@ export async function runInvestmentCommitteeDebate(
     finalConfidence: Math.round(avgConf),
     stopLossPrice,
     takeProfitPrice,
-    positionSizePct: executionApproved ? Math.min(5 * (avgConf / 100), 10) : 0,
-    masterSynthesis: `[${regime}] ${tier1Votes.length} technical agents: ${buyVotes.length}B/${sellVotes.length}S/${tier1Votes.length - buyVotes.length - sellVotes.length}H. Avg confidence ${avgConf.toFixed(1)}%. Decision: ${finalDecision}.`,
-    agentVotes: tier1Votes,
+    positionSizePct,
+    masterSynthesis,
+    agentVotes,
     tradeExecuted: false,
+    agentDecisionId,
+    sentiment: sentimentSummary,
+    blockReason,
   };
 }

@@ -14,9 +14,11 @@ export interface GateInput {
     atr14: number;
   };
   volume24h: number;
+  /** Optional news sentiment (sentimentService, no X reads) for spike candidates. */
+  sentiment?: { score: number; mentionCount: number; volumeZScore: number; baselineSamples?: number } | null;
 }
 
-export interface GateResult { pass: boolean; setup?: 'TREND_PULLBACK' | 'MOMENTUM_BREAKOUT' | 'OVERSOLD_REVERSION'; reason: string }
+export interface GateResult { pass: boolean; setup?: 'TREND_PULLBACK' | 'MOMENTUM_BREAKOUT' | 'OVERSOLD_REVERSION' | 'SENTIMENT_SPIKE'; reason: string }
 
 export function preDebateGate(s: GateInput): GateResult {
   if (process.env.PRE_DEBATE_GATE === 'off') return { pass: true, reason: 'gate disabled' };
@@ -40,5 +42,15 @@ export function preDebateGate(s: GateInput): GateResult {
   if (price > ema200 && rsi14 < 30) {
     return { pass: true, setup: 'OVERSOLD_REVERSION', reason: 'oversold inside a long-term uptrend' };
   }
-  return { pass: false, reason: 'no long setup (trend/pullback/breakout/oversold) present' };
+  // Sentiment spike: unusually many fresh, positive mentions (z-score vs. our
+  // own 7-day history) while still in a long-term uptrend. This only earns a
+  // committee review — the technical votes still decide, and sentiment can
+  // only veto/size afterwards.
+  const sent = s.sentiment;
+  const spikeZ = Number(process.env.SENTIMENT_SPIKE_Z || 2);
+  const minMentions = Number(process.env.SENTIMENT_MIN_MENTIONS || 5);
+  if (sent && price > ema200 && sent.volumeZScore >= spikeZ && sent.score >= 0.3 && sent.mentionCount >= minMentions) {
+    return { pass: true, setup: 'SENTIMENT_SPIKE', reason: `news volume spike z=${sent.volumeZScore.toFixed(1)} with sentiment ${sent.score.toFixed(2)} inside a long-term uptrend` };
+  }
+  return { pass: false, reason: 'no long setup (trend/pullback/breakout/oversold/sentiment spike) present' };
 }

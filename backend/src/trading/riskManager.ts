@@ -1,287 +1,301 @@
-/**
- * CRITICAL BUG FIX: Risk Manager
- *
- * PROBLEM: Risk Manager was vetoing EVERY trade decision. Audit showed:
- *   - April 2026: All decisions blocked with "Risk Manager VETO"
- *   - 0 go votes / 13 no-go votes on EVERY symbol
- *   - System has never executed a single debate-driven trade
- *
- * ROOT CAUSE: The consensus threshold was set too high (requiring near-100%
- *   agreement), and the veto logic was overly aggressive.
- *
- * FIX: Lower threshold to 55% goVotes for entry, add conviction override
- *   at 75%+, and only veto on genuine risk violations (drawdown/position size).
- *
- * FILE TO PATCH: backend/src/trading/riskManager.ts
- *
- * REPLACE the shouldVeto / risk check logic with this version:
- */
-
-export interface RiskDecision {
-  approved: boolean;
-  reason: string;
-  adjustedSize?: number;
-}
-
-export interface RiskParams {
-  goVotes: number;
-  noGoVotes: number;
-  totalVotes: number;
-  avgConfidence: number;
-  asset: string;
-  signal: 'BUY' | 'SELL' | 'HOLD';
-  proposedPositionSizePct: number; // % of portfolio
-  currentDrawdownPct: number;       // current portfolio drawdown %
-  weeklyDrawdownPct: number;        // weekly drawdown %
-  existingPositionCount: number;    // open positions
-  maxPositions: number;             // configured max (e.g. 5)
-}
-
-/**
- * FIXED: Risk Manager evaluates real risk factors instead of just vetoing everything
- */
-export function evaluateRisk(params: RiskParams): RiskDecision {
-  const {
-    goVotes, noGoVotes, totalVotes, avgConfidence,
-    signal, proposedPositionSizePct,
-    currentDrawdownPct, weeklyDrawdownPct,
-    existingPositionCount, maxPositions,
-  } = params;
-
-  // HARD STOPS — these are legitimate vetoes
-  if (weeklyDrawdownPct >= 5) {
-    return { approved: false, reason: `WEEKLY_DRAWDOWN_GATE: -${weeklyDrawdownPct.toFixed(1)}% (limit: 5%)` };
-  }
-  if (currentDrawdownPct >= 10) {
-    return { approved: false, reason: `DRAWDOWN_LIMIT: -${currentDrawdownPct.toFixed(1)}% (limit: 10%)` };
-  }
-  if (existingPositionCount >= maxPositions) {
-    return { approved: false, reason: `MAX_POSITIONS: ${existingPositionCount}/${maxPositions} slots used` };
-  }
-
-  // HOLDs need no approval
-  if (signal === 'HOLD') {
-    return { approved: true, reason: 'HOLD — no position change' };
-  }
-
-  // VOTE CONSENSUS CHECK (FIXED — was far too strict before)
-  const goRatio = totalVotes > 0 ? goVotes / totalVotes : 0;
-
-  // Conviction override: ≥75% agreement → approve regardless of position size constraints
-  if (goRatio >= 0.75 && avgConfidence >= 60) {
-    const size = Math.min(proposedPositionSizePct, 10); // cap at 10% per trade
-    return {
-      approved: true,
-      reason: `HIGH_CONVICTION: ${(goRatio * 100).toFixed(0)}% votes, ${avgConfidence}% confidence`,
-      adjustedSize: size,
-    };
-  }
-
-  // Standard approval: ≥55% goVotes AND ≥50% confidence
-  if (goRatio >= 0.55 && avgConfidence >= 50) {
-    const size = Math.min(proposedPositionSizePct, 7); // moderate cap at 7%
-    return {
-      approved: true,
-      reason: `APPROVED: ${(goRatio * 100).toFixed(0)}% votes, ${avgConfidence}% confidence`,
-      adjustedSize: size,
-    };
-  }
-
-  // Borderline: 45–55% with high confidence
-  if (goRatio >= 0.45 && avgConfidence >= 70) {
-    const size = Math.min(proposedPositionSizePct, 4); // small size, high confidence
-    return {
-      approved: true,
-      reason: `BORDERLINE_HIGH_CONF: ${(goRatio * 100).toFixed(0)}% votes, ${avgConfidence}% confidence`,
-      adjustedSize: size,
-    };
-  }
-
-  // Genuine no-trade signal
-  return {
-    approved: false,
-    reason: `INSUFFICIENT_CONSENSUS: ${(goRatio * 100).toFixed(0)}% goVotes (need 55%), ${avgConfidence}% confidence (need 50%)`,
-  };
-}
-
-// ─── Shared imports for the helpers below ────────────────────────────────────
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { TradeSignal, PortfolioState } from '../agents/types';
+import { getIO } from '../websocket/server';
+import { activateKillSwitch } from '../agents/orchestrator';
+import { correlationService } from '../services/correlationService';
+import { LifecycleStateMachine, LifecycleState } from './lifecycleStateMachine';
+import { getTradingBroker, getActiveMode } from './brokerRouter';
+import { confirmOrderFill } from './executionEngine';
+import { readRiskSettings } from '../utils/config';
+import { normalizeConfidence } from '../utils/confidence';
 
-// ─── Real 7-day rolling drawdown from DB portfolio snapshots ─────────────────
-/**
- * Queries the portfolioSnapshot table for the highest value in the past 7 days
- * and computes the drawdown from that peak to the current portfolio value.
- * Falls back to 0 if no snapshots are found (new account / first week).
- */
-async function computeWeeklyDrawdownPct(currentValue: number): Promise<number> {
-  try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    // Find the highest total portfolio value recorded over the last 7 days
-    const snapshots = await (prisma as any).portfolioSnapshot.findMany({
-      where: { timestamp: { gte: sevenDaysAgo } },
-      select: { totalValue: true },
-      orderBy: { timestamp: 'asc' },
-    }).catch(() => [] as { totalValue: number }[]);
-
-    if (!snapshots || snapshots.length === 0) return 0;
-
-    const weeklyPeak = Math.max(...snapshots.map((s: { totalValue: number }) => Number(s.totalValue)));
-    if (weeklyPeak <= 0) return 0;
-
-    const dd = Math.max(0, (weeklyPeak - currentValue) / weeklyPeak * 100);
-    logger.info(`[RISK] Weekly drawdown: peak=$${weeklyPeak.toFixed(2)}, current=$${currentValue.toFixed(2)}, dd=${dd.toFixed(2)}%`);
-    return dd;
-  } catch (err: any) {
-    // portfolioSnapshot table may not exist yet — fall back gracefully
-    logger.debug(`[RISK] Could not fetch portfolio snapshots for weekly drawdown: ${err?.message}`);
-    return 0;
-  }
+// Non-blocking alert for genuine risk-limit rejections. (The previous version
+// had `!approved && a || b`, which alerted on every MAX_POSITIONS reason even
+// for approved trades.)
+function alertRiskRejection(signal: TradeSignal, reason: string) {
+  import('../services/alertService')
+    .then(({ alert }) => alert.tradeFailed(signal.asset, reason, signal.direction as any).catch(() => {}))
+    .catch(() => {});
 }
 
-// ─── validateTradeSignal — thin wrapper called by scheduler.ts ───────────────
-/**
- * Quick risk gate before executeTradeSignal is called.
- * Uses the portfolio state to derive risk params, then calls evaluateRisk.
- */
+function reject(signal: TradeSignal, reason: string, alertable = false): { approved: false; reason: string } {
+  if (alertable) alertRiskRejection(signal, reason);
+  return { approved: false, reason };
+}
+
+// ── RISK MANAGER ──────────────────────────────────────────────────────────────
 export async function validateTradeSignal(
   signal: TradeSignal,
-  portfolio: PortfolioState,
-): Promise<{ approved: boolean; reason: string; adjustedSize?: number }> {
-  const openCount = portfolio.positions?.length ?? 0;
-  const maxPositions = 10;
-  const startingCapital = parseFloat(process.env['STARTING_CAPITAL'] || '100000');
-  const drawdownPct = portfolio.totalValue > 0 && startingCapital > 0
-    ? Math.max(0, (startingCapital - portfolio.totalValue) / startingCapital * 100)
-    : 0;
+  portfolio: PortfolioState
+): Promise<{ approved: boolean; reason?: string; adjustedSize?: number }> {
+  // All limits come from env (documented in .env.example) via readRiskSettings().
+  const risk = readRiskSettings();
+  const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-  // Block HOLD signals early
-  if (signal.direction === 'HOLD') {
+  if (signal.direction !== 'BUY' && signal.direction !== 'SELL') {
     return { approved: false, reason: 'HOLD — no position change needed' };
   }
 
-  // Compute real 7-day rolling drawdown from portfolio snapshots
-  const weeklyDrawdownPct = await computeWeeklyDrawdownPct(portfolio.totalValue);
-
-  // Warn if drawdown is approaching the 5% weekly gate
-  if (weeklyDrawdownPct >= 4 && weeklyDrawdownPct < 5) {
-    import('../services/alertService').then(({ alert }) =>
-      alert.drawdownWarning(weeklyDrawdownPct, 5).catch(() => {})
-    ).catch(() => {});
+  // Confidence is 0-100 (normalised in case a caller passes a 0-1 fraction).
+  const confidencePct = normalizeConfidence(signal.confidence);
+  if (confidencePct < risk.minAgentConfidence) {
+    return reject(signal, `Confidence ${confidencePct.toFixed(0)}% below MIN_AGENT_CONFIDENCE ${risk.minAgentConfidence}%`);
   }
 
-  const result = evaluateRisk({
-    goVotes: Math.round((signal.confidence ?? 0.6) * 10),
-    noGoVotes: 10 - Math.round((signal.confidence ?? 0.6) * 10),
-    totalVotes: 10,
-    avgConfidence: (signal.confidence ?? 0.6) * 100,
-    asset: signal.asset,
-    signal: signal.direction,
-    proposedPositionSizePct: signal.positionSizePct ?? 5,
-    currentDrawdownPct: drawdownPct,
-    weeklyDrawdownPct,
-    existingPositionCount: openCount,
-    maxPositions,
-  });
-
-  // Alert on risk-gate rejections (not just HOLD blocks or insufficient-consensus)
-  if (!result.approved && result.reason.includes('DRAWDOWN') || result.reason.includes('MAX_POSITIONS')) {
-    import('../services/alertService').then(({ alert }) =>
-      alert.tradeFailed(signal.asset, result.reason, signal.direction).catch(() => {})
-    ).catch(() => {});
+  // Daily loss limit
+  const pnlDayPct = num(portfolio.pnlDayPct);
+  if (pnlDayPct <= -risk.dailyLossLimitPct) {
+    logger.warn(`🛑 Daily loss limit hit: ${pnlDayPct.toFixed(2)}%`);
+    getIO()?.emit('guardrail:triggered', { rule: 'DAILY_LOSS_LIMIT', value: pnlDayPct });
+    return reject(signal, `Daily loss limit hit: ${pnlDayPct.toFixed(2)}% (limit ${risk.dailyLossLimitPct}%)`, true);
   }
 
-  return result;
+  // Weekly drawdown limit — middle tier between the daily and all-time checks.
+  const pnlWeekPct = num(portfolio.pnlWeekPct);
+  if (pnlWeekPct <= -risk.weeklyDrawdownLimitPct) {
+    logger.warn(`🛑 Weekly drawdown limit hit: ${pnlWeekPct.toFixed(2)}%`);
+    getIO()?.emit('guardrail:triggered', { rule: 'WEEKLY_DRAWDOWN_LIMIT', value: pnlWeekPct });
+    return reject(signal, `Weekly drawdown limit hit: ${pnlWeekPct.toFixed(2)}% (limit ${risk.weeklyDrawdownLimitPct}%)`, true);
+  }
+
+  // Max drawdown from peak → kill switch
+  const ddPeak = num(portfolio.drawdownFromPeak);
+  if (ddPeak >= risk.maxDrawdownPct) {
+    logger.error(`🚨 MAX DRAWDOWN HIT: ${ddPeak.toFixed(2)}% — ACTIVATING KILL SWITCH`);
+    activateKillSwitch();
+    getIO()?.emit('guardrail:triggered', { rule: 'MAX_DRAWDOWN_KILL_SWITCH', value: ddPeak });
+    return reject(signal, `Max drawdown emergency stop: ${ddPeak.toFixed(2)}% (limit ${risk.maxDrawdownPct}%)`, true);
+  }
+
+  // Daily trade limit
+  if (num(portfolio.tradesExecutedToday) >= risk.maxTradesPerDay) {
+    return reject(signal, `Daily trade limit: ${portfolio.tradesExecutedToday} (MAX_TRADES_PER_DAY ${risk.maxTradesPerDay})`);
+  }
+
+  // Open-position cap
+  const openCount = (portfolio.positions || []).length;
+  if (openCount >= risk.maxOpenPositions) {
+    return reject(signal, `Max open positions: ${openCount}/${risk.maxOpenPositions}`, true);
+  }
+
+  // Fail closed on a broken/empty portfolio read — NaN comparisons are always
+  // false, which previously let every later check pass.
+  if (!Number.isFinite(portfolio.totalValue) || portfolio.totalValue <= 0 || !Number.isFinite(portfolio.cashBalance)) {
+    return reject(signal, 'Portfolio value unavailable — refusing to trade blind');
+  }
+
+  // Position concentration: clamp (not reject) oversized requests to the limit.
+  const requestedPct = Math.max(0, num(signal.positionSizePct));
+  const adjustedSize = Math.min(requestedPct, risk.maxPositionSizePct);
+
+  // Cash reserve check — measured AFTER this trade spends its cash.
+  const tradeValue = portfolio.totalValue * (adjustedSize / 100);
+  const cashPct = ((portfolio.cashBalance - tradeValue) / portfolio.totalValue) * 100;
+  if (cashPct < risk.cashReservePct) {
+    return reject(signal, `Cash reserve would drop to ${cashPct.toFixed(1)}% (min: ${risk.cashReservePct}%)`);
+  }
+
+  // Cross-asset correlation check (real Pearson correlation on daily returns).
+  const heldAssets = (portfolio.positions || []).map((p: any) => p.asset).filter((a: string) => a !== signal.asset);
+  if (heldAssets.length > 0) {
+    const concentration = await correlationService.shouldAddAssetToPortfolio(signal.asset, heldAssets, 0.75).catch(() => null);
+    if (concentration && !concentration.shouldAdd) {
+      logger.warn(`🛑 Concentration risk blocked: ${signal.asset}`, { reason: concentration.reason });
+      return reject(signal, concentration.reason);
+    }
+  }
+
+  return { approved: true, reason: `Approved (${confidencePct.toFixed(0)}% confidence, size ${adjustedSize.toFixed(2)}%)`, adjustedSize };
 }
 
-// ─── checkStopLosses — fast (10 s) SL/TP monitor called by scheduler.ts ──────
-/**
- * Scans all open trades against the current in-memory price map.
- * Closes any that have crossed their stop-loss or take-profit level.
- */
-export async function checkStopLosses(prices: Record<string, number>): Promise<void> {
-  if (!prices || Object.keys(prices).length === 0) return;
+// ── STOP LOSS MONITOR ─────────────────────────────────────────────────────────
+export async function checkStopLosses(currentPrices: Record<string, number>) {
+  try {
+    const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' } });
 
-  const openTrades = await prisma.trade.findMany({ where: { status: 'OPEN' } });
-  if (openTrades.length === 0) return;
+    for (const position of openPositions) {
+      const currentPrice = currentPrices[position.asset];
+      if (!currentPrice) continue;
 
-  for (const trade of openTrades) {
-    const currentPrice = prices[trade.asset];
-    if (!currentPrice || currentPrice <= 0) continue;
+      const isShort = position.side === 'SELL';
+      const pnlPct = isShort
+        ? ((position.entryPrice - currentPrice) / position.entryPrice) * 100
+        : ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+      const unrealizedPnl = isShort
+        ? (position.entryPrice - currentPrice) * position.quantity
+        : (currentPrice - position.entryPrice) * position.quantity;
 
-    const sl = trade.stopLossPrice;
-    const tp = trade.takeProfitPrice;
+      await prisma.position.update({
+        where: { id: position.id },
+        data: { currentPrice, unrealizedPnl, unrealizedPnlPct: pnlPct }
+      });
 
-    const hitSL = sl && (trade.type === 'BUY' ? currentPrice <= sl : currentPrice >= sl);
-    const hitTP = tp && (trade.type === 'BUY' ? currentPrice >= tp : currentPrice <= tp);
+      // Stop loss: for LONG price falls below stop, for SHORT price rises above stop
+      const stopHit = isShort
+        ? currentPrice >= position.stopLossPrice
+        : currentPrice <= position.stopLossPrice;
 
-    if (!hitSL && !hitTP) continue;
+      // Take profit: for LONG price rises above target, for SHORT price falls below target
+      const tpHit = isShort
+        ? currentPrice <= position.takeProfitPrice
+        : currentPrice >= position.takeProfitPrice;
 
-    const reason = hitSL ? 'STOP_LOSS' : 'TAKE_PROFIT';
-    const pnl = trade.type === 'BUY'
-      ? (currentPrice - trade.entryPrice) * trade.quantity
-      : (trade.entryPrice - currentPrice) * trade.quantity;
-
-    const pnlPct = trade.entryPrice > 0 ? pnl / (trade.entryPrice * trade.quantity) * 100 : 0;
-    await prisma.trade.update({
-      where: { id: trade.id },
-      data: {
-        status: 'CLOSED',
-        exitPrice: currentPrice,
-        pnl,
-        pnlPct,
-        closedAt: new Date(),
-        exitReason: reason,
-      },
-    }).catch((err: any) => logger.error(`[RISK] SL/TP close failed for ${trade.asset}: ${err?.message}`));
-
-    logger.info(`[RISK] ${reason} triggered: ${trade.asset} @ $${currentPrice.toFixed(2)} pnl=$${pnl.toFixed(2)}`);
-
-    // Non-blocking alert
-    import('../services/alertService').then(({ alert }) =>
-      alert.positionClosed(trade.asset, reason, pnl, pnlPct).catch(() => {})
-    ).catch(() => {});
+      if (stopHit) {
+        logger.warn(`🛑 STOP LOSS TRIGGERED for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
+        await closePosition(position, currentPrice, 'stop_loss');
+      } else if (tpHit) {
+        logger.info(`🎯 TAKE PROFIT HIT for ${position.asset} (${isShort ? 'SHORT' : 'LONG'}): $${currentPrice}`);
+        await closePosition(position, currentPrice, 'take_profit');
+      }
+    }
+  } catch (error) {
+    logger.error('Stop loss check failed', { error });
   }
 }
 
-// ─── Position closer (used by intradayEngine for time-stops and EOD flatten) ──
+const closingAssets = new Set<string>();
 
-/**
- * closePosition — marks a position and its open trades as CLOSED in the DB.
- * Does NOT send a broker order (assumes the caller handles that or it's a paper position).
- */
-export async function closePosition(
-  pos: { id?: string; asset: string },
-  exitPrice: number,
-  reason: string,
-): Promise<void> {
-  const openTrades = await prisma.trade.findMany({
-    where: { asset: pos.asset, status: 'OPEN' },
-  });
+export async function closePosition(position: any, requestedExitPrice: number, reason: string) {
+  // The 10 s stop monitor and the 5 min mark-to-market can race on the same
+  // position; never send two exit orders for one position.
+  if (closingAssets.has(position.asset)) {
+    logger.info(`⏳ Close already in progress for ${position.asset} — skipping duplicate (${reason})`);
+    return { pnl: 0, pnlPct: 0, closed: false };
+  }
+  closingAssets.add(position.asset);
+  try {
+    return await closePositionInner(position, requestedExitPrice, reason);
+  } finally {
+    closingAssets.delete(position.asset);
+  }
+}
 
-  for (const trade of openTrades) {
-    const pnl = trade.type === 'BUY'
-      ? (exitPrice - trade.entryPrice) * trade.quantity
-      : (trade.entryPrice - exitPrice) * trade.quantity;
+async function closePositionInner(position: any, requestedExitPrice: number, reason: string) {
+  const isShort = position.side === 'SELL';
 
-    await prisma.trade.update({
-      where: { id: trade.id },
-      data: {
-        status: 'CLOSED',
-        exitPrice,
-        pnl,
-        pnlPct: trade.entryPrice > 0 ? pnl / (trade.entryPrice * trade.quantity) : 0,
-        closedAt: new Date(),
-        exitReason: reason,
-      },
-    }).catch((err: any) => logger.error(`[RISK] closePosition trade update failed: ${err?.message}`));
+  // Find the trade that opened this position (broker-confirmed OPEN or a local simulation).
+  const openTrade = await prisma.trade.findFirst({ where: { asset: position.asset, status: 'OPEN' } })
+    || await prisma.trade.findFirst({ where: { asset: position.asset, status: 'LOCAL_SIMULATION' } });
+
+  // ── SEND THE EXIT TO THE BROKER ─────────────────────────────────────────────
+  // Previously this function only updated the local DB, so an app-monitored
+  // stop "closed" the position on screen while the real shares stayed open at
+  // Alpaca. Now: if the entry was broker-confirmed, flatten it at the broker
+  // (cancelling any bracket legs first) and use the real fill as exit price.
+  // getTradingBroker() returns the PAPER broker in paper mode, so paper
+  // positions are really closed at Alpaca paper too. Local simulations
+  // (no broker order ever sent) are closed in the DB only.
+  let exitPrice = requestedExitPrice;
+  if (openTrade?.brokerConfirmed && position.market !== 'prediction') {
+    const broker = getTradingBroker();
+    if (!broker) {
+      logger.error(`🚨 Cannot close ${position.asset} at broker — no broker credentials. Position left OPEN for manual action.`);
+      getIO()?.emit('guardrail:triggered', { rule: 'EXIT_FAILED_NO_BROKER', asset: position.asset });
+      return { pnl: 0, pnlPct: 0, closed: false };
+    }
+    try {
+      // Alpaca crypto positions are keyed "BTCUSD"; stocks by ticker.
+      const brokerSymbol = position.market === 'crypto' ? `${position.asset}USD` : position.asset;
+      const exitOrder = await broker.flattenSymbol(brokerSymbol);
+      if (exitOrder?.id) {
+        const fill = await confirmOrderFill(broker, exitOrder.id).catch(() => null);
+        if (fill?.fillPrice) exitPrice = fill.fillPrice;
+      }
+      // exitOrder === null → broker already flat (bracket stop/target filled there).
+    } catch (err: any) {
+      logger.error(`🚨 Broker exit FAILED for ${position.asset} — position left OPEN, will retry`, { error: err?.response?.data?.message || err.message });
+      getIO()?.emit('guardrail:triggered', { rule: 'EXIT_FAILED', asset: position.asset });
+      return { pnl: 0, pnlPct: 0, closed: false };
+    }
   }
 
-  await prisma.position.updateMany({
-    where: { asset: pos.asset, status: 'OPEN' },
-    data: { status: 'CLOSED' },
-  }).catch((err: any) => logger.error(`[RISK] closePosition position update failed: ${err?.message}`));
+  const pnl = isShort
+    ? (position.entryPrice - exitPrice) * position.quantity
+    : (exitPrice - position.entryPrice) * position.quantity;
+  const pnlPct = isShort
+    ? ((position.entryPrice - exitPrice) / position.entryPrice) * 100
+    : ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
 
-  logger.info(`[RISK] Position closed: ${pos.asset} @ $${exitPrice.toFixed(2)} reason=${reason}`);
+  // Close the trade
+  if (openTrade) {
+    await prisma.trade.update({
+      where: { id: openTrade.id },
+      data: { exitPrice, pnl, pnlPct, status: 'CLOSED', closedAt: new Date(), exitReason: reason }
+    });
+
+    // ── COMPLETE PERSISTENT LIFECYCLE AUDIT TRAIL ───────────────────────────
+    try {
+      const corrId = `corr-${openTrade.id}`;
+      // Verify active instance or recover
+      const existing = LifecycleStateMachine.get(corrId);
+      if (existing) {
+        await LifecycleStateMachine.transition({
+          correlationId: corrId,
+          provider: 'ALPACA',
+          environment: getActiveMode(),
+          strategy: 'INTRADAY',
+          symbol: position.asset,
+          newState: LifecycleState.EXIT_SUBMITTED,
+          reason: `Exit submitted due to ${reason}`
+        });
+        await LifecycleStateMachine.transition({
+          correlationId: corrId,
+          provider: 'ALPACA',
+          environment: getActiveMode(),
+          strategy: 'INTRADAY',
+          symbol: position.asset,
+          newState: LifecycleState.EXIT_FILLED,
+          reason: `Exit executed @ $${exitPrice}`
+        });
+        await LifecycleStateMachine.transition({
+          correlationId: corrId,
+          provider: 'ALPACA',
+          environment: getActiveMode(),
+          strategy: 'INTRADAY',
+          symbol: position.asset,
+          newState: LifecycleState.PROVIDER_RECONCILED,
+          reason: 'Position closed and reconciled with ledger'
+        });
+        await LifecycleStateMachine.transition({
+          correlationId: corrId,
+          provider: 'ALPACA',
+          environment: getActiveMode(),
+          strategy: 'INTRADAY',
+          symbol: position.asset,
+          newState: LifecycleState.PERFORMANCE_CALCULATED,
+          reason: `Realized PnL calculated: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`
+        });
+        await LifecycleStateMachine.transition({
+          correlationId: corrId,
+          provider: 'ALPACA',
+          environment: getActiveMode(),
+          strategy: 'INTRADAY',
+          symbol: position.asset,
+          newState: LifecycleState.MODEL_OUTCOME_RECORDED,
+          reason: 'Outcome feedback recorded to agent performance metrics'
+        });
+        await LifecycleStateMachine.transition({
+          correlationId: corrId,
+          provider: 'ALPACA',
+          environment: getActiveMode(),
+          strategy: 'INTRADAY',
+          symbol: position.asset,
+          newState: LifecycleState.AUDIT_COMPLETE,
+          reason: 'Complete trade lifecycle audit completed successfully'
+        });
+      }
+    } catch (lifecycleErr: any) {
+      logger.warn('Lifecycle exit audit transition warning', { error: lifecycleErr.message });
+    }
+  }
+
+  await prisma.position.update({
+    where: { id: position.id },
+    data: { status: 'CLOSED' }
+  });
+
+  getIO()?.emit('position:closed', { asset: position.asset, exitPrice, pnl, pnlPct, reason });
+  logger.info(`Position closed: ${position.asset} | PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) | Reason: ${reason}`);
+  return { pnl, pnlPct, closed: true };
 }
