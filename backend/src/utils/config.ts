@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { logger } from './logger';
+import { alpacaLiveAllowed } from '../trading/liveGate';
 
 // Env var names pasted into a dashboard sometimes carry a trailing space
 // ("MIN_VOTES_TO_EXECUTE " on Railway was silently ignored). Mirror any such
@@ -114,22 +115,15 @@ export function validateConfig(): ValidatedConfig {
   const isPaperConfigured = isNonEmptyRealKey(alpacaPaperKey) && isNonEmptyRealKey(alpacaPaperSecret);
   const isLiveConfigured = isNonEmptyRealKey(alpacaLiveKey) && isNonEmptyRealKey(alpacaLiveSecret);
 
-  // Fail-closed safety rule: Never enable live mode simply because live credentials exist.
-  // Live mode requires BOTH explicit TRADING_MODE=live AND verified live credentials.
-  let activeMode: TradingMode = 'paper';
-  // A third, deliberate switch: live money needs LIVE_TRADING_CONFIRMED set to
-  // an exact phrase, so a copied .env or a typo in TRADING_MODE can't go live.
-  const liveConfirmed = cleanEnvValue(process.env.LIVE_TRADING_CONFIRMED) === 'I_ACCEPT_REAL_MONEY_RISK';
-  if (tradingMode === 'live') {
-    if (isLiveConfigured && !liveConfirmed) {
-      logger.warn('⚠️ TRADING_MODE=live but LIVE_TRADING_CONFIRMED is not set to I_ACCEPT_REAL_MONEY_RISK. Staying on PAPER.');
-    } else if (isLiveConfigured) {
-      activeMode = 'live';
-      logger.warn('⚠️ LIVE TRADING MODE ENABLED with authenticated Alpaca Live credentials.');
-    } else {
-      logger.warn('⚠️ TRADING_MODE was set to "live" but live credentials are missing/invalid. Falling back strictly to PAPER.');
-      activeMode = 'paper';
-    }
+  // Fail-closed safety rule: live needs TRADING_MODE=live AND the exact
+  // LIVE_TRADING_CONFIRMED phrase AND real ALPACA_LIVE_* keys. The decision
+  // itself lives in trading/liveGate.ts so every order path uses the same rule.
+  const liveDecision = alpacaLiveAllowed(process.env);
+  const activeMode: TradingMode = liveDecision.allowed ? 'live' : 'paper';
+  if (tradingMode === 'live' && !liveDecision.allowed) {
+    logger.warn(`⚠️ TRADING_MODE=live requested but staying on PAPER: ${liveDecision.reason}`);
+  } else if (activeMode === 'live') {
+    logger.warn('⚠️ LIVE TRADING MODE ENABLED with authenticated Alpaca Live credentials.');
   }
 
   // Polymarket endpoints
@@ -200,5 +194,39 @@ export function getSafeProviderStatus() {
       engine: 'PostgreSQL (Prisma)',
       storageReady: true,
     }
+  };
+}
+
+/**
+ * Risk limits, read at call time so tests/env changes are honoured. These are
+ * the env vars documented in .env.example; before this they were parsed into
+ * appConfig.RISK but never used by the risk gate (which hard-coded 5%/10%).
+ */
+export interface RiskSettings {
+  dailyLossLimitPct: number;
+  weeklyDrawdownLimitPct: number;
+  maxDrawdownPct: number;
+  cashReservePct: number;
+  maxPositionSizePct: number;
+  maxTradesPerDay: number;
+  maxOpenPositions: number;
+  minAgentConfidence: number;
+}
+
+function envNum(name: string, fallback: number): number {
+  const n = Number(cleanEnvValue(process.env[name]));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+export function readRiskSettings(): RiskSettings {
+  return {
+    dailyLossLimitPct: envNum('DAILY_LOSS_LIMIT_PCT', 3),
+    weeklyDrawdownLimitPct: envNum('WEEKLY_DRAWDOWN_LIMIT_PCT', 6),
+    maxDrawdownPct: envNum('MAX_DRAWDOWN_ALL_TIME_PCT', 10),
+    cashReservePct: envNum('CASH_RESERVE_PCT', 20),
+    maxPositionSizePct: envNum('MAX_POSITION_SIZE_PCT', 15),
+    maxTradesPerDay: envNum('MAX_TRADES_PER_DAY', 50),
+    maxOpenPositions: envNum('MAX_OPEN_POSITIONS', 10),
+    minAgentConfidence: envNum('MIN_AGENT_CONFIDENCE', 50),
   };
 }

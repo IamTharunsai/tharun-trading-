@@ -103,6 +103,7 @@ export function evaluateRisk(params: RiskParams): RiskDecision {
 
 // ─── Shared imports for the helpers below ────────────────────────────────────
 import { prisma } from '../utils/prisma';
+import { activateKillSwitch } from '../agents/orchestrator';
 import { getVerifiedAccountScope } from './accountScope';
 import { requestPositionExit, ExitResult } from './positionExits';
 import { logger } from '../utils/logger';
@@ -175,6 +176,11 @@ export async function validateTradeSignal(
   const openCount = portfolio.positions?.length ?? 0;
   const maxPositions = Number(process.env.MAX_OPEN_POSITIONS ?? 10);
   const drawdownPct = Math.max(0, portfolio.drawdownFromPeak);
+  const peakLimit = Number(process.env.MAX_DRAWDOWN_ALL_TIME_PCT ?? 10);
+  if (Number.isFinite(peakLimit) && peakLimit > 0 && drawdownPct >= peakLimit) activateKillSwitch();
+  const maxTrades = Number(process.env.MAX_TRADES_PER_DAY ?? 50);
+  if (!Number.isSafeInteger(maxTrades) || maxTrades <= 0 || !Number.isFinite(portfolio.tradesExecutedToday)) return { approved: false, reason: 'INVALID_RISK_CONFIG: daily trade pacing is unavailable' };
+  if (portfolio.tradesExecutedToday >= maxTrades) return { approved: false, reason: 'MAX_TRADES_PER_DAY: daily execution limit reached' };
 
   // Block HOLD signals early
   if (signal.direction === 'HOLD') {

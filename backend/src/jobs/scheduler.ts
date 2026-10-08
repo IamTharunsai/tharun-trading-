@@ -16,7 +16,7 @@ import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { TradeSignal } from '../agents/types';
 import { preDebateGate } from '../trading/preDebateGate';
-import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions } from '../services/polymarket';
+import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions, isPolymarketScanRunning } from '../services/polymarket';
 
 const analyzedTradeIds = new Set<string>();
 
@@ -41,9 +41,18 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
     logger.info(`\n🏛️ Investment Committee convening for ${asset}...`);
     const snapshot = await buildMarketSnapshot(asset, market);
     if (!snapshot) { logger.warn(`No snapshot for ${asset}`); return; }
+    // Cheap news-only sentiment (no X reads) so a mention-volume spike can
+    // nominate a symbol the technical gate would otherwise skip.
+    let gateSentiment: any = null;
+    if (!opts.bypassGate) {
+      try {
+        const svc = await import('../services/sentimentService');
+        if (svc.isSentimentEnabled()) gateSentiment = await svc.getSentiment(asset, { market, includeX: false });
+      } catch { gateSentiment = null; }
+    }
     const gate = opts.bypassGate ? { pass: true,
       setup: opts.executionLane === 'INTRADAY' ? 'INTRADAY_PREFILTER' : 'MANUAL',
-      reason: opts.executionLane === 'INTRADAY' ? 'autonomous intraday setup forwarded to shared council' : 'manually triggered' } : preDebateGate(snapshot as any);
+      reason: opts.executionLane === 'INTRADAY' ? 'autonomous intraday setup forwarded to shared council' : 'manually triggered' } : preDebateGate({ ...(snapshot as any), sentiment: gateSentiment });
     if (!gate.pass) {
       logger.info(`⏭️ ${asset}: skipped before debate — ${gate.reason} (saved ~30 LLM calls)`);
       return;
@@ -83,6 +92,9 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
         },
       };
       const riskCheck = await validateTradeSignal(signal, portfolio);
+      if (riskCheck.approved && typeof riskCheck.adjustedSize === 'number') {
+        signal.positionSizePct = riskCheck.adjustedSize; // clamped to MAX_POSITION_SIZE_PCT
+      }
       if (riskCheck.approved) {
         const executed = await executeTradeSignal({ ...signal, positionSizePct: riskCheck.adjustedSize ?? signal.positionSizePct }, portfolio);
         transcript.tradeExecuted = executed;
@@ -385,8 +397,23 @@ export function initScheduler() {
   // debating. Capped concurrent Polymarket positions at 3 (matching the
   // existing "top 3 opportunities" sizing) and skip placing more once at cap.
   const MAX_OPEN_POLYMARKET_POSITIONS = Number(process.env.POLYMARKET_MAX_OPEN || 10);
+  // POLYMARKET_VENUE=us (default): the Polymarket US edge engine
+  // (services/polymarketEdge.ts) — paper only, order-book aware, scored.
+  // POLYMARKET_VENUE=intl: the older international Gamma scanner (paper).
+  const polymarketVenue = String(process.env.POLYMARKET_VENUE || 'us').toLowerCase() === 'intl' ? 'intl' : 'us';
   cron.schedule(`*/${Number(process.env.POLYMARKET_SCAN_EVERY_MIN || 15)} * * * *`, async () => {
     if (isKillSwitchActive()) return;
+    if (polymarketVenue === 'us') {
+      try {
+        const edge = await import('../services/polymarketEdge');
+        if (edge.isEdgeScanRunning()) {
+          logger.info('🎯 Previous Polymarket edge scan still running — skipping this tick');
+          return;
+        }
+        await edge.runPolymarketEdgeScan();
+      } catch (err: any) { logger.warn(`Polymarket edge scan skipped: ${err?.message || err?.code || 'network error'}`); }
+      return;
+    }
     try {
       const openCount = await prisma.trade.count({ where: { asset: 'POLYMARKET', status: 'OPEN' } });
       const slotsAvailable = MAX_OPEN_POLYMARKET_POSITIONS - openCount;
@@ -395,9 +422,16 @@ export function initScheduler() {
         return;
       }
       const portfolio = await getPortfolioState();
+      if (isPolymarketScanRunning()) {
+        logger.info('🎯 Previous Polymarket scan still running — skipping this tick');
+        return;
+      }
       const opportunities = await scanPolymarketOpportunities(portfolio.totalValue);
+      // The only place bets are placed. placePolymarketBet re-checks de-dupe per
+      // market, POLYMARKET_MAX_OPEN and the optional USD exposure cap, and is
+      // paper unless the live gate allows (it never does with isPaper=true).
       for (const opp of opportunities.slice(0, slotsAvailable)) {
-        await placePolymarketBet(opp, opp.conditionId, true); // paper mode
+        await placePolymarketBet(opp, opp.conditionId, true);
       }
     } catch (err: any) { logger.warn(`Polymarket scan skipped: ${err?.message || err?.code || 'network error'}`); }
   });
@@ -406,6 +440,31 @@ export function initScheduler() {
   cron.schedule('*/30 * * * *', async () => {
     await pollPolymarketResolutions().catch(err => logger.error('Polymarket resolution poll failed', { err }));
   });
+
+  // ── Polymarket US edge engine upkeep (paper) ─────────────────────────────
+  // Every 5 min: fill/expire/cancel resting paper limit orders, then exits
+  // (resolution, take-profit at fair, edge flip, evidence change).
+  if (polymarketVenue === 'us') {
+    cron.schedule('*/5 * * * *', async () => {
+      try {
+        const edge = await import('../services/polymarketEdge');
+        const { polymarketUSVenue } = await import('../services/polymarketUS');
+        if (!isKillSwitchActive()) await edge.processPaperOrders(polymarketUSVenue);
+        await edge.managePolymarketPositions(polymarketUSVenue); // exits only reduce risk
+      } catch (err: any) { logger.warn(`Polymarket paper upkeep skipped: ${err?.message || 'error'}`); }
+    });
+    // Hourly: score predictions against real resolutions.
+    cron.schedule('17 * * * *', async () => {
+      try {
+        const edge = await import('../services/polymarketEdge');
+        await edge.resolvePolymarketPredictions();
+      } catch (err: any) { logger.warn(`Polymarket prediction resolution skipped: ${err?.message || 'error'}`); }
+    });
+    // Daily 9 AM: scorecard summary in the logs.
+    cron.schedule('0 9 * * *', async () => {
+      try { await (await import('../services/polymarketEdge')).logScorecardSummary(); } catch { /* log only */ }
+    });
+  }
 
   // ── POST-TRADE LEARNING: Watch for newly closed trades ───────────────────
   cron.schedule('*/2 * * * *', async () => {
@@ -458,7 +517,7 @@ export function initScheduler() {
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');
-  logger.info('   🎯 Polymarket opportunity scan every 30 minutes');
+  logger.info(`   🎯 Polymarket scan every ${Number(process.env.POLYMARKET_SCAN_EVERY_MIN || 15)} min (${String(process.env.POLYMARKET_VENUE || 'us').toLowerCase() === 'intl' ? 'international scanner' : 'US edge engine, paper'})`);
   logger.info('   📓 Daily journal at 11:59 PM');
   logger.info('   📊 Weekly report every Sunday 8 AM');
   logger.info('   🎓 Post-trade learning every 2 minutes');

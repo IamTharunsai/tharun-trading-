@@ -13,6 +13,13 @@
 import { prisma } from '../utils/prisma';
 import { TradeSignal, PortfolioState } from '../agents/types';
 import { getActiveMode, getTradingBroker } from './brokerRouter';
+
+export function buildCryptoOrder(signal: TradeSignal, quantity: number) {
+  if (signal.market !== 'crypto' || signal.direction !== 'BUY' || !Number.isFinite(quantity) || quantity <= 0) return null;
+  const qty = Math.floor(quantity * 1e6) / 1e6;
+  if (qty <= 0) return null;
+  return { payload: { symbol: `${signal.asset}/USD`, qty, side: 'buy', type: 'market', time_in_force: 'gtc' }, protection: 'APPLICATION_MONITORED' };
+}
 import { confirmOrderFill } from './orderFills';
 export { confirmOrderFill } from './orderFills';
 import { getCurrentPrice, buildMarketSnapshot } from '../services/marketData';
@@ -182,6 +189,7 @@ export async function executeTradeSignal(
     const savedDecision = await prisma.agentDecision.findUnique({ where: { id: agentDecisionId } });
     signal = authorizePersistedDecision(savedDecision, signal, executionMode, Date.now(), Number(process.env.MAX_DECISION_AGE_MS ?? 300000));
     authorityVerified = true;
+    if (direction === 'SELL' && (market !== 'stocks' || process.env.ALLOW_SHORT_SELLING !== 'true')) return false;
     if (executionMode === 'live') {
       const strategyKey = 'BHISHMA_COUNCIL';
       const revision = process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RELEASE_COMMIT_SHA;
@@ -228,8 +236,8 @@ export async function executeTradeSignal(
     }
 
     let quantity = positionValue / price;
-    const prepared = market === 'stocks' ? buildStockOrder(signal, quantity) : null;
-    if (market === 'stocks' && !prepared) {
+    const prepared = market === 'stocks' ? buildStockOrder(signal, quantity) : market === 'crypto' ? buildCryptoOrder(signal, quantity) : null;
+    if (!prepared) {
       await recordExecutionFailure(agentDecisionId, 'UNSUPPORTED_STOCK_ORDER: invalid quantity or fractional short');
       return false;
     }

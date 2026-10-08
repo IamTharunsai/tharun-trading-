@@ -8,18 +8,22 @@
 // entered in Settings were never used for trading at all.
 //
 // Rules (fail-closed):
-//   • appConfig.TRADING_MODE is the only source of truth for paper vs live.
+//   • trading/liveGate.ts is the only source of truth for paper vs live
+//     (TRADING_MODE=live + LIVE_TRADING_CONFIRMED phrase + live keys).
+//   • services/alpacaBroker.createAlpacaBroker() now delegates here too, so no
+//     code path can construct a live client on its own.
 //   • live  → only ALPACA_LIVE_API_KEY / ALPACA_LIVE_SECRET_KEY are ever used.
 //   • paper → keys connected in Settings (paper only), else ALPACA_PAPER_* / ALPACA_API_KEY.
 import { AlpacaBroker } from '../services/alpacaBroker';
 import { appConfig } from '../utils/config';
 import { isPlaceholderKey } from '../utils/apiKeys';
 import { createHash } from 'crypto';
+import { getAlpacaMode } from './liveGate';
 
 export type BrokerMode = 'paper' | 'live';
 
 export function getActiveMode(): BrokerMode {
-  return appConfig.TRADING_MODE;
+  return getAlpacaMode();
 }
 
 let cached: { key: string; broker: AlpacaBroker } | null = null;

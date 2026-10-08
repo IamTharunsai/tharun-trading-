@@ -70,3 +70,18 @@ describe('llmRouter', () => {
     expect(r.model).toBe('qwen2.5:14b-instruct');
   });
 });
+
+describe('preDebateGate — sentiment spike candidates', () => {
+  const base = { price: 100, volume24h: 1_000_000, indicators: { rsi14: 62, ema9: 99, ema21: 100, ema200: 90, volumeAvg20: 1_000_000, atr14: 2 } };
+  it('a positive news-volume spike in a long-term uptrend earns a committee review', () => {
+    const r = preDebateGate({ ...base, sentiment: { score: 0.5, mentionCount: 12, volumeZScore: 3 } });
+    expect(r.pass).toBe(true);
+    expect(r.setup).toBe('SENTIMENT_SPIKE');
+  });
+  it('no spike, negative spike, thin evidence or a downtrend → still rejected', () => {
+    expect(preDebateGate(base).pass).toBe(false);
+    expect(preDebateGate({ ...base, sentiment: { score: -0.5, mentionCount: 12, volumeZScore: 3 } }).pass).toBe(false);
+    expect(preDebateGate({ ...base, sentiment: { score: 0.5, mentionCount: 2, volumeZScore: 3 } }).pass).toBe(false);
+    expect(preDebateGate({ ...base, indicators: { ...base.indicators, ema200: 120 }, sentiment: { score: 0.5, mentionCount: 12, volumeZScore: 3 } }).pass).toBe(false);
+  });
+});

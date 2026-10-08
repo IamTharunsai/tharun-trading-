@@ -282,7 +282,8 @@ export class AlpacaBroker {
    */
   async flattenSymbol(symbol: string): Promise<AlpacaOrder | null> {
     const open = await this.getOrders('open', 500);
-    for (const o of open.filter(o => o.symbol === symbol)) {
+    const norm = (x: string) => String(x || '').replace('/', '').toUpperCase();
+    for (const o of open.filter(o => norm(o.symbol) === norm(symbol))) {
       await this.cancelOrder(o.id).catch(() => {});
     }
     const pos = await this.getPosition(symbol);
@@ -393,15 +394,14 @@ export class AlpacaBroker {
 }
 
 /**
- * Factory function to create Alpaca broker instance
+ * @deprecated Use getTradingBroker() from trading/brokerRouter.
+ * The paperMode argument is IGNORED: it used to let callers build a live
+ * client from ALPACA_API_KEY + raw TRADING_MODE, bypassing the
+ * LIVE_TRADING_CONFIRMED gate. The router decides paper vs live now.
  */
-export function createAlpacaBroker(paperMode: boolean = true): AlpacaBroker | null {
-  const apiKey = process.env.ALPACA_API_KEY;
-  const apiSecret = process.env.ALPACA_SECRET_KEY;
-
-  if (isPlaceholderKey(apiKey) || isPlaceholderKey(apiSecret)) {
-    return null;
-  }
-
-  return new AlpacaBroker(apiKey!, apiSecret!, paperMode);
+export function createAlpacaBroker(_paperMode: boolean = true): AlpacaBroker | null {
+  // Lazy require avoids an import cycle (brokerRouter imports this module).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getTradingBroker } = require('../trading/brokerRouter');
+  return getTradingBroker();
 }

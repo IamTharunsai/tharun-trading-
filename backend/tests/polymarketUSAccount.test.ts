@@ -83,6 +83,8 @@ test.each([
   const { appConfig } = require('../src/utils/config');
   appConfig.TRADING_MODE = 'live';
   process.env.POLYMARKET_US_LIVE = 'true';
+  process.env.TRADING_MODE = 'live';
+  process.env.LIVE_TRADING_CONFIRMED = 'I_ACCEPT_REAL_MONEY_RISK';
   process.env.POLYMARKET_US_MAX_ORDER_USD = '5';
   await expect(placePolymarketUSOrder(request as any)).rejects.toThrow(message);
   expect(createOrder).not.toHaveBeenCalled();
@@ -92,6 +94,8 @@ test('invalid configured order cap fails closed', async () => {
   const { appConfig } = require('../src/utils/config');
   appConfig.TRADING_MODE = 'live';
   process.env.POLYMARKET_US_LIVE = 'true';
+  process.env.TRADING_MODE = 'live';
+  process.env.LIVE_TRADING_CONFIRMED = 'I_ACCEPT_REAL_MONEY_RISK';
   process.env.POLYMARKET_US_MAX_ORDER_USD = 'not-a-number';
   await expect(placePolymarketUSOrder({ marketSlug: 'fixture', side: 'YES', price: 0.5, quantity: 1 })).rejects.toThrow('order limit');
   expect(createOrder).not.toHaveBeenCalled();

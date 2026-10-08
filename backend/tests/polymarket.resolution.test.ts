@@ -10,8 +10,11 @@ jest.mock('../src/utils/prisma', () => ({
 jest.mock('../src/websocket/server', () => ({ getIO: () => ({ emit: jest.fn() }) }));
 jest.mock('axios');
 
+beforeEach(() => { jest.clearAllMocks(); (prisma.trade.findMany as jest.Mock).mockResolvedValue([]); (prisma.trade.create as jest.Mock).mockResolvedValue({}); });
+
 describe('placePolymarketBet — stores conditionId', () => {
   it('writes analysis.conditionId into Trade.brokerOrderId for paper bets', async () => {
+    (prisma.trade.findMany as jest.Mock).mockResolvedValueOnce([]); // no open bets yet
     const { placePolymarketBet } = require('../src/services/polymarket');
     const analysis = {
       question: 'Will X happen?', marketImpliedProbability: 0.4, ourEstimatedProbability: 0.6,

@@ -632,6 +632,30 @@ marketRouter.get('/polymarket-us/events', async (req: Request, res: Response) =>
   }
 });
 
+// Polymarket edge engine scorecard: every prediction vs. the real resolution
+// (Brier / log loss vs. the market price, calibration buckets, paper P&L
+// after fees, expected vs. realized edge). Use it to prove an edge on paper
+// before considering live trading.
+marketRouter.get('/polymarket/scorecard', async (req: Request, res: Response) => {
+  try {
+    const days = Math.max(0, Math.min(3650, parseInt(String(req.query.days || '0')) || 0));
+    const { computeScorecard } = await import('../services/polymarketEdge');
+    res.json(await computeScorecard(days ? { days } : {}));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Scorecard failed' });
+  }
+});
+
+marketRouter.get('/polymarket/edge/predictions', async (req: Request, res: Response) => {
+  try {
+    const take = Math.max(1, Math.min(500, parseInt(String(req.query.limit || '50')) || 50));
+    const rows = await (prisma as any).polymarketPrediction.findMany({ orderBy: { createdAt: 'desc' }, take });
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch Polymarket predictions' });
+  }
+});
+
 marketRouter.post('/predictions/wager', requireOwner, recordPredictionSimulation);
 marketRouter.get('/predictions/simulations', requireOwner, listPredictionSimulations);
 
@@ -964,18 +988,25 @@ settingsRouter.use(requireAuth);
 
 settingsRouter.get('/', async (_req: Request, res: Response) => {
   const { accountManager } = await import('../services/accountManager');
+  const { readRiskSettings } = await import('../utils/config');
+  const { getActiveMode } = await import('../trading/brokerRouter');
+  const { isSentimentEnabled } = await import('../services/sentimentService');
+  const risk = readRiskSettings();
   res.json({
-    tradingMode: process.env.TRADING_MODE || 'paper',
+    // Effective mode from the live gate (not the raw env var).
+    tradingMode: getActiveMode(),
     stopLossMethod: 'ATR-based (dynamic per trade, not a fixed %)',
     takeProfitMethod: '2.5x the ATR-based stop distance (min 2:1 risk/reward)',
     maxRiskPerTrade: process.env.MAX_RISK_PER_TRADE_PCT || '1',
-    maxPositionSize: process.env.MAX_POSITION_SIZE_PCT || '10',
-    dailyLossLimit: process.env.DAILY_LOSS_LIMIT_PCT || '5',
-    weeklyDrawdownLimit: process.env.WEEKLY_DRAWDOWN_LIMIT_PCT || '10',
-    maxDrawdown: process.env.MAX_DRAWDOWN_ALL_TIME_PCT || '20',
-    cashReserve: process.env.CASH_RESERVE_PCT || '30',
-    maxTradesPerDay: process.env.MAX_TRADES_PER_DAY || '50',
-    minAgentConfidence: process.env.MIN_AGENT_CONFIDENCE || '65',
+    maxPositionSize: String(risk.maxPositionSizePct),
+    dailyLossLimit: String(risk.dailyLossLimitPct),
+    weeklyDrawdownLimit: String(risk.weeklyDrawdownLimitPct),
+    maxDrawdown: String(risk.maxDrawdownPct),
+    cashReserve: String(risk.cashReservePct),
+    maxTradesPerDay: String(risk.maxTradesPerDay),
+    maxOpenPositions: String(risk.maxOpenPositions),
+    minAgentConfidence: String(risk.minAgentConfidence),
+    sentimentEnabled: isSentimentEnabled(),
     minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '5',
     cacheStatus: redis.status === 'ready' ? 'Redis (connected)' : 'None — running without cache',
     kronosServiceConfigured: !!process.env.KRONOS_SERVICE_URL,

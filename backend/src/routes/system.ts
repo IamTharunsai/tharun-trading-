@@ -7,6 +7,7 @@ import { requireAuth, requireOwner } from '../middleware/auth';
 import { appConfig } from '../utils/config';
 import { getLlmHealth } from '../utils/llmRouter';
 import { isPlaceholderKey } from '../utils/apiKeys';
+import { polymarketLiveAllowed } from '../trading/liveGate';
 
 const router = Router();
 router.use(requireAuth);
@@ -38,7 +39,7 @@ router.get('/status', async (_req: Request, res: Response) => {
     killSwitch: isKillSwitchActive(),
     tradingMode: appConfig.TRADING_MODE,
     polymarket: {
-      mode: appConfig.TRADING_MODE === 'live' && process.env.POLYMARKET_US_LIVE === 'true' ? 'live' : 'paper',
+      mode: polymarketLiveAllowed().allowed ? 'live' : 'paper',
       usConnected: pmUs.getPolymarketUSHealth().connected,
       usStatus: pmUs.getPolymarketUSHealth().status,
       usConfigured: pmUs.isPolymarketUSConfigured(),

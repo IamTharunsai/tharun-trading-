@@ -1,3 +1,4 @@
+jest.mock('../src/services/sentimentService', () => ({ getHeadlinesForQuery: jest.fn().mockResolvedValue([]) }));
 jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
 jest.mock('../src/websocket/server', () => ({ getIO: () => null }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), error: jest.fn() } }));

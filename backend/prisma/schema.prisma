@@ -810,3 +810,89 @@ model AuditLedger {
   @@index([eventType])
   @@index([sequence])
 }
+
+// Sentiment feed history (services/sentimentService.ts). One row per computed
+// score; used for the mention-volume z-score and to evaluate whether sentiment
+// actually improved decisions before giving it more weight.
+model SentimentSnapshot {
+  id           String    @id @default(cuid())
+  asset        String
+  market       String?
+  score        Float
+  confidence   Float
+  mentionCount Int
+  volumeZScore Float?
+  sourceCounts Json
+  newestItemAt DateTime?
+  fearGreed    Int?
+  scorer       String
+  headlines    Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([asset, createdAt])
+}
+
+// Every Polymarket edge-engine estimate (traded or skipped), scored against
+// the real resolution for the scorecard (Brier, log loss, calibration).
+model PolymarketPrediction {
+  id                String    @id @default(cuid())
+  venue             String
+  marketSlug        String
+  eventSlug         String?
+  category          String?
+  question          String
+  endDate           DateTime?
+  marketMid         Float
+  bestBid           Float?
+  bestAsk           Float?
+  llmProb           Float?
+  llmConfidence     Float?
+  headlineCount     Int       @default(0)
+  sentimentScore    Float?
+  sentimentMentions Int       @default(0)
+  momentum          Float?
+  rawFair           Float
+  fairProb          Float
+  evidenceWeight    Float
+  decision          String
+  skipReason        String?
+  side              String?
+  netEdge           Float?
+  execPrice         Float?
+  feePerShare       Float?
+  tradeId           String?
+  outcome           Float?
+  resolvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([marketSlug, createdAt])
+  @@index([resolvedAt])
+  @@index([createdAt])
+}
+
+// Simulated resting limit orders for Polymarket paper trading. They fill only
+// if the market trades through the limit price, and expire after a TTL.
+model PolymarketPaperOrder {
+  id           String    @id @default(cuid())
+  venue        String
+  marketSlug   String
+  eventSlug    String?
+  category     String?
+  question     String?
+  side         String
+  limitPrice   Float
+  shares       Float
+  status       String    @default("OPEN")
+  predictionId String?
+  fairAtOrder  Float?
+  expiresAt    DateTime
+  filledAt     DateTime?
+  fillPrice    Float?
+  tradeId      String?
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([marketSlug])
+}

@@ -178,6 +178,7 @@ export interface AgentArgument {
 export interface CrossExam { challenger: string; target: string; challenge: string; rebuttal: string }
 
 export interface DebateTranscript {
+  sentiment?: { score: number; mentionCount: number; volumeZScore: number; multiplier: number; veto: boolean; reason: string } | null;
   purpose?: 'ENTRY' | 'POSITION_REVIEW';
   id: string;
   decisionId?: string;
@@ -560,7 +561,14 @@ export async function runInvestmentCommitteeDebate(
       throw new Error('Held-position review requires matching current-account holding evidence');
     }
   }
-  const inputFingerprint = createHash('sha256').update(JSON.stringify({ version: 'bhishma-council-3', snapshot, portfolio, marketRegime, regimeAnalysis, decisionMode, executionLane, positionReview })).digest('hex');
+  let sentimentData: import('../services/sentimentService').SentimentResult | null = null;
+  let sentimentService: typeof import('../services/sentimentService') | null = null;
+  try {
+    sentimentService = await import('../services/sentimentService');
+    if (sentimentService.isSentimentEnabled()) sentimentData = await sentimentService.getSentiment(asset, { market: snapshot.market, includeX: true });
+  } catch { sentimentData = null; }
+  reviewControl?.signal.throwIfAborted();
+  const inputFingerprint = createHash('sha256').update(JSON.stringify({ version: 'bhishma-council-4', snapshot, portfolio, marketRegime, regimeAnalysis, decisionMode, executionLane, positionReview, sentimentData })).digest('hex');
   const checkpoint = await loadDebateCheckpoint(asset, inputFingerprint);
   if (checkpoint) {
     logger.info(`♻️  Resuming debate for ${asset} from checkpoint (${checkpoint.status})`);
@@ -648,6 +656,7 @@ export async function runInvestmentCommitteeDebate(
   let stockMemory = currentStockMemory;
   let regimeLessons = currentRegimeLessons;
   let newsSummary = await buildNewsSummary(asset);
+  if (sentimentData) newsSummary += `\nSOURCED SENTIMENT (untrusted observations): score ${sentimentData.score}, mentions ${sentimentData.mentionCount}, volume z-score ${sentimentData.volumeZScore}, freshest ${sentimentData.freshnessMinutes ?? 'unknown'} minutes. Headlines: ${JSON.stringify(sentimentData.headlines)}. Missing or stale evidence is not confirmation.`;
   if (checkpoint?.evidenceBundle) {
     ({ fundamentalsSummary, stockMemory, newsSummary, macroSummary, optionsSummary, forecastSummary, regimeLessons } = checkpoint.evidenceBundle);
   }
@@ -1034,13 +1043,21 @@ export async function runInvestmentCommitteeDebate(
   transcript.masterSynthesis = masterDecision.synthesis || '';
   transcript.finalDecision = masterDecision.finalDecision || 'HOLD';
   transcript.finalConfidence = Number.isFinite(finalConfidence) ? Math.round(finalConfidence) : 0;
+  let sentimentMultiplier = 1;
+  if (sentimentService && sentimentData) {
+    const gate = sentimentService.evaluateSentimentGate(transcript.finalDecision, sentimentData);
+    sentimentMultiplier = Number.isFinite(gate.multiplier) ? Math.max(0, Math.min(1, gate.multiplier)) : 0;
+    transcript.sentiment = { score: sentimentData.score, mentionCount: sentimentData.mentionCount,
+      volumeZScore: sentimentData.volumeZScore, multiplier: sentimentMultiplier, veto: gate.veto, reason: gate.reason };
+    if (gate.veto || sentimentMultiplier === 0) { approved = false; blockReason = gate.reason; }
+  }
   if (positionReview) {
     approved = false;
     blockReason = 'Held-position research only — no execution authority';
   }
   transcript.executionApproved = approved;
   transcript.blockReason = blockReason || undefined;
-  transcript.positionSizePct = approved ? boundedPositionPct : 0;
+  transcript.positionSizePct = approved ? boundedPositionPct * sentimentMultiplier : 0;
   transcript.stopLossPrice = stopLoss;
   transcript.takeProfitPrice = takeProfit;
   transcript.riskRewardRatio = riskReward;
@@ -1070,7 +1087,7 @@ export async function runInvestmentCommitteeDebate(
       data: { ...__test__buildAgentDecisionData({
         asset, finalDecision: transcript.finalDecision, finalConfidence: transcript.finalConfidence,
         blockReason, agentArguments: transcript.agentArguments,
-        snapshot: { ...snapshot, inputFingerprint, evidenceBundle, ...(positionReview ? { positionReview } : {}), executionPlan: {
+        snapshot: { ...snapshot, inputFingerprint, evidenceBundle, sentiment: transcript.sentiment ?? null, ...(positionReview ? { positionReview } : {}), executionPlan: {
           purpose: transcript.purpose,
           version: 1, approved: transcript.executionApproved, mode: decisionMode, market: snapshot.market, lane: executionLane,
           direction: transcript.finalDecision, confidence: transcript.finalConfidence,
