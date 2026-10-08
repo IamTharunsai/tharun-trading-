@@ -1,3 +1,4 @@
+import { entryDecisionWhere } from '../trading/decisionVisibility';
 import { routedMessagesCreate } from '../utils/llmRouter';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
@@ -12,7 +13,7 @@ export async function generateDailyJournal() {
   try {
     const [trades, decisions, snapshot] = await Promise.all([
       prisma.trade.findMany({ where: { openedAt: { gte: today } }, orderBy: { openedAt: 'desc' } }),
-      prisma.agentDecision.findMany({ where: { timestamp: { gte: today } } }),
+      prisma.agentDecision.findMany({ where: entryDecisionWhere({ timestamp: { gte: today } }) }),
       prisma.portfolioSnapshot.findFirst({ orderBy: { timestamp: 'desc' } })
     ]);
 

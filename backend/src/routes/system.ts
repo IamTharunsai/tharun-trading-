@@ -38,8 +38,10 @@ router.get('/status', async (_req: Request, res: Response) => {
     killSwitch: isKillSwitchActive(),
     tradingMode: appConfig.TRADING_MODE,
     polymarket: {
-      mode: process.env.POLYMARKET_US_LIVE === 'true' ? 'live' : 'paper',
-      usConnected: pmUs.isPolymarketUSConfigured(),
+      mode: appConfig.TRADING_MODE === 'live' && process.env.POLYMARKET_US_LIVE === 'true' ? 'live' : 'paper',
+      usConnected: pmUs.getPolymarketUSHealth().connected,
+      usStatus: pmUs.getPolymarketUSHealth().status,
+      usConfigured: pmUs.isPolymarketUSConfigured(),
     },
     llm: {
       fast: { provider: llm.fast.provider, model: llm.fast.model, healthy: llm.fast.healthy, lastError: llm.fast.lastError },

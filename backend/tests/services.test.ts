@@ -25,3 +25,4 @@ describe('Service Methods', () => {
     expect(typeof intermarketService.getIntermarketAnalysis).toBe('function');
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

@@ -360,7 +360,7 @@ export default function Layout() {
                     <span className="text-slate-300">·</span>
                     <StatusPill
                       tone={status!.polymarket.mode === 'live' ? 'warn' : 'info'}
-                      label={`POLYMARKET: ${String(status!.polymarket.mode || 'unknown').toUpperCase()}${status!.polymarket.usConnected ? ' · US ✓' : ''}`}
+                      label={`POLYMARKET: ${String(status!.polymarket.mode || 'unknown').toUpperCase()}${status!.polymarket.usConnected ? ' · US verified' : status!.polymarket.usConfigured ? ' · US unverified' : ' · US not configured'}`}
                       testId="status-polymarket"
                     />
                   </>

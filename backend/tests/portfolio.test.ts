@@ -13,6 +13,10 @@ jest.mock('../src/utils/prisma', () => ({
 }));
 jest.mock('../src/services/marketData', () => ({ getCurrentPrices: jest.fn(() => ({})) }));
 jest.mock('../src/services/alpacaBroker', () => ({ createAlpacaBroker: jest.fn(() => null) }));
+jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: jest.fn(() => Promise.resolve({
+  accountId: 'fixture-account', mode: 'paper', broker: { getPortfolioSummary: async () => mockSummary },
+})) }));
+let mockSummary: any;
 
 import { prisma } from '../src/utils/prisma';
 import { getCurrentPrices } from '../src/services/marketData';
@@ -20,13 +24,17 @@ import { getPortfolioState } from '../src/services/portfolio';
 
 const mockPosition = (overrides: any) => ({
   id: 'p1', asset: 'NVDA', market: 'stocks', side: 'BUY',
+  accountId: 'fixture-account', brokerMode: 'paper',
   quantity: 10, entryPrice: 100, currentPrice: 100,
   stopLossPrice: 90, takeProfitPrice: 120,
   ...overrides,
 });
 
 describe('getPortfolioState — P&L math', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSummary = { account_id: 'fixture-account', portfolio_value: 100000, cash: 100000, buying_power: 100000, last_equity: 100000 };
+  });
 
   it('includes unrealized P&L in Total P&L, not just realized (closed) trades', async () => {
     (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ entryPrice: 100 })]);
@@ -43,7 +51,7 @@ describe('getPortfolioState — P&L math', () => {
   it('adds realized P&L from closed trades on top of unrealized', async () => {
     (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ entryPrice: 100 })]);
     (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 110 }); // +$10/share unrealized = $100
-    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ pnl: 50 }, { pnl: -20 }]); // +$30 realized
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ status: 'CLOSED', pnl: 50 }, { status: 'CLOSED', pnl: -20 }]); // +$30 realized
 
     const state = await getPortfolioState();
 
@@ -62,10 +70,11 @@ describe('getPortfolioState — P&L math', () => {
     expect(state.pnlTotal).toBeCloseTo(100); // 5 shares * $20 profit (short)
   });
 
-  it("falls back to realized+unrealized for Today's P&L when there's no prior snapshot yet", async () => {
+  it("uses the broker's previous equity for Today's P&L when there is no local day snapshot", async () => {
+    mockSummary.portfolio_value = 100160;
     (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ entryPrice: 100 })]);
     (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 115 });
-    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ pnl: 10 }]);
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ status: 'CLOSED', pnl: 10 }]);
     (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue(null);
 
     const state = await getPortfolioState();
@@ -90,6 +99,7 @@ describe('getPortfolioState — P&L math', () => {
   });
 
   it("computes pnlDayPct against the start-of-day baseline value, not current totalValue", async () => {
+    mockSummary.portfolio_value = 50000;
     // 100k -> 50k drop (a $500,000 unrealized loss: 1000 shares, $1000 -> $500).
     // Baseline-denominator (correct, matches pnlWeekPct): -50000 / 100000 = -50%.
     // Current-value-denominator (the bug this test guards against): -50000 / 50000 = -100%.

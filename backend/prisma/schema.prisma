@@ -44,6 +44,15 @@ model Trade {
   brokerConfirmed  Boolean       @default(false)
   agentDecisionId  String?
   agentDecision    AgentDecision? @relation(fields: [agentDecisionId], references: [id])
+  accountId        String?
+  brokerMode       String?
+  positionId       String?
+  position         Position? @relation(fields: [positionId], references: [id])
+  closedQuantity   Float @default(0)
+  realizedPnl      Float @default(0)
+  exitNotional     Float @default(0)
+  unrealizedPnl    Float @default(0)
+  unrealizedPnlPct Float @default(0)
   openedAt         DateTime      @default(now())
   closedAt         DateTime?
   stopLossPrice    Float?
@@ -95,10 +104,38 @@ model AgentDecision {
   inputDataFreshnessMs Float?
   timestamp       DateTime @default(now())
   trades          Trade[]
+  executionIntent ExecutionIntent?
 
   @@index([asset])
   @@index([timestamp])
   @@index([asset, regime])
+}
+
+// One durable claim per council decision. Ambiguous submissions retain their claim.
+model ExecutionIntent {
+  id                String @id @default(cuid())
+  decisionId        String @unique
+  decision          AgentDecision @relation(fields: [decisionId], references: [id])
+  clientOrderId     String @unique
+  brokerOrderId     String? @unique
+  asset             String
+  market            String
+  mode              String
+  accountId         String
+  executionPlan     Json
+  direction         String
+  quantity          Float
+  referencePrice    Float
+  protection        String
+  status            String @default("SUBMITTING")
+  fillPrice         Float?
+  fillQuantity      Float?
+  lastBrokerState   Json?
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([mode, accountId, status])
 }
 
 // Persists round1/round2 debate outputs as they complete, so a crash or
@@ -114,6 +151,8 @@ model DebateCheckpoint {
   round1Results  Json
   round2Exchange Json?
   marketRegime   String
+  inputFingerprint String?
+  evidenceBundle Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -121,7 +160,14 @@ model DebateCheckpoint {
 // OPEN POSITIONS
 model Position {
   id             String   @id @default(cuid())
-  asset          String   @unique
+  asset          String
+  scopeKey       String @unique @default(cuid())
+  accountId      String?
+  brokerMode     String?
+  pendingEntryIntentId String?
+  brokerObservedQuantity Float?
+  trades         Trade[]
+  exits          PositionExit[]
   market         String
   side           String   @default("BUY")
   quantity       Float
@@ -138,6 +184,77 @@ model Position {
   updatedAt      DateTime @updatedAt
 }
 
+model StrategyQualification {
+  id                 String @id @default(cuid())
+  strategyKey        String
+  revision           String
+  dataHash           String
+  reportHash         String
+  trialCount         Int
+  noLeakage          Boolean @default(false)
+  dsrProbability     Float
+  walkForwardPassed  Boolean @default(false)
+  costsValidated     Boolean @default(false)
+  executionValidated Boolean @default(false)
+  ledgerReconciled   Boolean @default(false)
+  healthPassed       Boolean @default(false)
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  evidence           Json
+  @@index([strategyKey, revision, createdAt])
+}
+
+// Durable cadence/lease for research of an existing account-bound position cycle.
+model PositionResearch {
+  id              String @id @default(cuid())
+  cycleKey        String @unique
+  positionId      String
+  accountId       String
+  brokerMode      String
+  asset           String
+  status          String @default("PENDING")
+  leaseToken      String?
+  leaseUntil      DateTime?
+  nextReviewAt    DateTime @default(now())
+  lastAttemptAt   DateTime?
+  lastCompletedAt DateTime?
+  decisionId      String?
+  observation     String?
+  error           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([accountId, brokerMode, nextReviewAt])
+}
+
+model PositionExit {
+  id                 String @id @default(cuid())
+  cycleKey           String @unique
+  positionId         String
+  position           Position @relation(fields: [positionId], references: [id])
+  accountId          String
+  brokerMode         String
+  symbol             String
+  side               String
+  quantity           Float
+  clientOrderId      String @unique
+  brokerOrderId      String?
+  reason             String
+  attempt            Int @default(1)
+  evidenceKind       String @default("CLIENT_ORDER")
+  status             String @default("PREPARING")
+  appliedQuantity    Float @default(0)
+  appliedNotional    Float @default(0)
+  realizedPnl        Float @default(0)
+  entryBasis         Float @default(0)
+  error              String?
+  brokerEvidence     Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([accountId, brokerMode, status, updatedAt])
+}
+
 // PORTFOLIO SNAPSHOTS
 model PortfolioSnapshot {
   id          String   @id @default(cuid())
@@ -149,10 +266,13 @@ model PortfolioSnapshot {
   pnlTotal    Float    @default(0)
   pnlTotalPct Float    @default(0)
   source      String   @default("VERIFIED_LEDGER")
+  accountId   String?
+  brokerMode  String?
   timestamp   DateTime @default(now())
 
   @@index([timestamp])
   @@index([totalValue])
+  @@index([accountId, brokerMode, timestamp])
 }
 
 // NEWS FEED

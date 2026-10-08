@@ -60,8 +60,8 @@ export const runAndTrade = (asset: string, market = 'stocks') =>
   api.post('/agents/run-and-trade', { asset, market }).then(r => r.data);
 export const forceTrade = (asset: string, market = 'stocks', direction = 'BUY') =>
   api.post('/agents/force-trade', { asset, market, direction }).then(r => r.data);
-export const runBacktestApi = (config: any) =>
-  api.post('/backtest/run', config).then(r => r.data);
+export const runBacktestApi = (config: any, signal?: AbortSignal) =>
+  api.post('/backtest/run', config, { signal, timeout: 180000 }).then(r => r.data);
 export const sendAgentChat = (agentId: number, message: string, asset?: string, conversationHistory: any[] = []) =>
   api.post(`/chat/${agentId}`, { message, asset, conversationHistory }).then(r => r.data);
 export const getAgentChatHistory = (agentId: number) =>
@@ -179,7 +179,7 @@ export interface DataProviderStatus { configured: boolean; healthy?: boolean }
 export interface SystemStatus {
   scheduler: 'online' | 'offline';
   tradingMode: 'paper' | 'live';
-  polymarket: { mode: 'paper' | 'live'; usConnected: boolean };
+  polymarket: { mode: 'paper' | 'live'; usConnected: boolean; usStatus?: string; usConfigured?: boolean };
   llm: { fast: LlmTierStatus; smart: LlmTierStatus; spendTodayUsd: number; budgetUsd: number; callsToday?: number };
   alpaca: { connected: boolean; mode: 'paper' | 'live' };
   intraday: {
@@ -200,5 +200,7 @@ export const runBrokerSync = () => api.post('/system/broker-sync').then(r => r.d
 // ── POLYMARKET US ────────────────────────────────────────────────────────────
 export const getPolymarketUsAccount = () =>
   api.get('/market/polymarket-us/account').then(r => r.data);
+export const getPredictionSimulations = (page = 1) =>
+  api.get('/market/predictions/simulations', { params: { page } }).then(r => r.data);
 
 export default api;

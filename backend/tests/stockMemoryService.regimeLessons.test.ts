@@ -19,7 +19,7 @@ describe('getRegimeMatchedLessons', () => {
     const { getRegimeMatchedLessons } = require('../src/services/stockMemoryService');
     await getRegimeMatchedLessons('AAPL', 'TRENDING_BULL');
     expect(prisma.agentDecision.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ asset: 'AAPL', regime: 'TRENDING_BULL' }),
+      where: { AND: [{ asset: 'AAPL', regime: 'TRENDING_BULL' }, { OR: [{ horizon: { not: 'POSITION_REVIEW' } }, { horizon: null }] }] },
       orderBy: { timestamp: 'desc' },
       take: 3,
     }));

@@ -6,3 +6,4 @@ describe('Technician agent — anti-hallucination grounding', () => {
     expect(technician.systemPrompt).toMatch(/unless.*(directly supported|backed by|confirmed by)/i);
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

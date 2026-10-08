@@ -27,8 +27,8 @@ export default function SettingsPage() {
   });
   const pmUs: any = pmUsQ.data;
   const pmUsOk = !pmUsQ.isError && !!pmUs && pmUs.connected !== false && !pmUs.error;
-  const pmUsCash = pmUsOk && Number.isFinite(Number(pmUs.cash)) ? Number(pmUs.cash) : null;
-  const pmUsBuyingPower = pmUsOk && Number.isFinite(Number(pmUs.buyingPower)) ? Number(pmUs.buyingPower) : null;
+  const pmUsCash = pmUsOk && typeof pmUs.cash === 'number' && Number.isFinite(pmUs.cash) ? pmUs.cash : null;
+  const pmUsBuyingPower = pmUsOk && typeof pmUs.buyingPower === 'number' && Number.isFinite(pmUs.buyingPower) ? pmUs.buyingPower : null;
   const pmUsPositions = pmUsOk && pmUs.positions && typeof pmUs.positions === 'object' ? (Array.isArray(pmUs.positions) ? pmUs.positions.length : Object.keys(pmUs.positions).length) : null;
   const pmUsReason: string = pmUsQ.isError ? ((pmUsQ.error as any)?.response?.data?.error || (pmUsQ.error as any)?.response?.data?.reason || (pmUsQ.error as any)?.message || 'request failed') : (pmUs?.reason || pmUs?.error || '');
 

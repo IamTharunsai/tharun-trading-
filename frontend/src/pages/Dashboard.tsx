@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPortfolio, getTradeStats, getPositions, getLiveAccounts, runDebate, scanPredictionMarkets } from '../services/api';
+import { getPortfolio, getTradeStats, getPositions, getLiveAccounts, getPolymarketUsAccount, runDebate, scanPredictionMarkets } from '../services/api';
 import SymbolPicker from '../components/common/SymbolPicker';
 import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
 import { useSystemStatus } from '../hooks/useSystemStatus';
@@ -38,6 +38,11 @@ export default function DashboardPage() {
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
   const { data: liveAccounts } = useQuery({ queryKey: ['live-accounts'], queryFn: getLiveAccounts, refetchInterval: 30000, retry: false });
   const { data: sysStatus } = useSystemStatus();
+  const pmUsQuery = useQuery({ queryKey: ['polymarket-us-account'], queryFn: getPolymarketUsAccount, refetchInterval: 60000, retry: false });
+  const pmUs = pmUsQuery.data;
+  const pmUsConnected = !pmUsQuery.isError && pmUs?.connected === true;
+  const pmUsCash = pmUsConnected && typeof pmUs.cash === 'number' && Number.isFinite(pmUs.cash) ? pmUs.cash : null;
+  const pmUsPower = pmUsConnected && typeof pmUs.buyingPower === 'number' && Number.isFinite(pmUs.buyingPower) ? pmUs.buyingPower : null;
   const { killSwitchActive, currentAnalysis } = useStore();
   const { symbol: selectedAsset, market: selectedMarket, setSymbol: setSelectedAsset } = useSelectedSymbol('all');
 
@@ -193,10 +198,18 @@ export default function DashboardPage() {
         />
         <StatCard
           testId="stat-polymarket"
-          label="Polymarket"
+          label="Polymarket International"
           value={pmConnected && pmValue !== null ? fmtUsd(pmValue) : '—'}
           sub={pmConnected ? 'Connected account value' : 'Not connected'}
           icon={<Activity size={16} />}
+          mono
+        />
+        <StatCard
+          testId="stat-polymarket-us"
+          label="Polymarket US · Cash"
+          value={pmUsCash === null ? '—' : fmtUsd(pmUsCash)}
+          sub={pmUsQuery.isError ? 'Account request failed · check Settings' : pmUsQuery.isLoading ? 'Checking account…' : !pmUsConnected ? 'Not connected · check Settings' : pmUsCash === null ? 'USD balance unavailable' : `Buying power: ${fmtUsd(pmUsPower)}`}
+          icon={<DollarSign size={16} />}
           mono
         />
         <StatCard

@@ -96,16 +96,21 @@ export interface TradeSignal {
   asset: string;
   market: Market;
   direction: VoteDirection;
-  confidence: number;
+  confidence: number; // percentage, 0-100; never a fraction
   entryPrice: number;
   stopLossPrice: number;
   takeProfitPrice: number;
   positionSizePct: number;
   reasoning: string;
   agentDecisionId: string;
+  voteCounts?: { supporting: number; opposing: number; abstaining: number };
 }
 
 export interface PortfolioState {
+  accountId?: string;
+  brokerMode?: 'paper' | 'live';
+  buyingPower?: number;
+  riskDataComplete?: boolean;
   totalValue: number;
   cashBalance: number;
   invested: number;

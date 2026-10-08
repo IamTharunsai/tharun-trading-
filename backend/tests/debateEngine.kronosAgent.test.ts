@@ -39,3 +39,4 @@ describe('Agent #14 — Quant Forecaster wiring', () => {
     expect(context).toContain('152.30');
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

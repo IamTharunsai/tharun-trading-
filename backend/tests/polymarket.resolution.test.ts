@@ -33,7 +33,7 @@ describe('pollPolymarketResolutions', () => {
       { id: 'trade-1', asset: 'POLYMARKET', brokerOrderId: 'cond-abc-123', entryPrice: 0.4, quantity: 100, type: 'BUY' },
     ]);
     (axios.get as jest.Mock).mockResolvedValue({
-      data: [{ condition_id: 'cond-abc-123', closed: true, outcomePrices: '["1", "0"]' }],
+      data: [{ condition_id: 'cond-abc-123', closed: true, outcomes: ['YES', 'NO'], outcomePrices: '["1", "0"]' }],
     });
 
     const { pollPolymarketResolutions } = require('../src/services/polymarket');
@@ -59,4 +59,34 @@ describe('pollPolymarketResolutions', () => {
 
     expect(prisma.trade.update).not.toHaveBeenCalled();
   });
+});
+
+it('US live credentials cannot submit international token orders or fabricate fills', async () => {
+  jest.clearAllMocks();
+  process.env.POLYMARKET_US_LIVE = 'true';
+  const { placePolymarketBet } = require('../src/services/polymarket');
+  const result = await placePolymarketBet({ conditionId: 'fixture-condition', recommendedSide: 'YES' }, 'fixture-condition', false);
+  expect(result.success).toBe(false);
+  expect(axios.post).not.toHaveBeenCalled();
+  expect(prisma.trade.create).not.toHaveBeenCalled();
+});
+it('simulation storage failure cannot claim a successful bet', async () => {
+  jest.clearAllMocks();
+  (prisma.trade.create as jest.Mock).mockRejectedValueOnce(new Error('fixture DB failure'));
+  const { placePolymarketBet } = require('../src/services/polymarket');
+  await expect(placePolymarketBet({ conditionId: 'fixture', question: 'Fixture?', recommendedSide: 'NO', betSizeUSD: 10, marketImpliedProbability: 0.4 }, 'fixture', true)).rejects.toThrow('fixture DB failure');
+});
+it('invalid simulation is refused before database work', async () => {
+  jest.clearAllMocks();
+  const { placePolymarketBet } = require('../src/services/polymarket');
+  expect((await placePolymarketBet({ recommendedSide: 'SKIP' }, 'fixture', true)).success).toBe(false);
+  expect(prisma.trade.create).not.toHaveBeenCalled();
+});
+it.each(['["0","0"]', '["0.5","0.5"]', '["0.99","0.01"]', 'invalid-json'])('ambiguous closed market is not a NO win: %s', async prices => {
+  jest.clearAllMocks();
+  (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ id: 'fixture', brokerOrderId: 'fixture', type: 'SELL', entryPrice: 0.4, quantity: 10 }]);
+  (axios.get as jest.Mock).mockResolvedValue({ data: [{ conditionId: 'fixture', closed: true, outcomes: ['YES', 'NO'], outcomePrices: prices }] });
+  const { pollPolymarketResolutions } = require('../src/services/polymarket');
+  await pollPolymarketResolutions();
+  expect(prisma.trade.update).not.toHaveBeenCalled();
 });

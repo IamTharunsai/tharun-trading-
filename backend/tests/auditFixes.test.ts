@@ -1,4 +1,7 @@
 // Regression tests for the 2026-09-28 audit fixes.
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
+jest.mock('../src/services/marketData', () => ({ getCurrentPrice: jest.fn(), buildMarketSnapshot: jest.fn() }));
 import { buildStockOrder } from '../src/trading/executionEngine';
 import { preDebateGate } from '../src/trading/preDebateGate';
 import { toOpenAiChat, tierForModel, providerFor } from '../src/utils/llmRouter';

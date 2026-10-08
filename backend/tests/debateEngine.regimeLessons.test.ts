@@ -39,3 +39,4 @@ describe('buildMarketContext — regime-matched lessons section', () => {
     expect(context).not.toContain('REGIME HISTORY');
   });
 });
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));

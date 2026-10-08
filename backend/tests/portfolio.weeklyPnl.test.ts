@@ -13,6 +13,11 @@ jest.mock('../src/utils/prisma', () => ({
 }));
 jest.mock('../src/services/marketData', () => ({ getCurrentPrices: jest.fn(() => ({})) }));
 jest.mock('../src/services/alpacaBroker', () => ({ createAlpacaBroker: jest.fn(() => null) }));
+jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: jest.fn(() => Promise.resolve({
+  accountId: 'fixture-account', mode: 'paper', broker: { getPortfolioSummary: async () => ({
+    account_id: 'fixture-account', portfolio_value: 100000, cash: 100000, buying_power: 100000, last_equity: 100000,
+  }) },
+})) }));
 
 import { prisma } from '../src/utils/prisma';
 import { getPortfolioState } from '../src/services/portfolio';
@@ -48,5 +53,6 @@ describe('getPortfolioState — weekly P&L', () => {
     const state = await getPortfolioState();
 
     expect(state.pnlWeekPct).toBe(0);
+    expect(state.riskDataComplete).toBe(false);
   });
 });

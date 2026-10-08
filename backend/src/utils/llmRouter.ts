@@ -133,13 +133,14 @@ function anthropic(): Anthropic {
   return anthropicClient;
 }
 
-async function callOpenAiCompat(provider: LlmProvider, model: string, params: any) {
+async function callOpenAiCompat(provider: LlmProvider, model: string, params: any, signal?: AbortSignal) {
   const { baseUrl, apiKey } = endpoint(provider);
   if (!baseUrl) throw new Error(`LLM provider ${provider} has no base URL configured`);
   if (provider === 'nvidia' && !hasKey(apiKey)) throw new Error('NVIDIA_API_KEY not set');
   const res = await axios.post(`${baseUrl.replace(/\/$/, '')}/chat/completions`, toOpenAiChat(params, model), {
     headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
     timeout: Number(process.env.LLM_TIMEOUT_MS || 60000),
+    signal,
   });
   const text = stripReasoning(res.data?.choices?.[0]?.message?.content ?? '');
   if (!text) throw Object.assign(new Error(`${provider}/${model} returned empty content`), { status: 502 });
@@ -176,18 +177,22 @@ export function attemptChain(params: any): Attempt[] {
  * Anthropic-compatible `messages.create` that routes to the configured provider
  * and fails over down the chain. `anthropicCreate` can be injected for tests.
  */
-export async function routedMessagesCreate(params: any, anthropicCreate?: (p: any) => Promise<any>): Promise<any> {
+export async function routedMessagesCreate(params: any, anthropicCreate?: (p: any, options?: { signal?: AbortSignal }) => Promise<any>, options: { signal?: AbortSignal } = {}): Promise<any> {
+  options.signal?.throwIfAborted();
   const chain = attemptChain(params);
   let lastErr: any;
   for (const { provider, model } of chain) {
+    options.signal?.throwIfAborted();
     try {
       const res = provider === 'anthropic'
-        ? await (anthropicCreate || ((p: any) => anthropic().messages.create(p)))({ ...params, model })
-        : await callOpenAiCompat(provider, model, params);
+        ? await (anthropicCreate || ((p: any, requestOptions?: { signal?: AbortSignal }) => anthropic().messages.create(p, requestOptions)))({ ...params, model }, options)
+        : await callOpenAiCompat(provider, model, params, options.signal);
+      options.signal?.throwIfAborted();
       mark(provider, true);
       if (provider === 'anthropic') return { ...res, provider: 'anthropic', model };
       return res;
     } catch (err: any) {
+      if (options.signal?.aborted) throw options.signal.reason;
       mark(provider, false, err);
       lastErr = err;
       if (!isFailover(err)) break;

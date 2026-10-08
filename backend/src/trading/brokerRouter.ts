@@ -14,6 +14,7 @@
 import { AlpacaBroker } from '../services/alpacaBroker';
 import { appConfig } from '../utils/config';
 import { isPlaceholderKey } from '../utils/apiKeys';
+import { createHash } from 'crypto';
 
 export type BrokerMode = 'paper' | 'live';
 
@@ -48,7 +49,9 @@ export function getTradingBroker(): AlpacaBroker | null {
 
   if (isPlaceholderKey(apiKey) || isPlaceholderKey(secret)) return null;
 
-  const cacheKey = `${mode}:${apiKey}`;
+  // Include both credentials without retaining another plaintext secret.
+  // Rotation of only the secret must replace the authenticated HTTP client.
+  const cacheKey = createHash('sha256').update(JSON.stringify([mode, apiKey, secret])).digest('hex');
   if (cached?.key !== cacheKey) {
     cached = { key: cacheKey, broker: new AlpacaBroker(apiKey!, secret!, mode === 'paper') };
   }

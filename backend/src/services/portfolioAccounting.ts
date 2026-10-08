@@ -1,9 +1,12 @@
 import { prisma } from '../utils/prisma';
 import { getCurrentPrices } from './marketData';
-import { accountManager } from './accountManager';
-import { appConfig } from '../utils/config';
+import { getPortfolioState } from './portfolio';
 
 export interface PerformanceMetrics {
+  accountId?: string;
+  brokerMode?: string;
+  riskDataComplete?: boolean;
+  feeDataComplete?: boolean;
   totalEquity: number;
   cashBalance: number;
   buyingPower: number;
@@ -36,36 +39,33 @@ export interface PerformanceMetrics {
   timestamp: string;
 }
 
-// Decimal-safe precision rounding
+// Display rounding; stored broker/accounting evidence retains full precision.
 function round2(val: number): number {
   return Math.round((val + Number.EPSILON) * 100) / 100;
 }
 
-function round4(val: number): number {
-  return Math.round((val + Number.EPSILON) * 10000) / 10000;
-}
-
 export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetrics> {
+  const currentPortfolio = await getPortfolioState();
+  const scope = { accountId: currentPortfolio.accountId, brokerMode: currentPortfolio.brokerMode };
   const prices = getCurrentPrices();
-  const openPositions = await prisma.position.findMany({ where: { status: 'OPEN' } });
-  const allClosedTrades = await prisma.trade.findMany({ where: { status: 'CLOSED' } });
+  const openPositions = currentPortfolio.positions;
+  const allClosedTrades = await prisma.trade.findMany({ where: { ...scope, status: 'CLOSED' } });
+  const partiallyClosed = await prisma.trade.findMany({ where: { ...scope, status: 'OPEN' } });
 
   // 1. Calculate Realized Trade Stats
-  let realizedPnl = 0;
+  let realizedPnl = partiallyClosed.reduce((sum, trade) => sum + (trade.realizedPnl ?? 0), 0);
   let totalFeesPaid = 0;
   let winningTrades = 0;
   let losingTrades = 0;
   let breakEvenTrades = 0;
   let totalWinDollars = 0;
   let totalLossDollars = 0;
-  const pnlList: number[] = [];
 
   for (const t of allClosedTrades) {
     const pnl = Number(t.pnl) || 0;
     const fees = Number(t.fees) || 0;
     realizedPnl += pnl;
     totalFeesPaid += fees;
-    pnlList.push(pnl);
 
     if (pnl > 0.0001) {
       winningTrades++;
@@ -115,95 +115,23 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
     unrealizedPnl += posUnrealized;
   }
 
-  // 3. Ground-truth Broker & Wallet Synchronization
-  let alpacaEquity = 0;
-  let alpacaCash = 0;
-  let alpacaBuyingPower = 0;
-  let polymarketEquity = 0;
-  let dataSource = 'INTERNAL_LEDGER';
-
-  if (accountManager.isAlpacaConnected()) {
-    const alp = accountManager.getAlpacaState();
-    alpacaEquity = alp.portfolioValue;
-    alpacaCash = alp.cash;
-    alpacaBuyingPower = alp.buyingPower;
-    dataSource = 'ALPACA_AUTHENTICATED';
-  }
-
-  if (accountManager.isPolymarketConnected()) {
-    const poly = accountManager.getPolymarketState();
-    polymarketEquity = poly.portfolioValue;
-    if (dataSource === 'ALPACA_AUTHENTICATED') {
-      dataSource = 'HYBRID_ALPACA_POLYMARKET';
-    } else {
-      dataSource = 'POLYMARKET_ONCHAIN';
-    }
-  }
-
-  // If live broker is connected, use real live broker equity
-  let totalEquity = 0;
-  let cashBalance = 0;
-  let buyingPower = 0;
-
-  if (accountManager.isAlpacaConnected() || accountManager.isPolymarketConnected()) {
-    totalEquity = round2(alpacaEquity + polymarketEquity);
-    cashBalance = round2(alpacaCash + (accountManager.getPolymarketState()?.usdcBalance || 0));
-    buyingPower = round2(alpacaBuyingPower + (accountManager.getPolymarketState()?.usdcBalance || 0));
-  } else {
-    // When no external broker keys are connected, report authentic ledger totals
-    // Do not fabricate a fake $100k balance — report real cash deposits or zero
-    // Same capital base as the risk engine (services/portfolio.ts) — the two
-    // used different env vars, so the dashboard showed $0 / negative cash
-    // while the risk manager sized trades off STARTING_CAPITAL.
-    const deposits = Number(process.env.INITIAL_LEDGER_DEPOSIT) || Number(process.env.STARTING_CAPITAL) || 0;
-    cashBalance = round2(deposits + realizedPnl - investedCollateral);
-    totalEquity = round2(cashBalance + investedCollateral + unrealizedPnl);
-    buyingPower = cashBalance;
-  }
-
+  // Equity/cash are scoped to the verified current broker account. Prediction
+  // wallets are separate accounts and must not be mixed with a paper ledger.
+  const alpacaEquity = currentPortfolio.totalValue;
+  const polymarketEquity = 0;
+  const totalEquity = currentPortfolio.totalValue;
+  const cashBalance = currentPortfolio.cashBalance;
+  const buyingPower = currentPortfolio.buyingPower ?? 0;
+  const dataSource = `ALPACA_AUTHENTICATED_${currentPortfolio.brokerMode?.toUpperCase()}`;
   const totalPnl = round2(realizedPnl + unrealizedPnl);
-
-  // Daily P&L calculated against start-of-day snapshot
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const startOfDaySnap = await prisma.portfolioSnapshot.findFirst({
-    where: { timestamp: { lt: today } },
-    orderBy: { timestamp: 'desc' }
-  });
-
-  const dailyPnl = (startOfDaySnap && totalEquity > 0)
-    ? round2(totalEquity - startOfDaySnap.totalValue)
-    : round2(realizedPnl + unrealizedPnl);
-
-  const dailyPnlPct = (startOfDaySnap && startOfDaySnap.totalValue > 0 && totalEquity > 0)
-    ? round2((dailyPnl / startOfDaySnap.totalValue) * 100)
-    : (totalEquity > 0 ? round2((dailyPnl / totalEquity) * 100) : 0);
-
-  // Sharpe and Sortino Ratios (strictly calculated if >= 10 returns exist)
-  let sharpeRatio: number | string = 'N/A (<10 trades)';
-  let sortinoRatio: number | string = 'N/A (<10 trades)';
-
-  if (pnlList.length >= 10) {
-    const mean = pnlList.reduce((a, b) => a + b, 0) / pnlList.length;
-    const variance = pnlList.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / (pnlList.length - 1);
-    const stdDev = Math.sqrt(variance);
-
-    if (stdDev > 0) {
-      sharpeRatio = round2(mean / stdDev);
-    }
-
-    const downReturns = pnlList.filter(p => p < 0);
-    if (downReturns.length > 0) {
-      const downVariance = downReturns.reduce((sum, p) => sum + Math.pow(p, 2), 0) / downReturns.length;
-      const downDev = Math.sqrt(downVariance);
-      if (downDev > 0) {
-        sortinoRatio = round2(mean / downDev);
-      }
-    }
-  }
-
+  const dailyPnl = round2(currentPortfolio.pnlDay);
+  const dailyPnlPct = round2(currentPortfolio.pnlDayPct);
+  // Dollar trade profits are not period returns. A reconciled cash-flow-adjusted
+  // return series is required before publishing Sharpe or Sortino.
+  const sharpeRatio = 'N/A: verified return series required';
+  const sortinoRatio = 'N/A: verified return series required';
   // Drawdown from peak
-  const peakSnap = await prisma.portfolioSnapshot.findFirst({ orderBy: { totalValue: 'desc' } });
+  const peakSnap = await prisma.portfolioSnapshot.findFirst({ where: scope, orderBy: { totalValue: 'desc' } });
   const peak = peakSnap ? Math.max(peakSnap.totalValue, totalEquity) : totalEquity;
   const maxDrawdownPct = (peak > 0 && totalEquity > 0) ? round2(((peak - totalEquity) / peak) * 100) : 0;
 
@@ -211,6 +139,8 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   const exposurePct = totalEquity > 0 ? round2((investedCollateral / totalEquity) * 100) : 0;
 
   return {
+    accountId: currentPortfolio.accountId, brokerMode: currentPortfolio.brokerMode,
+    riskDataComplete: currentPortfolio.riskDataComplete, feeDataComplete: false,
     totalEquity: round2(totalEquity),
     cashBalance: round2(cashBalance),
     buyingPower: round2(buyingPower),

@@ -1,3 +1,4 @@
+import { entryDecisionWhere } from '../trading/decisionVisibility';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 
@@ -111,7 +112,7 @@ export async function recordDebate(symbol: string, vote: string): Promise<void> 
 export async function getRegimeMatchedLessons(symbol: string, regime: string): Promise<string> {
   try {
     const pastDecisions = await prisma.agentDecision.findMany({
-      where: { asset: symbol, regime },
+      where: entryDecisionWhere({ asset: symbol, regime }),
       orderBy: { timestamp: 'desc' },
       take: 3,
     });
