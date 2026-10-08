@@ -15,7 +15,7 @@ import { prisma } from '../utils/prisma';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { TradeSignal } from '../agents/types';
 import { preDebateGate } from '../trading/preDebateGate';
-import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions } from '../services/polymarket';
+import { scanPolymarketOpportunities, placePolymarketBet, pollPolymarketResolutions, isPolymarketScanRunning } from '../services/polymarket';
 
 const analyzedTradeIds = new Set<string>();
 
@@ -39,7 +39,16 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
     logger.info(`\n🏛️ Investment Committee convening for ${asset}...`);
     const snapshot = await buildMarketSnapshot(asset, market);
     if (!snapshot) { logger.warn(`No snapshot for ${asset}`); return; }
-    const gate = opts.bypassGate ? { pass: true, setup: 'MANUAL', reason: 'manually triggered' } : preDebateGate(snapshot as any);
+    // Cheap news-only sentiment (no X reads) so a mention-volume spike can
+    // nominate a symbol the technical gate would otherwise skip.
+    let gateSentiment: any = null;
+    if (!opts.bypassGate) {
+      try {
+        const svc = await import('../services/sentimentService');
+        if (svc.isSentimentEnabled()) gateSentiment = await svc.getSentiment(asset, { market, includeX: false });
+      } catch { gateSentiment = null; }
+    }
+    const gate = opts.bypassGate ? { pass: true, setup: 'MANUAL', reason: 'manually triggered' } : preDebateGate({ ...(snapshot as any), sentiment: gateSentiment });
     if (!gate.pass) {
       logger.info(`⏭️ ${asset}: skipped before debate — ${gate.reason} (saved ~30 LLM calls)`);
       return;
@@ -56,7 +65,6 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
     const portfolio = await getPortfolioState();
     const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime);
     if (transcript.executionApproved && transcript.finalDecision !== 'HOLD') {
-      const decision = await prisma.agentDecision.findFirst({ where: { asset }, orderBy: { timestamp: 'desc' } });
       const signal: TradeSignal = {
         asset, market,
         direction: transcript.finalDecision as 'BUY' | 'SELL',
@@ -66,9 +74,12 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
         takeProfitPrice: transcript.takeProfitPrice,
         positionSizePct: transcript.positionSizePct,
         reasoning: transcript.masterSynthesis.slice(0, 500),
-        agentDecisionId: decision?.id || ''
+        agentDecisionId: transcript.agentDecisionId || ''
       };
       const riskCheck = await validateTradeSignal(signal, portfolio);
+      if (riskCheck.approved && typeof riskCheck.adjustedSize === 'number') {
+        signal.positionSizePct = riskCheck.adjustedSize; // clamped to MAX_POSITION_SIZE_PCT
+      }
       if (riskCheck.approved) {
         const executed = await executeTradeSignal(signal, portfolio);
         transcript.tradeExecuted = executed;
@@ -365,9 +376,16 @@ export function initScheduler() {
         return;
       }
       const portfolio = await getPortfolioState();
+      if (isPolymarketScanRunning()) {
+        logger.info('🎯 Previous Polymarket scan still running — skipping this tick');
+        return;
+      }
       const opportunities = await scanPolymarketOpportunities(portfolio.totalValue);
+      // The only place bets are placed. placePolymarketBet re-checks de-dupe per
+      // market, POLYMARKET_MAX_OPEN and the optional USD exposure cap, and is
+      // paper unless the live gate allows (it never does with isPaper=true).
       for (const opp of opportunities.slice(0, slotsAvailable)) {
-        await placePolymarketBet(opp, opp.conditionId, true); // paper mode
+        await placePolymarketBet(opp, opp.conditionId, true);
       }
     } catch (err: any) { logger.warn(`Polymarket scan skipped: ${err?.message || err?.code || 'network error'}`); }
   });

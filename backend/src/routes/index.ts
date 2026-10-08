@@ -981,18 +981,25 @@ settingsRouter.use(requireAuth);
 
 settingsRouter.get('/', async (_req: Request, res: Response) => {
   const { accountManager } = await import('../services/accountManager');
+  const { readRiskSettings } = await import('../utils/config');
+  const { getActiveMode } = await import('../trading/brokerRouter');
+  const { isSentimentEnabled } = await import('../services/sentimentService');
+  const risk = readRiskSettings();
   res.json({
-    tradingMode: process.env.TRADING_MODE || 'paper',
+    // Effective mode from the live gate (not the raw env var).
+    tradingMode: getActiveMode(),
     stopLossMethod: 'ATR-based (dynamic per trade, not a fixed %)',
     takeProfitMethod: '2.5x the ATR-based stop distance (min 2:1 risk/reward)',
     maxRiskPerTrade: process.env.MAX_RISK_PER_TRADE_PCT || '1',
-    maxPositionSize: process.env.MAX_POSITION_SIZE_PCT || '10',
-    dailyLossLimit: process.env.DAILY_LOSS_LIMIT_PCT || '5',
-    weeklyDrawdownLimit: process.env.WEEKLY_DRAWDOWN_LIMIT_PCT || '10',
-    maxDrawdown: process.env.MAX_DRAWDOWN_ALL_TIME_PCT || '20',
-    cashReserve: process.env.CASH_RESERVE_PCT || '30',
-    maxTradesPerDay: process.env.MAX_TRADES_PER_DAY || '50',
-    minAgentConfidence: process.env.MIN_AGENT_CONFIDENCE || '65',
+    maxPositionSize: String(risk.maxPositionSizePct),
+    dailyLossLimit: String(risk.dailyLossLimitPct),
+    weeklyDrawdownLimit: String(risk.weeklyDrawdownLimitPct),
+    maxDrawdown: String(risk.maxDrawdownPct),
+    cashReserve: String(risk.cashReservePct),
+    maxTradesPerDay: String(risk.maxTradesPerDay),
+    maxOpenPositions: String(risk.maxOpenPositions),
+    minAgentConfidence: String(risk.minAgentConfidence),
+    sentimentEnabled: isSentimentEnabled(),
     minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '5',
     cacheStatus: redis.status === 'ready' ? 'Redis (connected)' : 'None — running without cache',
     kronosServiceConfigured: !!process.env.KRONOS_SERVICE_URL,
