@@ -529,13 +529,29 @@ export function keywordsForQuestion(q: string, max = 6): string[] {
 }
 
 /** Recent, filtered headlines (and X posts if configured) for a free-text question. */
-export async function getHeadlinesForQuery(query: string, limit = 5): Promise<string[]> {
-  if (!isSentimentEnabled()) return [];
+export interface QuerySentiment {
+  /** -1..+1 tone of the kept items. Tone is NOT the same as "YES is more likely". */
+  score: number;
+  mentions: number;
+  /** Hours since the newest kept item (null when nothing was found). */
+  freshestHours: number | null;
+  headlines: string[];
+  scorer: SentimentResult['scorer'];
+}
+
+const EMPTY_QUERY_SENTIMENT: QuerySentiment = { score: 0, mentions: 0, freshestHours: null, headlines: [], scorer: 'none' };
+
+/**
+ * News (GDELT, 72h) + optional X posts for a free-text question (Polymarket),
+ * filtered, scored and cached (SENTIMENT_HEADLINE_CACHE_TTL_SEC, default 1800).
+ */
+export async function getQuerySentiment(query: string, limit = 8): Promise<QuerySentiment> {
+  if (!isSentimentEnabled()) return EMPTY_QUERY_SENTIMENT;
   const words = keywordsForQuestion(query);
-  if (words.length < 2) return [];
-  const key = `headlines:v1:${crypto.createHash('sha1').update(words.join(' ').toLowerCase()).digest('hex')}`;
-  const cached = await cacheGet<string[]>(key);
-  if (cached) return cached.slice(0, limit);
+  if (words.length < 2) return EMPTY_QUERY_SENTIMENT;
+  const key = `headlines:v2:${crypto.createHash('sha1').update(words.join(' ').toLowerCase()).digest('hex')}`;
+  const cached = await cacheGet<QuerySentiment>(key);
+  if (cached) return { ...cached, headlines: cached.headlines.slice(0, limit) };
   const since = new Date(Date.now() - 72 * 3_600_000);
   const gdeltQ = words.length > 3 ? `(${words.slice(0, 4).join(' ')})` : words.join(' ');
   const [news, posts] = await Promise.all([
@@ -546,7 +562,24 @@ export async function getHeadlinesForQuery(query: string, limit = 5): Promise<st
   ]);
   const { kept } = filterItems([...news, ...posts]);
   kept.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
-  const out = kept.slice(0, Math.max(limit, 8)).map(k => `[${k.source}] ${k.text.slice(0, 200)}`);
+  let score = 0;
+  let scorer: SentimentResult['scorer'] = 'none';
+  if (kept.length) {
+    const scored = await scoreTexts(kept.map(k => k.text));
+    score = Math.max(-1, Math.min(1, aggregate(kept, scored.scores)));
+    scorer = scored.scorer;
+  }
+  const out: QuerySentiment = {
+    score,
+    mentions: kept.length,
+    freshestHours: kept.length ? Math.max(0, (Date.now() - kept[0].publishedAt.getTime()) / 3_600_000) : null,
+    headlines: kept.slice(0, Math.max(limit, 8)).map(k => `[${k.source}] ${k.text.slice(0, 200)}`),
+    scorer,
+  };
   await cacheSet(key, out, Number(process.env.SENTIMENT_HEADLINE_CACHE_TTL_SEC || 1800));
-  return out.slice(0, limit);
+  return { ...out, headlines: out.headlines.slice(0, limit) };
+}
+
+export async function getHeadlinesForQuery(query: string, limit = 5): Promise<string[]> {
+  return (await getQuerySentiment(query, limit)).headlines;
 }

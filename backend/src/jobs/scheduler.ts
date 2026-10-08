@@ -366,8 +366,23 @@ export function initScheduler() {
   // debating. Capped concurrent Polymarket positions at 3 (matching the
   // existing "top 3 opportunities" sizing) and skip placing more once at cap.
   const MAX_OPEN_POLYMARKET_POSITIONS = Number(process.env.POLYMARKET_MAX_OPEN || 10);
+  // POLYMARKET_VENUE=us (default): the Polymarket US edge engine
+  // (services/polymarketEdge.ts) — paper only, order-book aware, scored.
+  // POLYMARKET_VENUE=intl: the older international Gamma scanner (paper).
+  const polymarketVenue = String(process.env.POLYMARKET_VENUE || 'us').toLowerCase() === 'intl' ? 'intl' : 'us';
   cron.schedule(`*/${Number(process.env.POLYMARKET_SCAN_EVERY_MIN || 15)} * * * *`, async () => {
     if (isKillSwitchActive()) return;
+    if (polymarketVenue === 'us') {
+      try {
+        const edge = await import('../services/polymarketEdge');
+        if (edge.isEdgeScanRunning()) {
+          logger.info('🎯 Previous Polymarket edge scan still running — skipping this tick');
+          return;
+        }
+        await edge.runPolymarketEdgeScan();
+      } catch (err: any) { logger.warn(`Polymarket edge scan skipped: ${err?.message || err?.code || 'network error'}`); }
+      return;
+    }
     try {
       const openCount = await prisma.trade.count({ where: { asset: 'POLYMARKET', status: 'OPEN' } });
       const slotsAvailable = MAX_OPEN_POLYMARKET_POSITIONS - openCount;
@@ -394,6 +409,31 @@ export function initScheduler() {
   cron.schedule('*/30 * * * *', async () => {
     await pollPolymarketResolutions().catch(err => logger.error('Polymarket resolution poll failed', { err }));
   });
+
+  // ── Polymarket US edge engine upkeep (paper) ─────────────────────────────
+  // Every 5 min: fill/expire/cancel resting paper limit orders, then exits
+  // (resolution, take-profit at fair, edge flip, evidence change).
+  if (polymarketVenue === 'us') {
+    cron.schedule('*/5 * * * *', async () => {
+      try {
+        const edge = await import('../services/polymarketEdge');
+        const { polymarketUSVenue } = await import('../services/polymarketUS');
+        if (!isKillSwitchActive()) await edge.processPaperOrders(polymarketUSVenue);
+        await edge.managePolymarketPositions(polymarketUSVenue); // exits only reduce risk
+      } catch (err: any) { logger.warn(`Polymarket paper upkeep skipped: ${err?.message || 'error'}`); }
+    });
+    // Hourly: score predictions against real resolutions.
+    cron.schedule('17 * * * *', async () => {
+      try {
+        const edge = await import('../services/polymarketEdge');
+        await edge.resolvePolymarketPredictions();
+      } catch (err: any) { logger.warn(`Polymarket prediction resolution skipped: ${err?.message || 'error'}`); }
+    });
+    // Daily 9 AM: scorecard summary in the logs.
+    cron.schedule('0 9 * * *', async () => {
+      try { await (await import('../services/polymarketEdge')).logScorecardSummary(); } catch { /* log only */ }
+    });
+  }
 
   // ── POST-TRADE LEARNING: Watch for newly closed trades ───────────────────
   cron.schedule('*/2 * * * *', async () => {
@@ -446,7 +486,7 @@ export function initScheduler() {
   logger.info('   🛑 Stop-loss monitor every 10 seconds');
   logger.info('   📸 Portfolio snapshots every 5 minutes');
   logger.info('   🌍 Market regime detection every hour');
-  logger.info('   🎯 Polymarket opportunity scan every 30 minutes');
+  logger.info(`   🎯 Polymarket scan every ${Number(process.env.POLYMARKET_SCAN_EVERY_MIN || 15)} min (${String(process.env.POLYMARKET_VENUE || 'us').toLowerCase() === 'intl' ? 'international scanner' : 'US edge engine, paper'})`);
   logger.info('   📓 Daily journal at 11:59 PM');
   logger.info('   📊 Weekly report every Sunday 8 AM');
   logger.info('   🎓 Post-trade learning every 2 minutes');

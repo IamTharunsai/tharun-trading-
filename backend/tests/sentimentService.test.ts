@@ -5,7 +5,7 @@ jest.mock('axios');
 import axios from 'axios';
 import {
   getSentiment, evaluateSentimentGate, filterItems, lexiconScore, isPromo, isBotLike,
-  getHeadlinesForQuery, keywordsForQuestion, buildXQuery, isSentimentEnabled, SentimentResult,
+  getHeadlinesForQuery, getQuerySentiment, keywordsForQuestion, buildXQuery, isSentimentEnabled, SentimentResult,
 } from '../src/services/sentimentService';
 
 const get = (axios as any).get as jest.Mock;
@@ -199,6 +199,29 @@ describe('Polymarket headlines + config', () => {
     ] } });
     const h = await getHeadlinesForQuery(`Will the Fed cut rates in December ${uniq()}?`, 5);
     expect(h).toEqual(['[gdelt] Fed officials signal December rate cut']);
+  });
+
+  it('getQuerySentiment scores question headlines and reports freshness', async () => {
+    process.env.SENTIMENT_ENABLED = 'true';
+    const fresh = new Date(Date.now() - 2 * 3_600_000).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    routeGet({ 'gdeltproject.org': { articles: [
+      { title: 'Dodgers rally and surge to record win', seendate: fresh },
+      { title: 'Dodgers star strong in breakout game', seendate: fresh },
+    ] } });
+    const q = await getQuerySentiment(`National League Champion Los Angeles Dodgers ${uniq()}`, 5);
+    expect(q.mentions).toBe(2);
+    expect(q.score).toBeGreaterThan(0);
+    expect(q.scorer).toBe('lexicon');
+    expect(q.freshestHours).not.toBeNull();
+    expect(q.freshestHours!).toBeLessThan(3);
+    expect(q.headlines).toHaveLength(2);
+  });
+
+  it('getQuerySentiment is empty (no network) when sentiment is disabled', async () => {
+    process.env.SENTIMENT_ENABLED = 'false';
+    const q = await getQuerySentiment('Will the Fed cut rates in December 2026?');
+    expect(q).toMatchObject({ mentions: 0, score: 0, headlines: [] });
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('SENTIMENT_ENABLED: explicit flag wins; unset → on in paper, off in live', () => {

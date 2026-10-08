@@ -8,14 +8,23 @@
 //   POLYMARKET_US_MAX_ORDER_USD (alias POLYMARKET_MAX_BET_USD, default $5).
 //   See trading/liveGate.ts.
 //
-// NOTE: the autonomous Polymarket scanner (services/polymarket.ts) reads the
-// international Gamma API, whose markets are identified by conditionId, not by
-// Polymarket US slugs — so the scanner stays paper-only until it scans US
-// markets directly.
+// Public market data (no key): markets/events, order book, BBO, price history
+// and settlement, normalized for the edge engine (services/polymarketEdge.ts)
+// through the venue-pluggable `polymarketUSVenue` (services/predictionVenue.ts).
+//
+// Price convention (docs.polymarket.us/concepts/orders): every Polymarket US
+// market is ONE instrument; book prices and order prices always refer to the
+// YES (long) side. Buying NO at $0.40 is selling YES at $0.60, so a NO order
+// is sent with price = 1 − NO price.
+import axios from 'axios';
 import { PolymarketUS } from 'polymarket-us';
 import { logger } from '../utils/logger';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from '../trading/liveGate';
+import type { BookLevel } from '../trading/predictionMath';
+import type { PredictionVenue, VenueBook, VenueMarket, VenuePricePoint } from './predictionVenue';
+
+const GATEWAY = 'https://gateway.polymarket.us';
 
 let client: PolymarketUS | null = null;
 let publicClient: PolymarketUS | null = null;
@@ -62,38 +71,210 @@ export async function listPolymarketUSEvents(limit = 20) {
   return (r?.events ?? []).filter((e: any) => !e.closed);
 }
 
+// ── Public market data (read-only, no key) ─────────────────────────────────
+
+const num = (v: any): number | undefined => {
+  const n = typeof v === 'object' && v !== null ? Number(v.value) : Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** Normalize a gateway market (optionally with its parent event) into a VenueMarket. */
+export function normalizeUSMarket(m: any, ev?: any): VenueMarket | null {
+  if (!m?.slug) return null;
+  const question = String(m.question || ev?.title || m.title || m.slug);
+  const label = m.title && m.title !== question ? String(m.title) : undefined;
+  const status = String(m.status || '');
+  return {
+    venue: 'polymarket_us',
+    id: String(m.slug),
+    question: label ? `${question}: ${label}` : question,
+    outcomeLabel: label,
+    description: m.description ? String(m.description).slice(0, 1500) : undefined,
+    category: String(m.category || ev?.category || 'general').toLowerCase(),
+    eventId: ev?.slug ? String(ev.slug) : (m.eventSlug ? String(m.eventSlug) : undefined),
+    eventTitle: ev?.title ? String(ev.title) : undefined,
+    endDate: m.endDate || ev?.endDate || undefined,
+    gameStartTime: m.gameStartTime || undefined,
+    marketType: m.marketType || m.sportsMarketType || undefined,
+    open: Boolean(m.active) && !m.closed && !m.archived && (!status || status === 'MARKET_STATUS_OPEN'),
+    bestBid: num(m.bestBidQuote),
+    bestAsk: num(m.bestAskQuote),
+    feeCoefficient: num(m.feeCoefficient) ?? Number(process.env.POLYMARKET_US_TAKER_FEE_THETA || 0.0695),
+    tickSize: num(m.orderPriceMinTickSize) ?? 0.001,
+    minQty: num(m.minimumTradeQty) ?? 1,
+  };
+}
+
+/** Active markets with their event context (events carry the grouping used for correlation caps). */
+export async function listPolymarketUSMarkets(max = 200): Promise<VenueMarket[]> {
+  const out: VenueMarket[] = [];
+  const pageSize = 50;
+  for (let offset = 0; out.length < max && offset < max * 4; offset += pageSize) {
+    const r: any = await pub().events.list({ limit: pageSize, offset, active: true, closed: false } as any);
+    const events: any[] = r?.events ?? [];
+    for (const ev of events) {
+      if (ev?.closed) continue;
+      for (const m of ev?.markets ?? []) {
+        const vm = normalizeUSMarket(m, ev);
+        if (vm) out.push(vm);
+        if (out.length >= max) break;
+      }
+      if (out.length >= max) break;
+    }
+    if (events.length < pageSize) break;
+  }
+  return out;
+}
+
+function levels(raw: any[] | undefined): BookLevel[] {
+  return (raw ?? [])
+    .map((l: any) => ({ price: num(l?.px) ?? NaN, size: Number(l?.qty) }))
+    .filter((l: BookLevel) => Number.isFinite(l.price) && l.size > 0);
+}
+
+/** Full YES-side book: bids high→low, asks low→high. */
+export async function getPolymarketUSBook(slug: string): Promise<VenueBook | null> {
+  try {
+    const r: any = await pub().markets.book(slug);
+    const d = r?.marketData ?? r; // gateway wraps the book in { marketData }
+    if (!d) return null;
+    return {
+      bids: levels(d.bids).sort((a, b) => b.price - a.price),
+      asks: levels(d.offers ?? d.asks).sort((a, b) => a.price - b.price),
+      state: d.state,
+      lastTrade: num(d.stats?.lastTradePx),
+      lastTradeAt: d.stats?.lastTradeSetTime ? Date.parse(d.stats.lastTradeSetTime) || undefined : undefined,
+      openInterest: num(d.stats?.openInterest),
+      volume: num(d.stats?.sharesTraded),
+      fetchedAt: Date.now(),
+    };
+  } catch (err: any) {
+    logger.debug(`[PM-US] book ${slug} failed: ${err?.message}`);
+    return null;
+  }
+}
+
+export interface PmUsBBO {
+  bestBid?: number; bestAsk?: number; lastTrade?: number;
+  openInterest?: number; volume?: number; state?: string; fetchedAt: number;
+}
+
+export async function getPolymarketUSBBO(slug: string): Promise<PmUsBBO | null> {
+  try {
+    const r: any = await pub().markets.bbo(slug);
+    const d = r?.marketData ?? r;
+    if (!d) return null;
+    return {
+      bestBid: num(d.bestBid), bestAsk: num(d.bestAsk), lastTrade: num(d.lastTradePx),
+      openInterest: num(d.openInterest), volume: num(d.sharesTraded), state: d.state, fetchedAt: Date.now(),
+    };
+  } catch (err: any) {
+    logger.debug(`[PM-US] bbo ${slug} failed: ${err?.message}`);
+    return null;
+  }
+}
+
+/**
+ * GET /v1/price-history (not wrapped by the SDK). Points are book-derived
+ * display prices: longPrice ≈ YES ask, shortPrice ≈ 1 − YES bid; we return
+ * the YES mid. Default: one week at 3-hour points.
+ */
+export async function getPolymarketUSPriceHistory(
+  slug: string, fixedInterval = 'INTERVAL_1W', fidelity = 180,
+): Promise<VenuePricePoint[]> {
+  try {
+    const r = await axios.get(`${GATEWAY}/v1/price-history`, { params: { symbol: slug, fixedInterval, fidelity }, timeout: 10_000 });
+    const hist: any[] = Array.isArray(r?.data?.history) ? r.data.history : [];
+    return hist
+      .map(h => {
+        const yesAsk = Number(h.longPrice), noAsk = Number(h.shortPrice);
+        const p = Number.isFinite(yesAsk) && Number.isFinite(noAsk) ? (yesAsk + (1 - noAsk)) / 2 : yesAsk;
+        return { t: Number(h.timestamp), p };
+      })
+      .filter(x => Number.isFinite(x.t) && Number.isFinite(x.p));
+  } catch (err: any) {
+    logger.debug(`[PM-US] price history ${slug} failed: ${err?.message}`);
+    return [];
+  }
+}
+
+/** YES settlement value (0..1) once the market has settled; null otherwise (404 = not settled). */
+export async function getPolymarketUSSettlement(slug: string): Promise<number | null> {
+  try {
+    const r: any = await pub().markets.settlement(slug);
+    const v = num(r?.settlement) ?? num(r?.settlementPrice) ?? num(r?.marketData?.settlementPrice);
+    return v !== undefined && v >= 0 && v <= 1 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read-only venue adapter for the edge engine. */
+export const polymarketUSVenue: PredictionVenue = {
+  id: 'polymarket_us',
+  listMarkets: listPolymarketUSMarkets,
+  getBook: getPolymarketUSBook,
+  getPriceHistory: (slug: string) => getPolymarketUSPriceHistory(slug),
+  getSettlement: getPolymarketUSSettlement,
+};
+
+// ── Orders (real money — gated) ─────────────────────────────────────────────
+
+/** Order price is always the YES price; a NO bid at q is sent as 1 − q. */
+export function toYesOrderPrice(side: 'YES' | 'NO', sidePrice: number): number {
+  return side === 'YES' ? sidePrice : 1 - sidePrice;
+}
+
 export interface PmUsOrderRequest {
   marketSlug: string;
   side: 'YES' | 'NO';
-  price: number;      // 0.01 - 0.99 per share
+  price: number;      // price per share OF `side` (0.01 - 0.99); converted to the YES price on send
   quantity: number;   // shares
+  /** Default IOC. GTD rests until goodTillTime (exchange-side expiry). */
+  tif?: 'IOC' | 'GTD';
+  goodTillTime?: string;
+  /** Maker-only: rejected instead of crossing the spread. */
+  postOnly?: boolean;
+}
+
+function assertLiveAllowed() {
+  // Same rule as every other live path: TRADING_MODE=live + LIVE_TRADING_CONFIRMED
+  // phrase + POLYMARKET_US_LIVE=true + kill switch off.
+  const gate = polymarketLiveAllowed(process.env, isKillSwitchActive());
+  if (!gate.allowed) throw new Error(`Polymarket US live orders are disabled: ${gate.reason}`);
+  if (isKillSwitchActive()) throw new Error('Kill switch active');
 }
 
 export async function placePolymarketUSOrder(req: PmUsOrderRequest) {
   const maxUsd = getPolymarketMaxOrderUsd();
   const notional = req.price * req.quantity;
-  // Same rule as every other live path: TRADING_MODE=live + LIVE_TRADING_CONFIRMED
-  // phrase + POLYMARKET_US_LIVE=true + kill switch off. (Previously this checked
-  // appConfig.TRADING_MODE, which also required Alpaca live keys.)
-  const gate = polymarketLiveAllowed(process.env, isKillSwitchActive());
-  if (!gate.allowed) {
-    throw new Error(`Polymarket US live orders are disabled: ${gate.reason}`);
-  }
-  if (isKillSwitchActive()) throw new Error('Kill switch active');
+  assertLiveAllowed();
   if (!(req.price > 0 && req.price < 1) || !(req.quantity > 0)) throw new Error('Invalid price/quantity');
   if (notional > maxUsd) throw new Error(`Order notional $${notional.toFixed(2)} exceeds POLYMARKET_US_MAX_ORDER_USD $${maxUsd}`);
+  const gtd = req.tif === 'GTD';
+  if (gtd && !req.goodTillTime) throw new Error('GTD order needs goodTillTime');
 
   const order = await authed().orders.create({
     marketSlug: req.marketSlug,
     // Long YES = buy long; a NO view is expressed as buying the short side.
     intent: req.side === 'YES' ? 'ORDER_INTENT_BUY_LONG' : 'ORDER_INTENT_BUY_SHORT',
     type: 'ORDER_TYPE_LIMIT',
-    price: { value: req.price.toFixed(2), currency: 'USD' },
+    // Previously the NO price itself was sent, which for a NO order means
+    // "sell YES at the NO price" — i.e. paying 1 − q for NO instead of q.
+    price: { value: toYesOrderPrice(req.side, req.price).toFixed(3), currency: 'USD' },
     quantity: Math.floor(req.quantity),
-    // IOC: never leave a resting order the bot forgets about.
-    tif: 'TIME_IN_FORCE_IMMEDIATE_OR_CANCEL',
+    // IOC by default: never leave a resting order the bot forgets about.
+    tif: gtd ? 'TIME_IN_FORCE_GOOD_TILL_DATE' : 'TIME_IN_FORCE_IMMEDIATE_OR_CANCEL',
+    ...(gtd ? { goodTillTime: req.goodTillTime } : {}),
+    ...(req.postOnly ? { participateDontInitiate: true } : {}),
     manualOrderIndicator: 'MANUAL_ORDER_INDICATOR_AUTOMATIC',
   });
   logger.info(`🎯 Polymarket US order ${order.id}: ${req.side} ${req.quantity} @ ${req.price} on ${req.marketSlug}`);
   return order;
+}
+
+/** Cancel a resting order (same live gate; cancelling never adds risk but still touches the real account). */
+export async function cancelPolymarketUSOrder(orderId: string, marketSlug: string): Promise<void> {
+  assertLiveAllowed();
+  await authed().orders.cancel(orderId, { marketSlug });
 }

@@ -611,6 +611,30 @@ marketRouter.get('/polymarket-us/events', async (req: Request, res: Response) =>
   }
 });
 
+// Polymarket edge engine scorecard: every prediction vs. the real resolution
+// (Brier / log loss vs. the market price, calibration buckets, paper P&L
+// after fees, expected vs. realized edge). Use it to prove an edge on paper
+// before considering live trading.
+marketRouter.get('/polymarket/scorecard', async (req: Request, res: Response) => {
+  try {
+    const days = Math.max(0, Math.min(3650, parseInt(String(req.query.days || '0')) || 0));
+    const { computeScorecard } = await import('../services/polymarketEdge');
+    res.json(await computeScorecard(days ? { days } : {}));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Scorecard failed' });
+  }
+});
+
+marketRouter.get('/polymarket/edge/predictions', async (req: Request, res: Response) => {
+  try {
+    const take = Math.max(1, Math.min(500, parseInt(String(req.query.limit || '50')) || 50));
+    const rows = await (prisma as any).polymarketPrediction.findMany({ orderBy: { createdAt: 'desc' }, take });
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch Polymarket predictions' });
+  }
+});
+
 marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: Response) => {
   try {
     const { predictionId, outcome = 'YES', amount = 10 } = req.body;
