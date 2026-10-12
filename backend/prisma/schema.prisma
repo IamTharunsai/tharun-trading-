@@ -25,6 +25,7 @@ model User {
   role         String   @default("OWNER")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  predictionExecutions PredictionExecution[]
 }
 
 // TRADES
@@ -44,6 +45,7 @@ model Trade {
   brokerConfirmed  Boolean       @default(false)
   agentDecisionId  String?
   agentDecision    AgentDecision? @relation(fields: [agentDecisionId], references: [id])
+  predictionExecution PredictionExecution?
   accountId        String?
   brokerMode       String?
   positionId       String?
@@ -866,10 +868,55 @@ model PolymarketPrediction {
   outcome           Float?
   resolvedAt        DateTime?
   createdAt         DateTime  @default(now())
+  executions        PredictionExecution[]
 
   @@index([marketSlug, createdAt])
   @@index([resolvedAt])
   @@index([createdAt])
+}
+
+// A real US submission owns a durable claim before transport. Never retry an
+// ambiguous create: the exchange create contract has no client-order identifier.
+model PredictionExecution {
+  id                   String @id @default(cuid())
+  claimKey             String @unique
+  ownerId              String
+  owner                User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  credentialScopeKey   String
+  credentialIdentity   String
+  predictionId         String
+  prediction           PolymarketPrediction @relation(fields: [predictionId], references: [id], onDelete: Restrict)
+  marketSlug           String
+  side                 String
+  quantity             Float
+  sideLimitPrice       Float
+  reservedUsd          Float
+  authorityGeneration  Int
+  planExpiresAt        DateTime
+  riskPolicyHash       String
+  qualificationId     String
+  planNetEdge          Float
+  status               String @default("PREPARING")
+  brokerOrderId        String? @unique
+  appliedQuantity      Float @default(0)
+  appliedNotional      Float @default(0)
+  appliedFees          Float @default(0)
+  brokerState          Json?
+  error                String?
+  tradeId              String? @unique
+  trade                Trade? @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  @@index([ownerId, credentialScopeKey, status])
+  @@index([credentialScopeKey, marketSlug])
+}
+
+// A local mutation fence for the configured API grant. It is not a substitute
+// for fresh broker account data or an exchange-wide account identifier.
+model PredictionAccountAuthority {
+  scopeKey   String @id
+  generation Int @default(0)
+  updatedAt  DateTime @updatedAt
 }
 
 // Simulated resting limit orders for Polymarket paper trading. They fill only

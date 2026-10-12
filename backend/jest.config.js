@@ -20,6 +20,7 @@ module.exports = {
   globals: {
     'ts-jest': {
       tsconfig: {
+        types: ['node', 'jest'],
         esModuleInterop: true,
         allowSyntheticDefaultImports: true
       }

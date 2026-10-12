@@ -77,6 +77,10 @@ jobs:
           npm run deploy:schema
           npm run deploy:schema
           node tests/deploymentCompatibility.integration.cjs verify
+      - name: Verify prediction claim concurrency on disposable PostgreSQL
+        env:
+          RUN_PREDICTION_POSTGRES_TESTS: 'true'
+        run: npx jest --runInBand --runTestsByPath tests/predictionExecution.postgres.integration.test.ts
 
   backend:
     runs-on: ubuntu-latest
@@ -101,6 +105,8 @@ jobs:
 
       - name: TypeScript check
         run: npx tsc --noEmit -p .
+      - name: Verify prediction execution and account contracts with mocked providers
+        run: npx jest --runInBand --runTestsByPath tests/predictionExecution.authority.test.ts tests/predictionExecution.plan.test.ts tests/predictionOrderEvidence.test.ts tests/polymarketUSRest.test.ts tests/polymarketUSExecution.test.ts tests/polymarketUS.marketData.test.ts tests/polymarketUSAccount.test.ts
 
   frontend-build:
     runs-on: ubuntu-latest

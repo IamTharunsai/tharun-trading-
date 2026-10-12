@@ -6,7 +6,7 @@ import { PolymarketUS } from 'polymarket-us';
 
 assert.equal(typeof PolymarketUS, 'function', 'Polymarket US SDK must resolve from the root package');
 const models = Prisma.dmmf.datamodel.models;
-for (const name of ['Position', 'ExecutionIntent', 'PositionExit', 'StrategyQualification', 'PositionResearch']) {
+for (const name of ['Position', 'ExecutionIntent', 'PositionExit', 'StrategyQualification', 'PositionResearch', 'PredictionExecution', 'PredictionAccountAuthority']) {
   assert.ok(models.some(model => model.name === name), `Generated client is missing ${name}`);
 }
 const scope = models.find(model => model.name === 'Position').fields.find(field => field.name === 'scopeKey');
