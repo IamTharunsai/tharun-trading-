@@ -15,4 +15,4 @@ cmds = ["npm run build"]
 [start]
 # Additive schema sync only: without --accept-data-loss, a destructive schema
 # change makes the deploy FAIL instead of silently dropping data.
-cmd = "npx prisma db push --schema=./prisma/schema.prisma --skip-generate && node dist/index.js"
+cmd = "npm run deploy:schema && node dist/index.js"
