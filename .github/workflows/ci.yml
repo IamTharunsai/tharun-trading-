@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 10
     env:
       DATABASE_URL: postgresql://fixture:fixture@localhost:5432/fixture
+      VITE_API_URL: https://example.invalid
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,6 +28,8 @@ jobs:
         run: npm run build
       - name: Verify root runtime imports and generated models without connecting
         run: node scripts/check-root-runtime.mjs
+      - name: Verify web deployment starts without backend secrets or database
+        run: node scripts/check-frontend-runtime.mjs
 
   deployment-schema:
     runs-on: ubuntu-latest
