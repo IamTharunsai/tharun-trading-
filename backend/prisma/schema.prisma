@@ -161,7 +161,9 @@ model DebateCheckpoint {
 model Position {
   id             String   @id @default(cuid())
   asset          String
-  scopeKey       String @unique @default(cuid())
+  // Legacy rows have no verified account identity. Nullable during rollout;
+  // broker-reconciled entries always supply their account/mode/symbol scope key.
+  scopeKey       String? @unique @default(cuid())
   accountId      String?
   brokerMode     String?
   pendingEntryIntentId String?

@@ -8,6 +8,73 @@ on:
   pull_request:
 
 jobs:
+  root-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: postgresql://fixture:fixture@localhost:5432/fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.7
+      - name: Install the root Railway dependency tree
+        run: bun install --frozen-lockfile
+      - name: Build root deployment and generate its database client
+        run: npm run build
+      - name: Verify root runtime imports and generated models without connecting
+        run: node scripts/check-root-runtime.mjs
+
+  deployment-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployment_fixture
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: deployment_fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Reproduce the deployed pre-PR9 schema and 113 legacy positions
+        run: |
+          git show 7a053640af03ae5d6b53e14cf85aeca8715095df:backend/prisma/schema.prisma > /tmp/legacy-schema.prisma
+          npx prisma db push --schema=/tmp/legacy-schema.prisma --skip-generate
+          npx prisma generate --schema=./prisma/schema.prisma
+          node tests/deploymentCompatibility.integration.cjs seed
+      - name: Confirm the original deployment failure is reproduced
+        run: |
+          git show 2661f9b149733e2fcc42438e6c70538947aacdab:backend/prisma/schema.prisma > /tmp/broken-schema.prisma
+          if npx prisma db push --schema=/tmp/broken-schema.prisma --skip-generate > /tmp/original-failure.log 2>&1; then
+            echo 'Expected the original required-scopeKey migration to fail.'
+            exit 1
+          fi
+          grep -q 'scopeKey' /tmp/original-failure.log
+          grep -q '113' /tmp/original-failure.log
+      - name: Run the actual Railway schema command twice and verify preservation
+        run: |
+          npm run deploy:schema
+          npm run deploy:schema
+          node tests/deploymentCompatibility.integration.cjs verify
+
   backend:
     runs-on: ubuntu-latest
     defaults:
