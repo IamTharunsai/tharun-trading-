@@ -8,10 +8,11 @@ const sdk = {
 jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn().mockImplementation(() => sdk) }), { virtual: true });
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: () => false }));
 jest.mock('axios');
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
 import axios from 'axios';
 import {
   normalizeUSMarket, listPolymarketUSMarkets, getPolymarketUSBook, getPolymarketUSPriceHistory,
-  getPolymarketUSSettlement, placePolymarketUSOrder, cancelPolymarketUSOrder, toYesOrderPrice,
+  getPolymarketUSSettlement, placePolymarketUSOrder, cancelPolymarketUSOrder, toYesOrderPrice, buildPolymarketUSOrder,
 } from '../src/services/polymarketUS';
 
 const rawMarket = (over: any = {}) => ({
@@ -90,19 +91,21 @@ describe('gated order path', () => {
     expect(sdk.orders.cancel).not.toHaveBeenCalled();
   });
 
-  it('sends NO orders at the YES price (1 − q), per the US single-instrument convention', async () => {
+  it('builds NO orders at the YES price without sending through the retired writer', async () => {
     Object.assign(process.env, LIVE);
     expect(toYesOrderPrice('NO', 0.4)).toBeCloseTo(0.6);
-    await placePolymarketUSOrder({ marketSlug: 'x', side: 'NO', price: 0.4, quantity: 5 });
-    const args = sdk.orders.create.mock.calls[0][0];
-    expect(args).toMatchObject({ intent: 'ORDER_INTENT_BUY_SHORT', price: { value: '0.600', currency: 'USD' }, tif: 'TIME_IN_FORCE_IMMEDIATE_OR_CANCEL', quantity: 5 });
+    const args = buildPolymarketUSOrder({ marketSlug: 'x', side: 'NO', price: 0.4, quantity: 5 });
+    expect(args).toMatchObject({ intent: 'ORDER_INTENT_BUY_SHORT', price: { value: '0.600000', currency: 'USD' }, tif: 'TIME_IN_FORCE_IMMEDIATE_OR_CANCEL', quantity: 5 });
+    await expect(placePolymarketUSOrder({ marketSlug: 'x', side: 'NO', price: .4, quantity: 5 })).rejects.toThrow(/direct orders disabled/);
+    expect(sdk.orders.create).not.toHaveBeenCalled();
   });
 
   it('supports post-only GTD limits and still enforces the per-order $ cap', async () => {
     Object.assign(process.env, LIVE);
-    await placePolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: 0.42, quantity: 5, tif: 'GTD', goodTillTime: '2026-10-08T12:00:00Z', postOnly: true });
-    expect(sdk.orders.create.mock.calls[0][0]).toMatchObject({ tif: 'TIME_IN_FORCE_GOOD_TILL_DATE', goodTillTime: '2026-10-08T12:00:00Z', participateDontInitiate: true, price: { value: '0.420' } });
-    await expect(placePolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: 0.5, quantity: 100 })).rejects.toThrow(/exceeds/);
-    await expect(placePolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: 0.5, quantity: 2, tif: 'GTD' })).rejects.toThrow(/goodTillTime/);
+    const goodTillTime = new Date(Date.now() + 60000).toISOString();
+    expect(buildPolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: 0.42, quantity: 5, tif: 'GTD', goodTillTime, postOnly: true })).toMatchObject({ tif: 'TIME_IN_FORCE_GOOD_TILL_DATE', goodTillTime, participateDontInitiate: true, price: { value: '0.420000' } });
+    expect(() => buildPolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: .5, quantity: 100 })).toThrow(/exceeds/);
+    expect(() => buildPolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: .5, quantity: 2, tif: 'GTD' })).toThrow(/goodTillTime/);
+    expect(() => buildPolymarketUSOrder({ marketSlug: 'x', side: 'YES', price: .5, quantity: 2, tif: 'GTD', goodTillTime: new Date(Date.now() - 1).toISOString() })).toThrow(/future/);
   });
 });

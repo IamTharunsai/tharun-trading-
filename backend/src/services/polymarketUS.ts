@@ -24,6 +24,11 @@ import { createHash } from 'crypto';
 import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import type { BookLevel } from '../trading/predictionMath';
 import type { PredictionVenue, VenueBook, VenueMarket, VenuePricePoint } from './predictionVenue';
+import { prisma } from '../utils/prisma';
+import { validateLiveQualification } from '../trading/liveQualification';
+import { bindPolymarketUSRest } from './polymarketUSRest';
+import { predictionPendingStates, predictionRiskPolicyHash, readPredictionGeneration, advancePredictionGeneration,
+  predictionAccountExposure, assertPredictionFillsReflected, predictionDailyRealizedPnl } from '../trading/predictionAuthority';
 
 const GATEWAY = 'https://gateway.polymarket.us';
 
@@ -51,14 +56,14 @@ function authed(): PolymarketUS {
   if (!isPolymarketUSConfigured()) throw new Error('POLYMARKET_KEY_ID / POLYMARKET_SECRET_KEY not set');
   const identity = credentialIdentity();
   if (!client || clientIdentity !== identity) {
-    client = new PolymarketUS({ keyId: process.env.POLYMARKET_KEY_ID!, secretKey: process.env.POLYMARKET_SECRET_KEY! });
+    client = new PolymarketUS({ keyId: process.env.POLYMARKET_KEY_ID!, secretKey: process.env.POLYMARKET_SECRET_KEY!, timeout: 10000 });
     clientIdentity = identity;
   }
   return client;
 }
 
 function pub(): PolymarketUS {
-  if (!publicClient) publicClient = new PolymarketUS();
+  if (!publicClient) publicClient = new PolymarketUS({ timeout: 10000 });
   return publicClient;
 }
 
@@ -109,6 +114,8 @@ export async function listPolymarketUSEvents(limit = 20) {
 // ── Public market data (read-only, no key) ─────────────────────────────────
 
 const num = (v: any): number | undefined => {
+  if (v === null || v === undefined || v === '') return undefined;
+  if (typeof v === 'object' && (v.value === null || v.value === undefined || v.value === '')) return undefined;
   const n = typeof v === 'object' && v !== null ? Number(v.value) : Number(v);
   return Number.isFinite(n) ? n : undefined;
 };
@@ -137,6 +144,7 @@ export function normalizeUSMarket(m: any, ev?: any): VenueMarket | null {
     feeCoefficient: num(m.feeCoefficient) ?? Number(process.env.POLYMARKET_US_TAKER_FEE_THETA || 0.0695),
     tickSize: num(m.orderPriceMinTickSize) ?? 0.001,
     minQty: num(m.minimumTradeQty) ?? 1,
+    executionMetadataVerified: num(m.feeCoefficient) !== undefined && num(m.orderPriceMinTickSize) !== undefined && num(m.minimumTradeQty) !== undefined,
   };
 }
 
@@ -272,6 +280,60 @@ export interface PmUsOrderRequest {
   postOnly?: boolean;
 }
 
+export const POLYMARKET_LIVE_STRATEGY = 'BHISHMA_POLYMARKET_US';
+export function getPolymarketUSCredentialScope(): { scopeKey: string; identity: string } {
+  if (!isPolymarketUSConfigured()) throw new Error('Polymarket US credentials unavailable');
+  // This identifies the authenticated API grant, not an invented exchange account ID.
+  return { scopeKey: 'polymarket-us:' + createHash('sha256').update(process.env.POLYMARKET_KEY_ID!).digest('hex'), identity: credentialIdentity() };
+}
+
+export interface PmUsExecutionSnapshot {
+  scopeKey: string; identity: string; observedAt: number;
+  cash: number; buyingPower: number; positions: Record<string, any>; openOrders: any[];
+}
+
+/** Account authority requires every section and complete position pagination.
+ * UI partial results are useful for display, but cannot authorize orders. */
+export async function getPolymarketUSExecutionSnapshot(): Promise<PmUsExecutionSnapshot> {
+  const scope = getPolymarketUSCredentialScope();
+  const observedAt = Date.now();
+  const request = bindPolymarketUSRest(process.env.POLYMARKET_KEY_ID!, process.env.POLYMARKET_SECRET_KEY!);
+  const [balances, orders] = await Promise.all([request('GET', '/v1/account/balances'), request('GET', '/v1/orders/open')]);
+  const usd = Array.isArray((balances as any)?.balances)
+    ? (balances as any).balances.find((b: any) => b?.currency === 'USD') : null;
+  if (typeof usd?.currentBalance !== 'number' || !Number.isFinite(usd.currentBalance) || usd.currentBalance < 0
+    || typeof usd?.buyingPower !== 'number' || !Number.isFinite(usd.buyingPower) || usd.buyingPower < 0
+    || !Array.isArray((orders as any)?.orders)) throw new Error('Polymarket US account authority incomplete');
+  const positions: Record<string, any> = {};
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  let complete = false;
+  for (let page = 0; page < 20; page++) {
+    if (Date.now() - observedAt > 5000) throw new Error('Polymarket US account snapshot deadline exceeded');
+    const result: any = await request('GET', '/v1/portfolio/positions', undefined, { limit: 100, ...(cursor ? { cursor } : {}) });
+    if (!result?.positions || typeof result.positions !== 'object' || Array.isArray(result.positions)) throw new Error('Invalid Polymarket US position page');
+    for (const [slug, value] of Object.entries(result.positions)) {
+      if (Object.prototype.hasOwnProperty.call(positions, slug)) throw new Error('Duplicate position across pages');
+      Object.defineProperty(positions, slug, { value, enumerable: true });
+    }
+    if (result.eof === true || (!result.nextCursor && result.eof !== false)) { complete = true; break; }
+    if (typeof result.nextCursor !== 'string' || !result.nextCursor || cursors.has(result.nextCursor)) throw new Error('Incomplete Polymarket US position pagination');
+    cursors.add(result.nextCursor); cursor = result.nextCursor;
+  }
+  if (!complete || scope.identity !== credentialIdentity() || Date.now() - observedAt > 5000) throw new Error('Polymarket US account authority changed, expired or pagination exceeded its bound');
+  return { ...scope, observedAt, cash: usd.currentBalance, buyingPower: usd.buyingPower, positions, openOrders: (orders as any).orders };
+}
+
+/** Read-only reconciliation remains available with live disabled or kill active. */
+export async function getPolymarketUSOrder(orderId: string, scopeKey: string): Promise<unknown> {
+  const scope = getPolymarketUSCredentialScope();
+  if (scope.scopeKey !== scopeKey || typeof orderId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(orderId)) throw new Error('Invalid bound Polymarket order read');
+  const request = bindPolymarketUSRest(process.env.POLYMARKET_KEY_ID!, process.env.POLYMARKET_SECRET_KEY!);
+  const result = await request('GET', '/v1/order/' + orderId);
+  if (scope.identity !== credentialIdentity()) throw new Error('Polymarket US credentials changed during order read');
+  return result;
+}
+
 function assertLiveAllowed() {
   // Same rule as every other live path: TRADING_MODE=live + LIVE_TRADING_CONFIRMED
   // phrase + POLYMARKET_US_LIVE=true + kill switch off.
@@ -280,39 +342,116 @@ function assertLiveAllowed() {
   if (isKillSwitchActive()) throw new Error('Kill switch active');
 }
 
-export async function placePolymarketUSOrder(req: PmUsOrderRequest) {
+export function buildPolymarketUSOrder(req: PmUsOrderRequest) {
   const maxUsd = getPolymarketMaxOrderUsd();
-  assertLiveAllowed();
   if (!Number.isFinite(maxUsd) || maxUsd <= 0) throw new Error('Invalid Polymarket US order limit');
   if (!req || typeof req.marketSlug !== 'string' || !req.marketSlug.trim() || req.marketSlug !== req.marketSlug.trim()) throw new Error('Invalid market slug');
   if (req.side !== 'YES' && req.side !== 'NO') throw new Error('Invalid outcome side');
   if (!Number.isFinite(req.price) || req.price < 0.01 || req.price > 0.99 || !Number.isSafeInteger(req.quantity) || req.quantity <= 0) throw new Error('Invalid price/quantity');
-  // This adapter submits two-decimal prices; refuse hidden price/quantity changes.
-  const cents = Math.round(req.price * 100);
-  if (Math.abs(req.price * 100 - cents) > 1e-8) throw new Error('Price must use whole cents');
-  const notional = cents * req.quantity / 100;
+  // Preserve exchange prices down to a micro-dollar; never silently round a quote.
+  const units = Math.round(req.price * 1000000);
+  if (Math.abs(req.price * 1000000 - units) > 1e-7) throw new Error('Order price precision exceeds six decimals');
+  const notional = units * req.quantity / 1000000;
   if (!Number.isFinite(notional)) throw new Error('Invalid order notional');
   if (notional > maxUsd) throw new Error(`Order notional $${notional.toFixed(2)} exceeds POLYMARKET_US_MAX_ORDER_USD $${maxUsd}`);
   const gtd = req.tif === 'GTD';
-  if (gtd && !req.goodTillTime) throw new Error('GTD order needs goodTillTime');
+  if (req.tif !== undefined && !['IOC', 'GTD'].includes(req.tif)) throw new Error('Invalid time in force');
+  if (gtd && (!req.goodTillTime || !Number.isFinite(Date.parse(req.goodTillTime)) || Date.parse(req.goodTillTime) <= Date.now())) throw new Error('GTD order needs a future goodTillTime');
+  if (!gtd && (req.goodTillTime !== undefined || req.postOnly)) throw new Error('Resting/maker instructions require GTD');
 
-  const order = await authed().orders.create({
+  return {
     marketSlug: req.marketSlug,
     // Long YES = buy long; a NO view is expressed as buying the short side.
     intent: req.side === 'YES' ? 'ORDER_INTENT_BUY_LONG' : 'ORDER_INTENT_BUY_SHORT',
     type: 'ORDER_TYPE_LIMIT',
     // Previously the NO price itself was sent, which for a NO order means
     // "sell YES at the NO price" — i.e. paying 1 − q for NO instead of q.
-    price: { value: toYesOrderPrice(req.side, req.price).toFixed(3), currency: 'USD' },
+    price: { value: toYesOrderPrice(req.side, req.price).toFixed(6), currency: 'USD' },
     quantity: req.quantity,
     // IOC by default: never leave a resting order the bot forgets about.
     tif: gtd ? 'TIME_IN_FORCE_GOOD_TILL_DATE' : 'TIME_IN_FORCE_IMMEDIATE_OR_CANCEL',
     ...(gtd ? { goodTillTime: req.goodTillTime } : {}),
     ...(req.postOnly ? { participateDontInitiate: true } : {}),
     manualOrderIndicator: 'MANUAL_ORDER_INDICATOR_AUTOMATIC',
-  });
-  logger.info(`🎯 Polymarket US order ${order.id}: ${req.side} ${req.quantity} @ ${req.price} on ${req.marketSlug}`);
-  return order;
+  } as const;
+}
+
+/** The last writer consumes a durable, qualified PREPARING claim atomically.
+ * The public exchange create contract has no client-order ID, so uncertain
+ * submissions must retain their claim rather than repeat the POST. */
+export async function submitPolymarketUSExecution(claimId: string) {
+  const db = prisma as any;
+  const request = bindPolymarketUSRest(process.env.POLYMARKET_KEY_ID!, process.env.POLYMARKET_SECRET_KEY!);
+  const scope = getPolymarketUSCredentialScope();
+  let posting = false;
+  try {
+    const claim = await db.predictionExecution.findUnique({ where: { id: claimId } });
+    if (!claim || claim.status !== 'PREPARING' || claim.credentialScopeKey !== scope.scopeKey || claim.credentialIdentity !== scope.identity) throw new Error('Prediction submission claim unavailable');
+    // Re-read every broker section, not just cash. No broker I/O is performed
+    // inside a database transaction or after consuming the submission claim.
+    const snapshot = await getPolymarketUSExecutionSnapshot();
+    const exposure = predictionAccountExposure(snapshot);
+    const payload = buildPolymarketUSOrder({ marketSlug: claim.marketSlug, side: claim.side, price: claim.sideLimitPrice, quantity: claim.quantity });
+    const revision = process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RELEASE_COMMIT_SHA;
+    const authorization = await db.$transaction(async (tx: any) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scope.scopeKey}))`;
+      const current = await tx.predictionExecution.findUnique({ where: { id: claimId } });
+      if (!current || current.status !== 'PREPARING' || current.credentialScopeKey !== scope.scopeKey || current.credentialIdentity !== scope.identity
+        || await readPredictionGeneration(tx, scope.scopeKey) !== current.authorityGeneration
+        || current.quantity !== claim.quantity || current.sideLimitPrice !== claim.sideLimitPrice || current.marketSlug !== claim.marketSlug
+        || current.side !== claim.side || current.reservedUsd !== claim.reservedUsd) throw new Error('Prediction claim authority changed');
+      const other = await tx.predictionExecution.findFirst({ where: { credentialScopeKey: scope.scopeKey, status: { in: predictionPendingStates }, id: { not: claimId } } });
+      if (other) throw new Error('Another prediction claim requires reconciliation');
+      await assertPredictionFillsReflected(tx, snapshot);
+      const pnl = await predictionDailyRealizedPnl(tx, scope.scopeKey);
+      const qualification = revision ? await tx.strategyQualification.findFirst({ where: { strategyKey: POLYMARKET_LIVE_STRATEGY, revision }, orderBy: { createdAt: 'desc' } }) : null;
+      const owner = await tx.user.findUnique({ where: { id: current.ownerId }, select: { email: true, role: true } });
+      const risk = await tx.settings.findUnique({ where: { id: 'settings-1' } });
+      if (!owner || owner.role !== 'OWNER' || owner.email !== process.env.OWNER_EMAIL?.trim().toLowerCase()
+        || predictionRiskPolicyHash(risk) !== current.riskPolicyHash) throw new Error('Prediction owner or risk authority changed');
+      for (const name of ['maxPositionSizePct', 'maxRiskPerTradePct', 'dailyLossLimitPct']) {
+        if (typeof risk?.[name] !== 'number' || !Number.isFinite(risk[name]) || risk[name] < .01 || risk[name] > 100) throw new Error('Prediction risk policy invalid');
+      }
+      if (exposure.slugs.has(current.marketSlug) || !Number.isFinite(current.reservedUsd) || current.reservedUsd <= 0
+        || Math.min(snapshot.cash, snapshot.buyingPower) < current.reservedUsd
+        || current.reservedUsd > Math.min(getPolymarketMaxOrderUsd(), snapshot.cash * risk.maxPositionSizePct / 100, snapshot.cash * risk.maxRiskPerTradePct / 100)
+        || exposure.cost + current.reservedUsd > snapshot.cash * risk.dailyLossLimitPct / 100 + Math.min(0, pnl) + 1e-8) throw new Error('Prediction funds or aggregate risk changed before submission');
+      const check = validateLiveQualification(qualification, POLYMARKET_LIVE_STRATEGY, revision);
+      if (!check.approved || qualification?.id !== current.qualificationId || qualification?.evidence?.credentialScopeKey !== scope.scopeKey) throw new Error('Prediction qualification changed or expired');
+      const expiresAt = new Date(current.planExpiresAt).getTime();
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || Date.now() - snapshot.observedAt > 5000
+        || snapshot.scopeKey !== scope.scopeKey || snapshot.identity !== scope.identity) throw new Error('Prediction plan or broker evidence expired');
+      const minEdge = Number(process.env.POLYMARKET_MIN_EDGE ?? .05);
+      if (!Number.isFinite(minEdge) || minEdge < 0 || minEdge > 1 || !Number.isFinite(current.planNetEdge) || current.planNetEdge < minEdge) throw new Error('Prediction net edge policy changed');
+      assertLiveAllowed();
+      if (scope.identity !== credentialIdentity()) throw new Error('Prediction credential authority changed');
+      const authorityGeneration = await advancePredictionGeneration(tx, scope.scopeKey);
+      const taken = await tx.predictionExecution.updateMany({ where: { id: claimId, status: 'PREPARING', credentialIdentity: scope.identity }, data: { status: 'SUBMITTING', authorityGeneration } });
+      if (taken.count !== 1) throw new Error('Prediction submission claim already consumed');
+      return { qualification, expiresAt, observedAt: snapshot.observedAt };
+    });
+    // The last checks follow all awaits and are immediately before the single POST.
+    assertLiveAllowed();
+    if (scope.identity !== credentialIdentity() || authorization.expiresAt <= Date.now()
+      || Date.now() - authorization.observedAt > 5000
+      || !validateLiveQualification(authorization.qualification, POLYMARKET_LIVE_STRATEGY, revision).approved) throw new Error('Prediction final authorization expired or changed');
+    posting = true;
+    const acknowledgement = await request('POST', '/v1/orders', payload);
+    if (typeof acknowledgement?.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(acknowledgement.id)) throw new Error('Prediction acknowledgement has no valid broker identity');
+    return { id: acknowledgement.id };
+  } catch (error) {
+    if (!posting) throw new PredictionSubmissionRefused();
+    throw error;
+  }
+}
+
+export class PredictionSubmissionRefused extends Error {
+  constructor() { super('Prediction submission refused before broker POST'); this.name = 'PredictionSubmissionRefused'; }
+}
+
+/** Retired direct writer: callers must use the durable live execution service. */
+export async function placePolymarketUSOrder(_req: PmUsOrderRequest): Promise<never> {
+  throw new Error('Polymarket US direct orders disabled; use durable prediction execution');
 }
 
 /** Cancel a resting order (same live gate; cancelling never adds risk but still touches the real account). */

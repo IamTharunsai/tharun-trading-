@@ -4,9 +4,10 @@ const orders = jest.fn();
 const createOrder = jest.fn();
 jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn().mockImplementation(() => ({ account: { balances }, portfolio: { positions }, orders: { list: orders, create: createOrder } })) }), { virtual: true });
 jest.mock('../src/utils/config', () => ({ appConfig: { TRADING_MODE: 'paper' } }));
+jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: () => false }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn() } }));
-import { getPolymarketUSAccount, getPolymarketUSHealth, placePolymarketUSOrder } from '../src/services/polymarketUS';
+import { getPolymarketUSAccount, getPolymarketUSHealth, buildPolymarketUSOrder } from '../src/services/polymarketUS';
 import { PolymarketUS } from 'polymarket-us';
 beforeEach(() => {
   jest.clearAllMocks();
@@ -39,7 +40,7 @@ test('secret rotation creates a fresh authenticated client', async () => {
   await getPolymarketUSAccount();
   process.env.POLYMARKET_SECRET_KEY = 'fixture-rotated';
   await getPolymarketUSAccount();
-  expect(PolymarketUS).toHaveBeenLastCalledWith({ keyId: 'fixture-key', secretKey: 'fixture-rotated' });
+  expect(PolymarketUS).toHaveBeenLastCalledWith({ keyId: 'fixture-key', secretKey: 'fixture-rotated', timeout: 10000 });
 });
 test('connection health requires a recent successful request for current credentials', async () => {
   process.env.POLYMARKET_SECRET_KEY = 'fixture-health';
@@ -75,7 +76,7 @@ test('account data from credentials rotated during a request is refused', async 
 test.each([
   [{ marketSlug: 'fixture', side: 'YES', price: 0.5, quantity: Infinity }, 'Invalid price/quantity'],
   [{ marketSlug: 'fixture', side: 'YES', price: 0.999, quantity: 1 }, 'Invalid price/quantity'],
-  [{ marketSlug: 'fixture', side: 'YES', price: 0.555, quantity: 1 }, 'whole cents'],
+  [{ marketSlug: 'fixture', side: 'YES', price: 0.5550001, quantity: 1 }, 'six decimals'],
   [{ marketSlug: 'fixture', side: 'YES', price: 0.5, quantity: 0.5 }, 'Invalid price/quantity'],
   [{ marketSlug: '', side: 'YES', price: 0.5, quantity: 1 }, 'Invalid market slug'],
   [{ marketSlug: 'fixture', side: 'INVALID', price: 0.5, quantity: 1 }, 'Invalid outcome side'],
@@ -86,7 +87,7 @@ test.each([
   process.env.TRADING_MODE = 'live';
   process.env.LIVE_TRADING_CONFIRMED = 'I_ACCEPT_REAL_MONEY_RISK';
   process.env.POLYMARKET_US_MAX_ORDER_USD = '5';
-  await expect(placePolymarketUSOrder(request as any)).rejects.toThrow(message);
+  expect(() => buildPolymarketUSOrder(request as any)).toThrow(message);
   expect(createOrder).not.toHaveBeenCalled();
   appConfig.TRADING_MODE = 'paper';
 });
@@ -97,7 +98,7 @@ test('invalid configured order cap fails closed', async () => {
   process.env.TRADING_MODE = 'live';
   process.env.LIVE_TRADING_CONFIRMED = 'I_ACCEPT_REAL_MONEY_RISK';
   process.env.POLYMARKET_US_MAX_ORDER_USD = 'not-a-number';
-  await expect(placePolymarketUSOrder({ marketSlug: 'fixture', side: 'YES', price: 0.5, quantity: 1 })).rejects.toThrow('order limit');
+  expect(() => buildPolymarketUSOrder({ marketSlug: 'fixture', side: 'YES', price: 0.5, quantity: 1 })).toThrow('order limit');
   expect(createOrder).not.toHaveBeenCalled();
   appConfig.TRADING_MODE = 'paper';
 });

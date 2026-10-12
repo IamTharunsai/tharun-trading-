@@ -28,6 +28,8 @@ export interface VenueMarket {
   feeCoefficient: number;  // taker Θ
   tickSize: number;
   minQty: number;
+  /** False when tick/minimum/fees were inferred rather than supplied by the exchange. */
+  executionMetadataVerified?: boolean;
 }
 
 export interface VenueBook extends Book {
