@@ -77,6 +77,58 @@ class FixtureApi:
 
 
 class WorkerTests(unittest.TestCase):
+    def test_original_diagnostic_survives_a_different_cleanup_failure(self):
+        with patch.object(worker, "CURRENT_PHASE", "config"), \
+                patch.object(worker, "FAILED_PHASE", None), \
+                patch.object(worker, "FAILED_EXCEPTION_KIND", None):
+            worker.set_phase("import")
+            worker.remember_failure_phase(PermissionError("private dummy filename and credential"))
+            worker.set_phase("cleanup")
+            worker.remember_failure_phase(RuntimeError("private dummy cleanup content"))
+            self.assertEqual(worker.failure_diagnostic(), {
+                "diagnostic": "mirofish_import_failed", "exceptionKind": "PermissionError"})
+
+    def test_diagnostics_filter_exception_kind_and_never_render_exception(self):
+        allowed = (PermissionError, ModuleNotFoundError, ImportError, AttributeError,
+                   TypeError, RuntimeError, ValueError)
+        for kind in allowed:
+            with self.subTest(kind=kind.__name__):
+                with patch.object(worker, "CURRENT_PHASE", "prepare"), \
+                        patch.object(worker, "FAILED_PHASE", None), \
+                        patch.object(worker, "FAILED_EXCEPTION_KIND", None):
+                    # A lower-trust exception may have any custom class name
+                    # or stringify code; only the fixed builtin name is used.
+                    class PrivateSubclass(kind):
+                        def __str__(self):
+                            raise AssertionError("Exception must not be rendered")
+                    worker.remember_failure_phase(PrivateSubclass("private dummy data"))
+                    self.assertEqual(worker.failure_diagnostic(), {
+                        "diagnostic": "mirofish_prepare_failed", "exceptionKind": kind.__name__})
+        with patch.object(worker, "CURRENT_PHASE", "graph"), \
+                patch.object(worker, "FAILED_PHASE", None), \
+                patch.object(worker, "FAILED_EXCEPTION_KIND", None):
+            worker.remember_failure_phase(OSError("unlisted dummy exception"))
+            self.assertEqual(worker.failure_diagnostic(), {"diagnostic": "mirofish_graph_failed"})
+
+    def test_first_cleanup_failure_and_phase_vocabulary_are_explicit(self):
+        with patch.object(worker, "CURRENT_PHASE", "cleanup"), \
+                patch.object(worker, "FAILED_PHASE", None), \
+                patch.object(worker, "FAILED_EXCEPTION_KIND", None):
+            worker.remember_failure_phase(RuntimeError("dummy cleanup failure"))
+            self.assertEqual(worker.failure_diagnostic(), {
+                "diagnostic": "mirofish_cleanup_failed", "exceptionKind": "RuntimeError"})
+        for phase in worker.PHASES:
+            with patch.object(worker, "CURRENT_PHASE", phase), \
+                    patch.object(worker, "FAILED_PHASE", None), \
+                    patch.object(worker, "FAILED_EXCEPTION_KIND", None):
+                self.assertEqual(worker.failure_diagnostic(), {"diagnostic": "mirofish_" + phase + "_failed"})
+        with patch.object(worker, "CURRENT_PHASE", "private dummy unlisted phase"), \
+                patch.object(worker, "FAILED_PHASE", None), \
+                patch.object(worker, "FAILED_EXCEPTION_KIND", None):
+            self.assertEqual(worker.failure_diagnostic(), {"diagnostic": "mirofish_config_failed"})
+            with self.assertRaises(worker.ScenarioRefused):
+                worker.set_phase("private dummy unlisted phase")
+
     def test_only_question_evidence_and_bounded_utf8(self):
         valid = {"question": "A", "evidence": "B"}
         self.assertEqual(worker.validate_input(valid), valid)

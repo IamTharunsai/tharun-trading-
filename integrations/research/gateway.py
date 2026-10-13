@@ -33,8 +33,11 @@ STATE = Path(os.environ.get("RESEARCH_STATE", "/data"))
 
 
 class Refusal(Exception):
-    def __init__(self, code, status=422, diagnostic=None):
+    def __init__(self, code, status=422, diagnostic=None, exception_kind=None):
         self.code, self.status, self.diagnostic = code, status, diagnostic
+        self.exception_kind = exception_kind if exception_kind in (
+            'AttributeError', 'TypeError', 'ModuleNotFoundError', 'ImportError',
+            'RuntimeError', 'PermissionError', 'ValueError') else None
 
 
 def read_json(handler, maximum=MAX_BODY):
@@ -139,6 +142,7 @@ def run_worker(body):
                "GRAPHIFY_MAX_GRAPH_BYTES": "33554432", "GRAPHIFY_QUERY_LOG_DISABLE": "1"}
         if SERVICE == "mirofish":
             env["ZEP_API_KEY"] = os.environ["ZEP_API_KEY"]
+            env["MIROFISH_LOG_DIR"] = str(Path(home) / "logs")
         worker = {"hermes": "hermes_worker.py", "graphify": "graph_worker.py", "mirofish": "mirofish_worker.py"}[SERVICE]
         with tempfile.TemporaryFile(dir=home) as output:
             process = subprocess.Popen([interpreter, str(ROOT / worker)],
@@ -155,7 +159,7 @@ def run_worker(body):
                 diagnostic = result.get("diagnostic") if isinstance(result, dict) else None
                 if isinstance(diagnostic, str) and diagnostic in {'mirofish_' + phase + '_failed' for phase in
                         ('config', 'import', 'ontology', 'graph', 'preflight', 'prepare', 'simulation', 'report', 'cleanup')}:
-                    raise Refusal('research_worker_failed', 502, diagnostic)
+                    raise Refusal('research_worker_failed', 502, diagnostic, result.get('exceptionKind'))
                 if isinstance(diagnostic, str) and diagnostic in {
                         stage + '_' + kind for stage in ('import', 'init', 'isolation', 'research', 'result')
                         for kind in ('AttributeError', 'TypeError', 'ModuleNotFoundError', 'ImportError', 'RuntimeError', 'PermissionError', 'ValueError')}:
@@ -279,7 +283,9 @@ class Handler(BaseHTTPRequestHandler):
             take_daily_quota()
             return self.respond(200, run_worker(body))
         except Refusal as refusal:
-            return self.respond(refusal.status, {"error": refusal.code, **({"diagnostic": refusal.diagnostic} if refusal.diagnostic else {})})
+            return self.respond(refusal.status, {"error": refusal.code,
+                **({"diagnostic": refusal.diagnostic} if refusal.diagnostic else {}),
+                **({"exceptionKind": refusal.exception_kind} if refusal.exception_kind else {})})
         except Exception:
             return self.respond(502, {"error": "research_unavailable"})
         finally:

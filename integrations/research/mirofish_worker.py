@@ -38,6 +38,7 @@ SOCIAL_ACTIONS = frozenset(("create_post", "like_post", "repost", "follow", "do_
 PHASES = frozenset(("config", "import", "ontology", "graph", "preflight", "prepare", "simulation", "report", "cleanup"))
 CURRENT_PHASE = "config"
 FAILED_PHASE = None
+FAILED_EXCEPTION_KIND = None
 IS_OASIS_CHILD = sys.argv[1:2] == ["--oasis-script"]
 
 
@@ -48,10 +49,19 @@ def set_phase(phase):
     CURRENT_PHASE = phase
 
 
-def remember_failure_phase():
-    global FAILED_PHASE
+def exception_kind(error):
+    for kind in (PermissionError, ModuleNotFoundError, ImportError, AttributeError,
+                 TypeError, RuntimeError, ValueError):
+        if isinstance(error, kind):
+            return kind.__name__
+    return None
+
+
+def remember_failure_phase(error=None):
+    global FAILED_PHASE, FAILED_EXCEPTION_KIND
     if FAILED_PHASE is None:
         FAILED_PHASE = CURRENT_PHASE
+        FAILED_EXCEPTION_KIND = exception_kind(error)
 
 
 def failure_diagnostic():
@@ -60,7 +70,10 @@ def failure_diagnostic():
     # an exception, upstream response, URL, document or provider identifier.
     if phase not in PHASES:
         phase = "config"
-    return {"diagnostic": "mirofish_" + phase + "_failed"}
+    result = {"diagnostic": "mirofish_" + phase + "_failed"}
+    if FAILED_EXCEPTION_KIND is not None:
+        result["exceptionKind"] = FAILED_EXCEPTION_KIND
+    return result
 
 
 class ScenarioRefused(RuntimeError):
@@ -519,8 +532,8 @@ def run_scenario(body):
     try:
         return execute_pipeline(api, lambda graph_id: entity_count(ZepEntityReader().filter_defined_entities(
             graph_id=graph_id, defined_entity_types=None, enrich_with_edges=False)))
-    except Exception:
-        remember_failure_phase()
+    except Exception as error:
+        remember_failure_phase(error)
         if getattr(api, "project_id", None):
             api.record_ownership(api.project_id, getattr(api, "graph_id", None), "failed")
         raise
@@ -581,10 +594,11 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except Exception as error:
         # Provider/engine exceptions may echo credentials or supplied evidence.
         # Child failures must remain nonzero for the actual runner; only the
         # gateway-facing owner emits the fixed diagnostic transport envelope.
         if IS_OASIS_CHILD:
             raise SystemExit(1)
+        remember_failure_phase(error)
         print(json.dumps(failure_diagnostic()))
