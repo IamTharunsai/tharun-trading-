@@ -15,14 +15,14 @@ Status reflects source and local evidence at this checkpoint. It does not imply 
 | [Motion skills](https://github.com/iart-ai/motion-skills) | Motion design and interaction references | Metadata/README inspected; application animation integration pending |
 | [Vibe security](https://github.com/raroque/vibe-security-skill) | Credential, authorization and client-trust checks | Skill available; complete remediation/coverage pending |
 | [gstack](https://github.com/garrytan/gstack) | Review, browser QA and release workflow comparison | Metadata/README inspected; selected workflow integration pending |
-| [MiroFish](https://github.com/666ghj/MiroFish) | Bounded scenario exploration with sourced inputs | No running Bhishma adapter yet; inspect selected source and license, isolate workload/cost, validate temporal evidence and output contracts |
-| [Graphify](https://github.com/Graphify-Labs/graphify) | Versioned code/evidence graph and memory retrieval | No running Bhishma adapter yet; graph ingestion, provenance, query authorization and restart recovery pending |
+| [MiroFish](https://github.com/666ghj/MiroFish) | Bounded scenario exploration with sourced inputs | Isolated service deployed; real Zep configuration present; bounded scenario worker and owner backend adapter implemented with fixture coverage; full authenticated scenario and lifecycle verification pending |
+| [Graphify](https://github.com/Graphify-Labs/graphify) | Versioned code/evidence graph and memory retrieval | Pinned service deployed; actual public code graph and authenticated known-symbol query verified (2,208 nodes / 5,120 edges at corpus 3280a7c); source parsing is partial, and backend release plus broader evidence memory ingestion remain pending |
 | [Addy Osmani agent skills](https://github.com/addyosmani/agent-skills) | Source-driven implementation and production diagnosis | Source/observability skills available; source-to-runtime proof still required for each integration |
 | [Taste](https://github.com/leonxlnx/taste-skill) | Distinctive Bhishma visual direction | Metadata/README inspected; selected skill and UI application pending |
 | [Awesome design.md](https://github.com/voltagent/awesome-design-md) | Design-system reference comparison | Metadata/README inspected; final Bhishma design system pending |
 | [GSAP skills](https://github.com/greensock/gsap-skills) | React animation lifecycle and performance | React/performance skills available; deployed animation/accessibility/performance proof pending |
 | [Magic MCP](https://github.com/21st-dev/magic-mcp) | Component ideation and workflow support | Metadata/README inspected; authenticated tool connection and validated application use pending |
-| [Hermes](https://github.com/nousresearch/hermes-agent) | Bounded tool orchestration and operational memory | No running Bhishma adapter yet; private tool permissions, memory isolation, quotas and recovery pending |
+| [Hermes](https://github.com/nousresearch/hermes-agent) | Bounded tool orchestration and operational memory | Pinned isolated service deployed; authenticated real evidence research verified with tools/memory disabled, process deadlines and capped NVIDIA calls; backend release and permissioned operational memory/orchestration remain pending |
 
 Additional trading references retained from the broader task:
 

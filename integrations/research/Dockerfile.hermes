@@ -1,0 +1,14 @@
+FROM python:3.14.0-slim-bookworm AS build
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /usr/local/bin/uv
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates build-essential && rm -rf /var/lib/apt/lists/*
+RUN git init /engine && git -C /engine remote add origin https://github.com/NousResearch/hermes-agent.git && git -C /engine fetch --depth=1 origin ea45ec3936720abef431439152e75b2fc7dd4039 && git -C /engine checkout --detach FETCH_HEAD && test "$(git -C /engine rev-parse HEAD)" = ea45ec3936720abef431439152e75b2fc7dd4039
+WORKDIR /engine
+RUN uv sync --frozen --no-dev --no-install-project
+RUN find /engine -name '.env*' -type f -delete && rm -rf /engine/.git && .venv/bin/python -c "import run_agent; assert hasattr(run_agent, 'AIAgent')"
+
+FROM python:3.14.0-slim-bookworm
+RUN groupadd --gid 10001 research && useradd --uid 10001 --gid research --no-create-home research && mkdir /data && chown research:research /data
+COPY --from=build /engine /engine
+COPY gateway.py hermes_worker.py provider_worker.py pins.json boot.py /bridge/
+ENV RESEARCH_SERVICE=hermes PYTHONDONTWRITEBYTECODE=1 PORT=8080
+CMD ["python", "/bridge/boot.py"]

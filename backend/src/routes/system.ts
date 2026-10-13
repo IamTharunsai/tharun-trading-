@@ -8,6 +8,7 @@ import { appConfig } from '../utils/config';
 import { getLlmHealth } from '../utils/llmRouter';
 import { isPlaceholderKey } from '../utils/apiKeys';
 import { polymarketLiveAllowed } from '../trading/liveGate';
+import { getResearchServicesStatus, isResearchService, ResearchServiceError, runResearchService } from '../services/researchServices';
 
 const router = Router();
 router.use(requireAuth);
@@ -82,6 +83,23 @@ router.post('/intraday/scan', requireOwner, async (req: Request, res: Response) 
 router.post('/broker-sync', requireOwner, async (_req: Request, res: Response) => {
   const { syncBrokerPositions } = await import('../services/brokerSync');
   res.json(await syncBrokerPositions());
+});
+
+// Research services have a separate, owner-only evidence boundary. Status reads
+// use authenticated readiness metadata and never invoke a model or spend quota.
+router.get('/research-services', requireOwner, async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await getResearchServicesStatus());
+});
+router.post('/research-services/:service', requireOwner, async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isResearchService(req.params.service)) return res.status(404).json({ error: 'unknown_research_service' });
+  try {
+    res.json(await runResearchService(req.params.service, req.body));
+  } catch (error) {
+    const failure = error instanceof ResearchServiceError ? error : new ResearchServiceError('service_unavailable', 502);
+    res.status(failure.status).json({ error: failure.code });
+  }
 });
 
 export default router;
