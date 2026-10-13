@@ -39,6 +39,17 @@ PHASES = frozenset(("config", "import", "ontology", "graph", "preflight", "prepa
 CURRENT_PHASE = "config"
 FAILED_PHASE = None
 FAILED_EXCEPTION_KIND = None
+FAILED_DETAIL_CODE = None
+ONTOLOGY_ERRORS = {
+    'LLM JSON output was truncated at the token limit': 'json_truncated',
+    'LLM returned no choices': 'json_no_choices',
+    'LLM returned empty JSON content': 'json_empty',
+    'LLM returned multiple JSON values': 'json_multiple_values',
+    'LLM JSON response must be a top-level JSON object': 'json_not_object',
+    'Ontology generation failed; check the server logs': 'ontology_unexpected_failure',
+}
+DETAIL_CODES = frozenset((*ONTOLOGY_ERRORS.values(), 'json_invalid', 'json_unexpected_finish',
+                          'provider_request_failed', 'upstream_unclassified'))
 IS_OASIS_CHILD = sys.argv[1:2] == ["--oasis-script"]
 
 
@@ -58,10 +69,11 @@ def exception_kind(error):
 
 
 def remember_failure_phase(error=None):
-    global FAILED_PHASE, FAILED_EXCEPTION_KIND
+    global FAILED_PHASE, FAILED_EXCEPTION_KIND, FAILED_DETAIL_CODE
     if FAILED_PHASE is None:
         FAILED_PHASE = CURRENT_PHASE
         FAILED_EXCEPTION_KIND = exception_kind(error)
+        FAILED_DETAIL_CODE = error.detail_code if isinstance(error, ScenarioRefused) else None
 
 
 def failure_diagnostic():
@@ -73,11 +85,32 @@ def failure_diagnostic():
     result = {"diagnostic": "mirofish_" + phase + "_failed"}
     if FAILED_EXCEPTION_KIND is not None:
         result["exceptionKind"] = FAILED_EXCEPTION_KIND
+    if FAILED_DETAIL_CODE in DETAIL_CODES:
+        result['detailCode'] = FAILED_DETAIL_CODE
     return result
 
 
 class ScenarioRefused(RuntimeError):
     """Only fixed error codes cross the research boundary."""
+    def __init__(self, code, detail_code=None):
+        super().__init__(code)
+        self.detail_code = detail_code if isinstance(detail_code, str) and detail_code in DETAIL_CODES else None
+
+
+def classify_ontology_error(value):
+    # These messages come from pinned upstream llm_client.py / graph.py. No
+    # arbitrary message, model content, request ID or location is returned.
+    if not isinstance(value, str) or len(value) > 300:
+        return 'upstream_unclassified'
+    if value in ONTOLOGY_ERRORS:
+        return ONTOLOGY_ERRORS[value]
+    if re.fullmatch(r'LLM returned invalid JSON \(line [0-9]+, column [0-9]+\)', value):
+        return 'json_invalid'
+    if re.fullmatch(r'LLM JSON generation stopped unexpectedly \((?:tool_calls|content_filter|function_call)\)', value):
+        return 'json_unexpected_finish'
+    if re.fullmatch(r'LLM provider request failed \(HTTP [1-5][0-9]{2}\)(?: \(request_id: [a-zA-Z0-9._:-]{1,128}\))?', value):
+        return 'provider_request_failed'
+    return 'upstream_unclassified'
 
 
 def validate_input(body):
@@ -192,7 +225,8 @@ class LocalApi:
             raise ScenarioRefused("upstream_response_budget_exceeded")
         data = response.get_json(silent=True)
         if response.status_code != 200 or not isinstance(data, dict) or data.get("success") is not True:
-            raise ScenarioRefused("upstream_stage_failed")
+            detail = classify_ontology_error(data.get('error')) if path == '/api/graph/ontology/generate' and isinstance(data, dict) else None
+            raise ScenarioRefused("upstream_stage_failed", detail)
         result = data.get("data")
         if not isinstance(result, dict):
             raise ScenarioRefused("upstream_response_contract_changed")

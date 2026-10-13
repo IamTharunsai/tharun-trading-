@@ -47,6 +47,8 @@ Minimal graph ownership claims are recorded before cloud creation and retained i
 
 ## Validation
 
+Operational diagnostics answer three questions: which scenario stage failed, whether provider generation stopped at its token limit, and how many calls that job admitted. Logs contain fixed event names, a random job ID, entry point, bounded counts and an allowlisted completion reason. Ontology errors become fixed enum codes; no raw exceptions, document content, model text or provider credentials are logged. Configuration readiness alone does not prove a functional scenario. A complete metrics/tracing dashboard remains separate work.
+
 Pure Python fixture tests cover authentication, absolute input deadlines, quotas, provenance, scenario sequencing, platform readiness, process containment, trace binding and ownership recording. Backend fixtures cover pinned identity, fixed hosts, owner route configuration, deadlines, response bounds, sanitization and evidence-only results. Fixtures do not prove upstream providers or live scenario outcomes.
 
 CI runs the Python boundary tests in a read-only, unprivileged container with no external network and explicit CPU/memory/process/scratch limits. Actual Railway image builds and authenticated functional checks provide separate deployment evidence. No trading qualification or financial accuracy is inferred from these checks.

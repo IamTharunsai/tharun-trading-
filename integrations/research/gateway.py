@@ -27,17 +27,34 @@ PROXY_LOCK = threading.Lock()
 PROXY_KEY = os.urandom(32).hex()
 PROXY_CALLS = 0
 PROXY_ACTIVE = False
+PROXY_JOB_ID = None
 PROVIDER_PROCESSES = set()
 INPUT_DEADLINE_SECONDS = 10
 STATE = Path(os.environ.get("RESEARCH_STATE", "/data"))
 
 
+DETAIL_CODES = frozenset(('json_truncated', 'json_no_choices', 'json_empty', 'json_multiple_values',
+    'json_not_object', 'ontology_unexpected_failure', 'json_invalid', 'json_unexpected_finish',
+    'provider_request_failed', 'upstream_unclassified'))
+
+
 class Refusal(Exception):
-    def __init__(self, code, status=422, diagnostic=None, exception_kind=None):
+    def __init__(self, code, status=422, diagnostic=None, exception_kind=None, detail_code=None):
         self.code, self.status, self.diagnostic = code, status, diagnostic
         self.exception_kind = exception_kind if exception_kind in (
             'AttributeError', 'TypeError', 'ModuleNotFoundError', 'ImportError',
             'RuntimeError', 'PermissionError', 'ValueError') else None
+        self.detail_code = detail_code if isinstance(detail_code, str) and detail_code in DETAIL_CODES else None
+
+
+def completion_metadata(response):
+    choices = response.get('choices') if isinstance(response, dict) else None
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    reason = choice.get('finish_reason')
+    message = choice.get('message')
+    content = message.get('content') if isinstance(message, dict) else None
+    return {'finishReason': reason if reason in ('stop', 'length', 'tool_calls', 'content_filter', 'function_call') else 'unknown',
+            'contentCharacters': min(len(content), MAX_RESPONSE) if isinstance(content, str) else 0}
 
 
 def read_json(handler, maximum=MAX_BODY):
@@ -127,10 +144,11 @@ def readiness():
 
 
 def run_worker(body):
-    global PROXY_CALLS, PROXY_ACTIVE, PROXY_KEY
+    global PROXY_CALLS, PROXY_ACTIVE, PROXY_KEY, PROXY_JOB_ID
     with tempfile.TemporaryDirectory(prefix="job-", dir=STATE) as home:
         with PROXY_LOCK:
             PROXY_KEY = os.urandom(32).hex()
+            PROXY_JOB_ID = os.urandom(16).hex()
             PROXY_CALLS, PROXY_ACTIVE = 0, SERVICE in ("hermes", "mirofish")
         interpreter = "/engine/backend/.venv/bin/python" if SERVICE == "mirofish" else "/engine/.venv/bin/python"
         env = {"PATH": str(Path(interpreter).parent) + ":/usr/local/bin:/usr/bin:/bin", "HOME": home,
@@ -159,7 +177,7 @@ def run_worker(body):
                 diagnostic = result.get("diagnostic") if isinstance(result, dict) else None
                 if isinstance(diagnostic, str) and diagnostic in {'mirofish_' + phase + '_failed' for phase in
                         ('config', 'import', 'ontology', 'graph', 'preflight', 'prepare', 'simulation', 'report', 'cleanup')}:
-                    raise Refusal('research_worker_failed', 502, diagnostic, result.get('exceptionKind'))
+                    raise Refusal('research_worker_failed', 502, diagnostic, result.get('exceptionKind'), result.get('detailCode'))
                 if isinstance(diagnostic, str) and diagnostic in {
                         stage + '_' + kind for stage in ('import', 'init', 'isolation', 'research', 'result')
                         for kind in ('AttributeError', 'TypeError', 'ModuleNotFoundError', 'ImportError', 'RuntimeError', 'PermissionError', 'ValueError')}:
@@ -187,7 +205,8 @@ def run_worker(body):
                 process.wait(timeout=5)
                 if SERVICE == "mirofish":
                     retain_mirofish_ownership(Path(home))
-                print(json.dumps({'event': 'research_worker_finished', 'service': SERVICE, 'providerCalls': PROXY_CALLS}), flush=True)
+                print(json.dumps({'event': 'research_worker_finished', 'service': SERVICE, 'providerCalls': PROXY_CALLS,
+                                  'jobId': PROXY_JOB_ID, 'entryPoint': 'research_endpoint'}), flush=True)
 
 
 def retain_mirofish_ownership(home):
@@ -288,7 +307,8 @@ class Handler(BaseHTTPRequestHandler):
         except Refusal as refusal:
             return self.respond(refusal.status, {"error": refusal.code,
                 **({"diagnostic": refusal.diagnostic} if refusal.diagnostic else {}),
-                **({"exceptionKind": refusal.exception_kind} if refusal.exception_kind else {})})
+                **({"exceptionKind": refusal.exception_kind} if refusal.exception_kind else {}),
+                **({"detailCode": refusal.detail_code} if refusal.detail_code else {})})
         except Exception:
             return self.respond(502, {"error": "research_unavailable"})
         finally:
@@ -374,6 +394,7 @@ class ProviderProxy(Handler):
                     if not PROXY_ACTIVE or not self.authenticated(PROXY_KEY) or PROXY_CALLS >= (32 if SERVICE == 'mirofish' else 2):
                         raise Refusal("provider_call_budget_exhausted", 429)
                     PROXY_CALLS += 1
+                    job_id = PROXY_JOB_ID
                     ready_read, ready_write = os.pipe()
                     process = subprocess.Popen([sys.executable, str(ROOT / "provider_worker.py")],
                         stdin=subprocess.PIPE, stdout=output, stderr=subprocess.DEVNULL,
@@ -405,6 +426,8 @@ class ProviderProxy(Handler):
                     process.wait(timeout=5)
                     with PROXY_LOCK:
                         PROVIDER_PROCESSES.discard(process)
+            print(json.dumps({'event': 'provider_completion', 'service': SERVICE, 'jobId': job_id,
+                              'entryPoint': 'research_endpoint', **completion_metadata(response)}), flush=True)
             self.respond(200, response)
         except Refusal as refusal:
             print(json.dumps({'event': 'provider_boundary_refusal', 'service': SERVICE, 'code': refusal.code}), flush=True)

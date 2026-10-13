@@ -16,6 +16,15 @@ import gateway
 
 
 class InputBoundary(unittest.TestCase):
+    def test_provider_completion_metadata_never_includes_model_content(self):
+        response = {'choices': [{'finish_reason': 'length', 'message': {'content': 'private fixture'}}]}
+        self.assertEqual(gateway.completion_metadata(response), {'finishReason': 'length', 'contentCharacters': 15})
+        for reason in ('private fixture', {}, []):
+            self.assertEqual(gateway.completion_metadata({'choices': [{'finish_reason': reason}]}),
+                             {'finishReason': 'unknown', 'contentCharacters': 0})
+        for detail in ('private fixture', {}, [], None):
+            self.assertIsNone(gateway.Refusal('fixture', detail_code=detail).detail_code)
+
     def test_overrides_rejected(self):
         for field in ('model', 'base_url', 'tools', 'commands', 'project_path', 'conversation_history'):
             with self.assertRaises(gateway.Refusal):

@@ -77,6 +77,30 @@ class FixtureApi:
 
 
 class WorkerTests(unittest.TestCase):
+    def test_ontology_failure_preserves_only_fixed_error_enum(self):
+        class Response:
+            status_code = 502
+            data = b'fixture'
+            def get_json(self, **_kwargs):
+                return {'success': False, 'error': 'LLM JSON output was truncated at the token limit'}
+        class Client:
+            def open(self, *_args, **_kwargs):
+                return Response()
+        with tempfile.TemporaryDirectory() as home, \
+                patch.object(worker, 'CURRENT_PHASE', 'ontology'), \
+                patch.object(worker, 'FAILED_PHASE', None), \
+                patch.object(worker, 'FAILED_EXCEPTION_KIND', None), \
+                patch.object(worker, 'FAILED_DETAIL_CODE', None):
+            api = worker.LocalApi(Client(), Path(home), 10, clock=lambda: 0)
+            with self.assertRaises(worker.ScenarioRefused) as failure:
+                api.request('POST', '/api/graph/ontology/generate')
+            worker.remember_failure_phase(failure.exception)
+            self.assertEqual(worker.failure_diagnostic(), {'diagnostic': 'mirofish_ontology_failed',
+                'exceptionKind': 'RuntimeError', 'detailCode': 'json_truncated'})
+            for unsafe in (None, {}, [], 'private api key fixture', 'LLM returned invalid JSON (line secrets, column keys)'):
+                self.assertEqual(worker.classify_ontology_error(unsafe), 'upstream_unclassified')
+            self.assertEqual(worker.classify_ontology_error('LLM returned invalid JSON (line 4, column 9)'), 'json_invalid')
+
     def test_original_diagnostic_survives_a_different_cleanup_failure(self):
         with patch.object(worker, "CURRENT_PHASE", "config"), \
                 patch.object(worker, "FAILED_PHASE", None), \
