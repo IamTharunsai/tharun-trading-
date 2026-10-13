@@ -440,6 +440,7 @@ export default function PolymarketPage() {
           ) : (
             <>
               <div className="flex justify-between"><span className="text-slate-500">Execution mode</span><span className="font-bold">{pmMode}</span></div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4"><span className="shrink-0 text-slate-500">Live execution</span><span className="max-w-prose sm:text-right">{statusQ.data.polymarket.liveReadiness?.reason || 'Readiness unavailable'}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Polymarket US API</span><span className={`font-bold ${usConnected ? 'text-emerald-600' : 'text-slate-500'}`}>{usConnected ? 'VERIFIED' : statusQ.data?.polymarket?.usConfigured ? 'UNVERIFIED' : 'NOT CONFIGURED'}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Scheduler</span><span className="font-bold">{String(statusQ.data?.scheduler || '—').toUpperCase()}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Wallet (portfolio breakdown)</span><span className="font-bold">{walletConnected ? 'CONNECTED' : 'NOT CONNECTED'}</span></div>
