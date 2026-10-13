@@ -166,6 +166,9 @@ def run_worker(body):
                     raise Refusal("research_worker_failed", 502, diagnostic)
                 if not isinstance(result, dict) or not isinstance(result.get("text"), str) or not result['text'].strip() or len(result['text']) > 16000:
                     raise Refusal("research_output_invalid", 502)
+                if SERVICE in ('hermes', 'mirofish') and (result.get('completed') is not True or
+                        result.get('partial') is True or result.get('failed') or result.get('interrupted')):
+                    raise Refusal("research_incomplete", 502)
                 return {**result, "service": SERVICE, "sourceCommit": PINS[SERVICE]["commit"],
                         "observedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                         "evidenceOnly": True, "tradingAuthority": False,

@@ -49,7 +49,7 @@ try:
         conversation_history=None)
   stage = 'result'
   text = result.get("final_response")
-  if not isinstance(text, str) or not text.strip() or result.get("failed") or result.get("interrupted"):
+  if not isinstance(text, str) or not text.strip() or result.get("failed") or result.get("interrupted") or result.get("completed") is not True or result.get("partial") is True:
       raise RuntimeError("Research did not complete")
   print(json.dumps({"text": text[:16000], "completed": bool(result.get("completed")),
                     "partial": bool(result.get("partial")), "model": os.environ["RESEARCH_MODEL"]}))

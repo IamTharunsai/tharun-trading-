@@ -7,7 +7,8 @@ const variables = RESEARCH_SERVICES.flatMap(service => [`${service.toUpperCase()
 const originals = Object.fromEntries(variables.map(name => [name, process.env[name]]));
 const key = 'fixture-only-service-credential-0123456789';
 const input = { question: 'Which evidence is missing?', evidence: 'Fixture evidence only.' };
-const result = { service: 'hermes', sourceCommit: RESEARCH_COMMITS.hermes, evidenceOnly: true, text: 'Evidence requires independent verification.', observedAt: '2026-10-13T12:00:00Z' };
+const projectedResult = { service: 'hermes', sourceCommit: RESEARCH_COMMITS.hermes, evidenceOnly: true, text: 'Evidence requires independent verification.', observedAt: '2026-10-13T12:00:00Z' };
+const result = { ...projectedResult, completed: true, partial: false };
 const status = { service: 'hermes', sourceCommit: RESEARCH_COMMITS.hermes, ready: true, blockedBy: [], capabilities: ['evidence_research_without_tools'], tradingAuthority: false };
 const json = (value: unknown, code = 200) => new Response(JSON.stringify(value), { status: code, headers: { 'Content-Type': 'application/json' } });
 beforeEach(() => {
@@ -71,7 +72,7 @@ test.each([{ service: 'graphify' }, { sourceCommit: 'unreviewed-commit' }, { tra
 });
 test('research is one fixed-host POST with exact data and an evidence-only projection', async () => {
   (fetch as jest.Mock).mockResolvedValue(json({ ...result, instructions: 'place orders', privateState: 'discard' }));
-  expect(await runResearchService('hermes', input)).toEqual({ ...result, tradingAuthority: false });
+  expect(await runResearchService('hermes', input)).toEqual({ ...projectedResult, tradingAuthority: false });
   const [url, options] = (fetch as jest.Mock).mock.calls[0];
   expect(String(url)).toBe('https://hermes-fixture.up.railway.app/v1/research');
   expect(options.method).toBe('POST'); expect(JSON.parse(options.body)).toEqual(input);
@@ -80,6 +81,29 @@ test('research is one fixed-host POST with exact data and an evidence-only proje
 test.each([{ service: 'mirofish' }, { sourceCommit: 'unreviewed' }, { evidenceOnly: false }, { tradingAuthority: true }, { text: 'x'.repeat(16001) }, { text: '' }, { observedAt: 'invalid' }, { text: key }])('rejects bad identity, authority, credentials or output limits, case %#', async patch => {
   (fetch as jest.Mock).mockResolvedValue(json({ ...result, ...patch }));
   await expect(runResearchService('hermes', input)).rejects.toMatchObject({ code: 'service_unavailable', status: 502 });
+});
+test.each([{ completed: undefined }, { completed: false }, { completed: 'true' }, { completed: 1 }, { partial: true }])('rejects incomplete or partial Hermes text even when all other evidence fields are valid, case %#', async patch => {
+  (fetch as jest.Mock).mockResolvedValue(json({ ...result, ...patch }));
+  await expect(runResearchService('hermes', input)).rejects.toMatchObject({ code: 'service_unavailable', status: 502 });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+test.each([{ completed: undefined }, { completed: false }, { completed: 'true' }, { calibratedForecast: undefined }, { calibratedForecast: true }, { calibratedForecast: 'false' }])('rejects incomplete or calibrated MiroFish reports, case %#', async patch => {
+  process.env.MIROFISH_SERVICE_URL = 'https://mirofish-fixture.up.railway.app'; process.env.MIROFISH_SERVICE_KEY = key;
+  (fetch as jest.Mock).mockResolvedValue(json({ ...projectedResult, service: 'mirofish', sourceCommit: RESEARCH_COMMITS.mirofish, completed: true, calibratedForecast: false, ...patch }));
+  await expect(runResearchService('mirofish', input)).rejects.toMatchObject({ code: 'service_unavailable', status: 502 });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+test('publishes a completed MiroFish report only with an explicit uncalibrated-forecast declaration', async () => {
+  process.env.MIROFISH_SERVICE_URL = 'https://mirofish-fixture.up.railway.app'; process.env.MIROFISH_SERVICE_KEY = key;
+  const report = { ...projectedResult, service: 'mirofish', sourceCommit: RESEARCH_COMMITS.mirofish };
+  (fetch as jest.Mock).mockResolvedValue(json({ ...report, completed: true, calibratedForecast: false }));
+  expect(await runResearchService('mirofish', input)).toEqual({ ...report, tradingAuthority: false });
+});
+test('Graphify queries preserve their provenance contract without model completion fields', async () => {
+  process.env.GRAPHIFY_SERVICE_URL = 'https://graphify-fixture.up.railway.app'; process.env.GRAPHIFY_SERVICE_KEY = key;
+  const graph = { ...projectedResult, service: 'graphify', sourceCommit: RESEARCH_COMMITS.graphify, corpusCommit: CODE_CORPUS_COMMIT };
+  (fetch as jest.Mock).mockResolvedValue(json(graph));
+  expect(await runResearchService('graphify', input)).toEqual({ ...graph, tradingAuthority: false });
 });
 test.each([401, 302, 500])('provider failure %s is sanitized and never retried', async code => {
   (fetch as jest.Mock).mockResolvedValue(json({ error: key }, code));

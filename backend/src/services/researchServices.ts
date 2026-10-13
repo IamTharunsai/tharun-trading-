@@ -141,6 +141,8 @@ export async function runResearchService(service: ResearchService, input: unknow
     typeof data.observedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(data.observedAt) || !Number.isFinite(Date.parse(data.observedAt))) {
     throw new ResearchServiceError('service_unavailable', 502);
   }
+  if (service === 'hermes' && (data.completed !== true || data.partial === true)) throw new ResearchServiceError('service_unavailable', 502);
+  if (service === 'mirofish' && (data.completed !== true || data.calibratedForecast !== false)) throw new ResearchServiceError('service_unavailable', 502);
   if (service === 'graphify' && data.corpusCommit !== CODE_CORPUS_COMMIT) throw new ResearchServiceError('service_unavailable', 502);
   return { service, sourceCommit: RESEARCH_COMMITS[service], evidenceOnly: true, tradingAuthority: false, text: data.text, observedAt: data.observedAt,
     ...(service === 'graphify' ? { corpusCommit: CODE_CORPUS_COMMIT } : {}) };

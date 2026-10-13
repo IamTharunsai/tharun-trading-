@@ -91,6 +91,41 @@ class InputBoundary(unittest.TestCase):
             with gateway.sqlite3.connect(Path(folder) / 'quota.sqlite') as db:
                 self.assertEqual(db.execute('SELECT count FROM quota').fetchone()[0], 16)
 
+    def test_worker_completion_cannot_be_hidden_by_text_or_gateway_identity(self):
+        for service, result, accepted in (
+                ('hermes', {'text': 'Only a partial answer', 'completed': False}, False),
+                ('hermes', {'text': 'Partial answer', 'completed': True, 'partial': True}, False),
+                ('mirofish', {'text': 'Report without a completed simulation'}, False),
+                ('mirofish', {'text': 'Failed report', 'completed': True, 'failed': True}, False),
+                ('hermes', {'text': 'Completed answer', 'completed': True, 'partial': False}, True),
+                ('mirofish', {'text': 'Completed report', 'completed': True}, True),
+                ('graphify', {'text': 'Indexed symbol'}, True)):
+            class FixtureProcess:
+                returncode = 0
+                def __init__(self, args, **kwargs):
+                    self.output = kwargs['stdout']
+                    self.env = kwargs['env']
+                    if service == 'mirofish':
+                        self.assert_log_path = str(Path(self.env['HOME']) / 'logs')
+                        if self.env.get('MIROFISH_LOG_DIR') != self.assert_log_path:
+                            raise AssertionError('logger path missing before worker import')
+                def communicate(self, *_args, **_kwargs):
+                    self.output.write(json.dumps(result).encode())
+                def wait(self, **_kwargs):
+                    return 0
+            with self.subTest(service=service, result=result), tempfile.TemporaryDirectory() as folder, \
+                    patch.object(gateway, 'STATE', Path(folder)), patch.object(gateway, 'SERVICE', service), \
+                    patch.dict(gateway.os.environ, {'ZEP_API_KEY': 'fixture-only'}), \
+                    patch.object(gateway.subprocess, 'Popen', FixtureProcess), patch.object(gateway, 'kill_group'):
+                if accepted:
+                    output = gateway.run_worker({'question': 'q', 'evidence': 'fixture'})
+                    self.assertEqual(output['service'], service)
+                    self.assertTrue(output['evidenceOnly'])
+                else:
+                    with self.assertRaises(gateway.Refusal) as failure:
+                        gateway.run_worker({'question': 'q', 'evidence': 'fixture'})
+                    self.assertEqual(failure.exception.code, 'research_incomplete')
+
 
 class HttpBoundary(unittest.TestCase):
     def setUp(self):
