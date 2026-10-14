@@ -36,7 +36,9 @@ STATE = Path(os.environ.get("RESEARCH_STATE", "/data"))
 
 DETAIL_CODES = frozenset(('json_truncated', 'json_no_choices', 'json_empty', 'json_multiple_values',
     'json_not_object', 'ontology_unexpected_failure', 'json_invalid', 'json_unexpected_finish',
-    'provider_request_failed', 'upstream_unclassified'))
+    'provider_request_failed', 'upstream_unclassified', 'report_section_budget_exceeded',
+    'report_requires_actual_simulation_evidence', 'scenario_report_budget_exceeded',
+    'scenario_deadline_exceeded'))
 
 
 class Refusal(Exception):

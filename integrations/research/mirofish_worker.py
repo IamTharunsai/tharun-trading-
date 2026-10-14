@@ -48,7 +48,10 @@ ONTOLOGY_ERRORS = {
     'LLM JSON response must be a top-level JSON object': 'json_not_object',
     'Ontology generation failed; check the server logs': 'ontology_unexpected_failure',
 }
-DETAIL_CODES = frozenset((*ONTOLOGY_ERRORS.values(), 'json_invalid', 'json_unexpected_finish',
+REPORT_REFUSAL_CODES = frozenset(('report_section_budget_exceeded',
+    'report_requires_actual_simulation_evidence', 'scenario_report_budget_exceeded',
+    'scenario_deadline_exceeded'))
+DETAIL_CODES = frozenset((*ONTOLOGY_ERRORS.values(), *REPORT_REFUSAL_CODES, 'json_invalid', 'json_unexpected_finish',
                           'provider_request_failed', 'upstream_unclassified'))
 IS_OASIS_CHILD = sys.argv[1:2] == ["--oasis-script"]
 
@@ -94,6 +97,8 @@ class ScenarioRefused(RuntimeError):
     """Only fixed error codes cross the research boundary."""
     def __init__(self, code, detail_code=None):
         super().__init__(code)
+        if detail_code is None and isinstance(code, str) and code in REPORT_REFUSAL_CODES:
+            detail_code = code
         self.detail_code = detail_code if isinstance(detail_code, str) and detail_code in DETAIL_CODES else None
 
 
@@ -111,6 +116,17 @@ def classify_ontology_error(value):
     if re.fullmatch(r'LLM provider request failed \(HTTP [1-5][0-9]{2}\)(?: \(request_id: [a-zA-Z0-9._:-]{1,128}\))?', value):
         return 'provider_request_failed'
     return 'upstream_unclassified'
+
+
+def classify_task_error(value):
+    # Pinned Task.to_dict exposes report.error / str(exception). Inspect only
+    # a bounded string and match exact own refusals or fixed LLM patterns;
+    # never forward upstream prose, identifiers, paths or provider content.
+    if not isinstance(value, str) or len(value) > 300:
+        return 'upstream_unclassified'
+    if value in REPORT_REFUSAL_CODES:
+        return value
+    return classify_ontology_error(value)
 
 
 def validate_input(body):
@@ -226,6 +242,8 @@ class LocalApi:
         data = response.get_json(silent=True)
         if response.status_code != 200 or not isinstance(data, dict) or data.get("success") is not True:
             detail = classify_ontology_error(data.get('error')) if path == '/api/graph/ontology/generate' and isinstance(data, dict) else None
+            if path in ('/api/report/generate', '/api/report/generate/status') and isinstance(data, dict):
+                detail = classify_task_error(data.get('error'))
             raise ScenarioRefused("upstream_stage_failed", detail)
         result = data.get("data")
         if not isinstance(result, dict):
@@ -236,7 +254,7 @@ class LocalApi:
         while True:
             result = read()
             if result.get(status_key) in ("failed", "stopped", "error"):
-                raise ScenarioRefused("upstream_task_failed")
+                raise ScenarioRefused("upstream_task_failed", classify_task_error(result.get('error')))
             if is_ready(result):
                 return result
             self.check_deadline()

@@ -16,6 +16,45 @@ import gateway
 
 
 class InputBoundary(unittest.TestCase):
+    def test_report_diagnostic_vocabulary_is_explicit_and_filters_extra_content(self):
+        codes = ('report_section_budget_exceeded', 'report_requires_actual_simulation_evidence',
+                 'scenario_report_budget_exceeded', 'scenario_deadline_exceeded')
+        for code in codes:
+            self.assertEqual(gateway.Refusal('fixture', detail_code=code).detail_code, code)
+            self.assertIsNone(gateway.Refusal('fixture', detail_code=code + ': private fixture').detail_code)
+        for unsafe in (None, {}, [], 'private upstream fixture', 'x' * 10000):
+            self.assertIsNone(gateway.Refusal('fixture', detail_code=unsafe).detail_code)
+
+    def test_worker_report_diagnostic_crosses_gateway_only_as_allowlisted_fields(self):
+        for detail, expected in (('report_section_budget_exceeded', 'report_section_budget_exceeded'),
+                                 ('report_requires_actual_simulation_evidence', 'report_requires_actual_simulation_evidence'),
+                                 ('scenario_report_budget_exceeded', 'scenario_report_budget_exceeded'),
+                                 ('scenario_deadline_exceeded', 'scenario_deadline_exceeded'),
+                                 ('upstream_unclassified', 'upstream_unclassified'),
+                                 ('private upstream fixture', None)):
+            result = {'diagnostic': 'mirofish_report_failed', 'exceptionKind': 'RuntimeError',
+                      'detailCode': detail, 'error': 'private error fixture', 'taskId': 'private task fixture'}
+            class FixtureProcess:
+                returncode = 0
+                def __init__(self, _args, **kwargs):
+                    self.output = kwargs['stdout']
+                def communicate(self, *_args, **_kwargs):
+                    self.output.write(json.dumps(result).encode())
+                def wait(self, **_kwargs):
+                    return 0
+            with self.subTest(detail=expected), tempfile.TemporaryDirectory() as folder, \
+                    patch.object(gateway, 'STATE', Path(folder)), patch.object(gateway, 'SERVICE', 'mirofish'), \
+                    patch.dict(gateway.os.environ, {'ZEP_API_KEY': 'fixture-only'}), \
+                    patch.object(gateway.subprocess, 'Popen', FixtureProcess), patch.object(gateway, 'kill_group'), \
+                    patch('sys.stdout', io.StringIO()):
+                with self.assertRaises(gateway.Refusal) as failure:
+                    gateway.run_worker({'question': 'q', 'evidence': 'fixture'})
+                self.assertEqual(failure.exception.code, 'research_worker_failed')
+                self.assertEqual(failure.exception.status, 502)
+                self.assertEqual(failure.exception.diagnostic, 'mirofish_report_failed')
+                self.assertEqual(failure.exception.exception_kind, 'RuntimeError')
+                self.assertEqual(failure.exception.detail_code, expected)
+
     def test_schema_limit_fits_pinned_ontology_without_uncapping_other_requests(self):
         with patch.object(gateway, 'SERVICE', 'mirofish'):
             self.assertEqual(gateway.provider_output_limit({'response_format': {'type': 'json_object'}}), 8192)
@@ -208,6 +247,18 @@ class HttpBoundary(unittest.TestCase):
         with patch.object(gateway, 'run_worker') as worker:
             self.assertEqual(self.request('/v1/research', {'question': 'q', 'evidence': ''})[0], 503)
             worker.assert_not_called()
+
+    def test_report_failure_http_response_contains_only_safe_fixed_fields(self):
+        for detail, expected in (('report_section_budget_exceeded', 'report_section_budget_exceeded'),
+                                 ('upstream_unclassified', 'upstream_unclassified'),
+                                 ('private path /fixture/key and provider content', None)):
+            refusal = gateway.Refusal('research_worker_failed', 502, 'mirofish_report_failed', 'RuntimeError', detail)
+            with self.subTest(detail=expected), patch.object(gateway, 'readiness', return_value={'ready': True}), \
+                    patch.object(gateway, 'take_daily_quota'), patch.object(gateway, 'run_worker', side_effect=refusal):
+                status, body = self.request('/v1/research', {'question': 'q', 'evidence': 'fixture'})
+                self.assertEqual(status, 502)
+                self.assertEqual(body, {'error': 'research_worker_failed', 'diagnostic': 'mirofish_report_failed',
+                    'exceptionKind': 'RuntimeError', **({'detailCode': expected} if expected else {})})
 
     def test_absolute_header_deadline_closes_slow_peer(self):
         with patch.object(gateway, 'INPUT_DEADLINE_SECONDS', 0.15):

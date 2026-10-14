@@ -77,6 +77,87 @@ class FixtureApi:
 
 
 class WorkerTests(unittest.TestCase):
+    def test_task_error_classifier_accepts_only_bounded_known_errors(self):
+        codes = ('report_section_budget_exceeded', 'report_requires_actual_simulation_evidence',
+                 'scenario_report_budget_exceeded', 'scenario_deadline_exceeded')
+        self.assertEqual(worker.REPORT_REFUSAL_CODES, frozenset(codes))
+        for code in codes:
+            self.assertEqual(worker.classify_task_error(code), code)
+            for unsafe in (code + ': private fixture', 'RuntimeError(' + code + ')', code + ' '):
+                self.assertEqual(worker.classify_task_error(unsafe), 'upstream_unclassified')
+        for unsafe in (None, {}, [], 1, 'private path /fixture/key and provider content',
+                       'report_section_budget_exceeded' + 'x' * 301):
+            self.assertEqual(worker.classify_task_error(unsafe), 'upstream_unclassified')
+        self.assertEqual(worker.classify_task_error('LLM JSON output was truncated at the token limit'), 'json_truncated')
+        self.assertEqual(worker.classify_task_error('LLM provider request failed (HTTP 502) (request_id: fixture-id)'),
+                         'provider_request_failed')
+
+    def test_failed_task_uses_fixed_detail_without_ready_check_or_retry(self):
+        cases = (('report_section_budget_exceeded', 'report_section_budget_exceeded'),
+                 ('report_requires_actual_simulation_evidence', 'report_requires_actual_simulation_evidence'),
+                 ('scenario_report_budget_exceeded', 'scenario_report_budget_exceeded'),
+                 ('scenario_deadline_exceeded', 'scenario_deadline_exceeded'),
+                 ('private path /fixture/key and provider content', 'upstream_unclassified'),
+                 (None, 'upstream_unclassified'), ({'error': 'report_section_budget_exceeded'}, 'upstream_unclassified'))
+        def unexpected(*_args):
+            raise AssertionError('Failed task must not retry or check readiness')
+        for status_key in ('status', 'runner_status'):
+            for status in ('failed', 'stopped', 'error'):
+                for error, expected in cases:
+                    with self.subTest(status_key=status_key, status=status, detail=expected), \
+                            tempfile.TemporaryDirectory() as home, patch.multiple(worker,
+                                CURRENT_PHASE='report', FAILED_PHASE=None, FAILED_EXCEPTION_KIND=None, FAILED_DETAIL_CODE=None):
+                        reads = []
+                        def read():
+                            reads.append(True)
+                            return {status_key: status, 'error': error, 'result': {'private': 'fixture'}}
+                        api = worker.LocalApi(None, Path(home), 10, clock=lambda: 0, sleep=unexpected)
+                        with self.assertRaises(worker.ScenarioRefused) as failure:
+                            api.wait(read, unexpected, status_key=status_key)
+                        worker.remember_failure_phase(failure.exception)
+                        self.assertEqual(reads, [True])
+                        self.assertEqual(str(failure.exception), 'upstream_task_failed')
+                        self.assertEqual(worker.failure_diagnostic(), {'diagnostic': 'mirofish_report_failed',
+                            'exceptionKind': 'RuntimeError', 'detailCode': expected})
+
+    def test_own_report_refusals_keep_detail_and_original_failure_through_cleanup(self):
+        for code in worker.REPORT_REFUSAL_CODES:
+            with self.subTest(code=code), patch.multiple(worker, CURRENT_PHASE='report',
+                    FAILED_PHASE=None, FAILED_EXCEPTION_KIND=None, FAILED_DETAIL_CODE=None):
+                worker.remember_failure_phase(worker.ScenarioRefused(code))
+                worker.set_phase('cleanup')
+                worker.remember_failure_phase(RuntimeError('private cleanup fixture'))
+                self.assertEqual(worker.failure_diagnostic(), {'diagnostic': 'mirofish_report_failed',
+                    'exceptionKind': 'RuntimeError', 'detailCode': code})
+
+    def test_report_route_failure_classifies_only_fixed_detail(self):
+        class Response:
+            status_code = 502
+            data = b'fixture'
+            def get_json(self, **_kwargs):
+                return {'success': False, 'error': error}
+        class Client:
+            def open(self, *_args, **_kwargs):
+                return Response()
+        for path in ('/api/report/generate', '/api/report/generate/status'):
+            for error, detail in (('report_section_budget_exceeded', 'report_section_budget_exceeded'),
+                                  ('private upstream fixture', 'upstream_unclassified')):
+                with self.subTest(path=path, detail=detail), tempfile.TemporaryDirectory() as home:
+                    api = worker.LocalApi(Client(), Path(home), 10, clock=lambda: 0)
+                    with self.assertRaises(worker.ScenarioRefused) as failure:
+                        api.request('POST', path)
+                    self.assertEqual(failure.exception.detail_code, detail)
+                    self.assertEqual(str(failure.exception), 'upstream_stage_failed')
+
+    def test_wait_preserves_absolute_deadline_and_never_promotes_pending_task(self):
+        with tempfile.TemporaryDirectory() as home:
+            api = worker.LocalApi(None, Path(home), 10, clock=lambda: 10,
+                                  sleep=lambda _: self.fail('Deadline must refuse before sleeping'))
+            with self.assertRaises(worker.ScenarioRefused) as failure:
+                api.wait(lambda: {'status': 'processing'}, lambda row: row.get('status') == 'completed')
+            self.assertEqual(str(failure.exception), 'scenario_deadline_exceeded')
+            self.assertEqual(failure.exception.detail_code, 'scenario_deadline_exceeded')
+
     def test_ontology_failure_preserves_only_fixed_error_enum(self):
         class Response:
             status_code = 502
@@ -205,8 +286,10 @@ class WorkerTests(unittest.TestCase):
     def test_oversize_report_is_refused_not_truncated_or_called_complete(self):
         api = FixtureApi()
         api.report = "A" * (worker.MAX_REPORT_CHARS + 1)
-        with self.assertRaisesRegex(worker.ScenarioRefused, "report_budget"):
+        with self.assertRaisesRegex(worker.ScenarioRefused, "report_budget") as failure:
             worker.execute_pipeline(api, lambda _: 2)
+        self.assertEqual(failure.exception.detail_code, 'scenario_report_budget_exceeded')
+        self.assertNotIn(('proj_fixture', 'graph_fixture', 'completed'), api.ownership)
 
     def test_missing_zep_refuses_before_upstream_import(self):
         with patch.dict(os.environ, {"PROXY_KEY": "dummy", "RESEARCH_MODEL": "dummy"}, clear=True):
@@ -320,8 +403,9 @@ class WorkerTests(unittest.TestCase):
         self.assertIn('"totalObservedActions": 2', report.requirement)
         self.assertIn("synthetic simulation evidence", report.requirement)
         del api.simulation_evidence
-        with self.assertRaises(worker.ScenarioRefused):
+        with self.assertRaises(worker.ScenarioRefused) as failure:
             Report(simulation_requirement="Missing scenario")
+        self.assertEqual(failure.exception.detail_code, 'report_requires_actual_simulation_evidence')
 
     def test_trace_evidence_reads_actual_bounded_sqlite_rows(self):
         with tempfile.TemporaryDirectory() as home:
