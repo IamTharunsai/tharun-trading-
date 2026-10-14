@@ -97,7 +97,7 @@ describe('real committee behavior with dummy providers', () => {
     const masterCall = (routedMessagesCreate as jest.Mock).mock.calls.find(([p]) => p.model.includes('sonnet'))![0];
     expect(JSON.stringify(finalCall.messages)).toContain('105.00');
     expect(JSON.stringify(masterCall.messages)).toContain('105.00');
-    expect(JSON.stringify(prisma.agentDecision.create.mock.calls[0][0].data.marketSnapshot)).toContain('AAPL');
+    expect(JSON.stringify((prisma.agentDecision.create as jest.Mock).mock.calls[0][0].data.marketSnapshot)).toContain('AAPL');
   });
 
   it('cannot approve when the current decision fails to persist', async () => {
