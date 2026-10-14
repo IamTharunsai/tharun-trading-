@@ -1,0 +1,18 @@
+FROM python:3.12.12-slim-bookworm AS build
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /usr/local/bin/uv
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN git init /engine && git -C /engine remote add origin https://github.com/Graphify-Labs/graphify.git && git -C /engine fetch --depth=1 origin 7536dc0665dba4adacca1a323c84fedb217ddc5d && git -C /engine checkout --detach FETCH_HEAD && test "$(git -C /engine rev-parse HEAD)" = 7536dc0665dba4adacca1a323c84fedb217ddc5d
+WORKDIR /engine
+RUN uv sync --frozen --no-dev --no-editable --extra mcp --extra sql
+RUN git init /public-source && git -C /public-source remote add origin https://github.com/IamTharunsai/tharun-trading-.git && git -C /public-source fetch --depth=1 origin 3280a7cafec5ecb9c32f0d1d5bb7af0419d6b9bf && git -C /public-source checkout --detach FETCH_HEAD && test "$(git -C /public-source rev-parse HEAD)" = 3280a7cafec5ecb9c32f0d1d5bb7af0419d6b9bf
+COPY pins.json prepare_corpus.py stamp_graph.py graph_provenance.py /bridge/
+RUN python /bridge/prepare_corpus.py && .venv/bin/graphify extract /corpus --code-only --force --max-workers 1 --out /build && .venv/bin/python /bridge/stamp_graph.py
+
+FROM python:3.12.12-slim-bookworm
+RUN groupadd --gid 10001 research && useradd --uid 10001 --gid research --no-create-home research && mkdir /data && chown research:research /data
+COPY --from=build /engine/.venv /engine/.venv
+COPY --from=build /engine/LICENSE /engine/NOTICE /licenses/
+COPY --from=build /graph /graph
+COPY gateway.py graph_worker.py pins.json boot.py /bridge/
+ENV RESEARCH_SERVICE=graphify PYTHONDONTWRITEBYTECODE=1 PORT=8080
+CMD ["python", "/bridge/boot.py"]
