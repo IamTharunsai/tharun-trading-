@@ -213,7 +213,9 @@ export default function PolymarketPage() {
           <p className="text-sm text-slate-500 mt-0.5">Open markets, model estimates and the wagers actually recorded by the system.</p>
         </div>
         <div className="flex items-center gap-3">
-          <LastUpdated />
+          <LastUpdated query={activeTab === 'scanner' ? predsQ : activeTab === 'trades' ? tradesQ : statusQ}
+            label={activeTab === 'scanner' ? 'Markets response' : activeTab === 'trades' ? 'Trades response' : 'Engine status response'}
+            staleAfterMs={activeTab === 'scanner' ? 120000 : 60000} />
           <button
             data-testid="polymarket-scan"
             onClick={handleScan}

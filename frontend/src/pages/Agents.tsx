@@ -25,10 +25,11 @@ export default function AgentsPage() {
     setRunning(true);
     try {
       await api.post('/agents/trigger-debate', { asset: symbol, market });
-      toast.success(`🏛️ Committee convening for ${symbol} — watch agents vote live on DebateRoom!`, { duration: 5000 });
-      setTimeout(() => { refetch(); setRunning(false); }, 4000);
+      toast.success(`Research request accepted for ${symbol}. Watch the Debate Room for an observed start.`, { duration: 5000 });
+      refetch();
     } catch {
       toast.error('Failed to trigger debate');
+    } finally {
       setRunning(false);
     }
   };
@@ -39,23 +40,12 @@ export default function AgentsPage() {
     setTrading(true);
     try {
       const r = await api.post('/agents/run-and-trade', { asset: symbol, market });
-      toast.success(r.data.message || `🏛️ Full debate started for ${symbol}`, { duration: 6000 });
-      setTimeout(() => { refetch(); setTrading(false); }, 5000);
+      toast(`Trading review request accepted for ${symbol}. A request does not confirm a fill.`, { duration: 6000 });
+      refetch();
     } catch (e: any) {
       toast.error(e.response?.data?.error || 'Debate failed');
+    } finally {
       setTrading(false);
-    }
-  };
-
-  const forceBuy = async () => {
-    if (!symbol) { toast.error('Pick a symbol first'); return; }
-    if (!confirm(`Place a real paper BUY order for ${symbol} right now, skipping the 13-agent debate? This executes immediately.`)) return;
-    try {
-      const r = await api.post('/agents/force-trade', { asset: symbol, market, direction: 'BUY' });
-      toast.success(r.data.message || `✅ Paper trade executed!`, { duration: 6000 });
-      setTimeout(refetch, 2000);
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Force trade failed');
     }
   };
 
@@ -66,7 +56,7 @@ export default function AgentsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-sans font-bold text-2xl text-apex-text">Agent Council</h1>
-          <p className="font-mono text-xs text-apex-muted mt-1">13 specialist agents — 3-round debate before every trade</p>
+          <p className="font-mono text-xs text-apex-muted mt-1">{ALL_AGENTS.length} specialists · Scheduled analysis runs automatically. Research requests cannot place orders.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {currentAnalysis && (
@@ -85,7 +75,7 @@ export default function AgentsPage() {
               border: 'none', color: (running || !!currentAnalysis) ? '#94A3B8' : '#fff',
               fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: (running || !!currentAnalysis) ? 'not-allowed' : 'pointer' }}>
             <PlayCircle size={13} />
-            {running ? 'RUNNING...' : 'DEBATE'}
+            {running ? 'REQUESTING...' : 'Research only'}
           </button>
 
           {/* Run debate + auto-trade */}
@@ -95,16 +85,9 @@ export default function AgentsPage() {
               border: 'none', color: (trading || !!currentAnalysis) ? '#94A3B8' : '#fff',
               fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: (trading || !!currentAnalysis) ? 'not-allowed' : 'pointer' }}>
             <Zap size={13} />
-            {trading ? 'DEBATING...' : 'DEBATE & TRADE'}
+            {trading ? 'REQUESTING...' : 'Review for trading'}
           </button>
 
-          {/* Force immediate buy */}
-          <button data-testid="force-buy" onClick={forceBuy} disabled={!symbol}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
-              background: '#FEE2E2', border: '1px solid #FCA5A5',
-              color: '#DC2626', fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-            ⚡ FORCE BUY
-          </button>
         </div>
       </div>
 
@@ -177,7 +160,7 @@ export default function AgentsPage() {
                     <span className="font-sans font-bold text-apex-text">{d.asset}</span>
                     {st.allErrors ? (
                       <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200" data-testid="decision-provider-error">
-                        AI provider error — no real vote
+                        Provider error — no valid vote
                       </span>
                     ) : (
                       <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${decision === 'BUY' ? 'bg-apex-green/10 text-apex-green' : decision === 'SELL' ? 'bg-apex-red/10 text-apex-red' : 'bg-apex-surface text-apex-muted'}`}>
@@ -207,7 +190,7 @@ export default function AgentsPage() {
           })}
           {decisions.length === 0 && (
             <div className="text-center py-8 font-mono text-xs text-apex-muted">
-              No decisions yet — click DEBATE or DEBATE & TRADE above to start
+              No decisions received. Scheduled reviews run automatically; request research above to inspect a symbol.
             </div>
           )}
         </div>

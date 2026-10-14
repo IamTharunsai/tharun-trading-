@@ -1,353 +1,118 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
+import { Activity, Circle, MessageSquare, ShieldCheck } from 'lucide-react';
 import { connectSocket } from '../services/socket';
 import { useStore } from '../store';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { AGENTS } from '../constants/agents';
-import { isCryptoSymbol } from '../constants/assets';
 import SymbolPicker from '../components/common/SymbolPicker';
 import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
-
-function getMarket(asset: string): 'crypto' | 'stocks' {
-  return isCryptoSymbol(asset) ? 'crypto' : 'stocks';
-}
-
-interface AgentState {
-  status: 'idle' | 'analyzing' | 'voted';
-  vote?: 'BUY' | 'SELL' | 'HOLD';
-  confidence?: number;
-  reasoning?: string;
-}
-
-interface TranscriptEntry {
-  agentId: number;
-  agentName: string;
-  content: string;
-  vote?: string;
-  timestamp: number;
-}
+import { debateTally } from '../utils/debateSessions';
+import LastUpdated from '../components/common/LastUpdated';
 
 export default function DebateRoomPage() {
-    const [agentStates, setAgentStates] = useState<Record<number, AgentState>>({});
-  const [isDebating, setIsDebating] = useState(false);
-  const [currentAsset, setCurrentAsset] = useState('');
-  const { symbol: selectedAsset, market: selectedMarket, setSymbol: setSelectedAsset } = useSelectedSymbol('all');
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
-  const [finalDecision, setFinalDecision] = useState<{ decision: string; goVotes: number; noGoVotes: number; confidence: number } | null>(null);
+  const { debateSessions, socketStatus } = useStore();
+  const [selectedId, setSelectedId] = useState('');
   const [triggering, setTriggering] = useState(false);
-  const transcriptRef = useRef<HTMLDivElement>(null);
+  const { symbol, market, setSymbol } = useSelectedSymbol('all');
+  const sessions = Object.values(debateSessions).sort((a, b) => b.receivedAt - a.receivedAt);
+  const session = debateSessions[selectedId] ?? sessions[0];
+  const tally = debateTally(session);
+  const result = session?.result;
+  useEffect(() => { connectSocket(); }, []);
 
-  useEffect(() => {
-    const socket = connectSocket();
-    if (!socket) return;
-
-    // debate engine events (used by debateEngine.ts)
-    socket.on('debate:start', (data: any) => {
-      setIsDebating(true);
-      setCurrentAsset(data.asset);
-      setFinalDecision(null);
-      setTranscript([]);
-      setAgentStates({});
-      toast(`🏛️ Investment Committee convening for ${data.asset}`, { icon: '⚡' });
-    });
-
-    socket.on('debate:agent-speaking', (data: any) => {
-      setAgentStates(prev => ({
-        ...prev,
-        [data.agentId]: { ...prev[data.agentId], status: 'analyzing' }
-      }));
-    });
-
-    socket.on('debate:agent-voted', (data: any) => {
-      setAgentStates(prev => ({
-        ...prev,
-        [data.agentId]: { status: 'voted', vote: data.vote || data.finalVote, confidence: data.confidence }
-      }));
-      setTranscript(prev => [...prev, {
-        agentId: data.agentId,
-        agentName: data.agentName || `Agent ${data.agentId}`,
-        content: data.openingArgument || data.rebuttal || '',
-        vote: data.vote || data.finalVote,
-        timestamp: Date.now(),
-      }]);
-    });
-
-    socket.on('debate:final-vote', (data: any) => {
-      setAgentStates(prev => ({
-        ...prev,
-        [data.agentId]: { status: 'voted', vote: data.finalVote, confidence: data.confidence }
-      }));
-    });
-
-    socket.on('debate:complete', (data: any) => {
-      setIsDebating(false);
-      const t = data.transcript;
-      if (t) {
-        const buyCount  = t.round3?.filter((v: any) => v.finalVote === 'BUY').length  || 0;
-        const sellCount = t.round3?.filter((v: any) => v.finalVote === 'SELL').length || 0;
-        const holdCount = t.round3?.filter((v: any) => v.finalVote === 'HOLD').length || 0;
-        setFinalDecision({
-          decision: t.finalDecision,
-          goVotes: buyCount,
-          noGoVotes: sellCount + holdCount,
-          confidence: t.finalConfidence,
-        });
-        toast.success(`✅ Decision: ${t.finalDecision} (${buyCount} buy / ${sellCount} sell)`, { duration: 8000 });
-      }
-    });
-
-    // orchestrator events (from runAgentCouncil)
-    socket.on('council:start', (data: any) => {
-      setIsDebating(true);
-      setCurrentAsset(data.asset);
-      setFinalDecision(null);
-      setTranscript([]);
-      setAgentStates({});
-    });
-
-    socket.on('agent:status', (data: any) => {
-      setAgentStates(prev => ({
-        ...prev,
-        [data.agentId]: { status: data.status, vote: data.vote?.vote, confidence: data.vote?.confidence }
-      }));
-      if (data.vote) {
-        setTranscript(prev => [...prev, {
-          agentId: data.agentId,
-          agentName: data.vote.agentName || `Agent ${data.agentId}`,
-          content: data.vote.reasoning || '',
-          vote: data.vote.vote,
-          timestamp: Date.now(),
-        }]);
-      }
-    });
-
-    socket.on('council:complete', (data: any) => {
-      setIsDebating(false);
-      const result = data?.result;
-      if (!result) return;
-      setFinalDecision({
-        decision: result.finalDecision,
-        goVotes: result.goVotes,
-        noGoVotes: result.noGoVotes,
-        confidence: result.avgConfidence,
-      });
-      toast.success(`✅ Decision: ${result.finalDecision} (${result.goVotes}/13 votes)`, { duration: 8000 });
-    });
-
-    return () => {
-      ['debate:start','debate:agent-speaking','debate:agent-voted','debate:final-vote',
-       'debate:complete','council:start','agent:status','council:complete'].forEach(e => socket.off(e));
-    };
-  }, []);
-
-  useEffect(() => {
-    if (transcriptRef.current) {
-      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
-    }
-  }, [transcript]);
-
-  const triggerDebate = async () => {
-    if (triggering || isDebating) return;
-    if (!selectedAsset) { toast.error('Pick a symbol first'); return; }
+  const requestResearch = async () => {
+    if (triggering || !symbol) return;
     setTriggering(true);
     try {
-      await api.post('/agents/trigger-debate', { asset: selectedAsset, market: selectedMarket || getMarket(selectedAsset) });
-      toast(`🤖 Debate started for ${selectedAsset} — watch agents vote live!`, { duration: 5000 });
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to trigger debate');
-    } finally {
-      setTriggering(false);
-    }
+      await api.post('/agents/trigger-debate', { asset: symbol, market });
+      toast(`Research request accepted for ${symbol}. A session appears when its start is observed.`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Research request failed. Try again when the service is available.');
+    } finally { setTriggering(false); }
   };
 
-  const voteColor = (vote?: string) =>
-    vote === 'BUY' ? '#059669' : vote === 'SELL' ? '#DC2626' : vote === 'HOLD' ? '#D97706' : '#94A3B8';
-
-  const buyVotes  = Object.values(agentStates).filter(s => s.vote === 'BUY').length;
-  const sellVotes = Object.values(agentStates).filter(s => s.vote === 'SELL').length;
-  const holdVotes = Object.values(agentStates).filter(s => s.vote === 'HOLD').length;
-  const totalVoted = buyVotes + sellVotes + holdVotes;
-
   return (
-    <div className="flex flex-col gap-5 max-w-7xl mx-auto text-slate-900">
-
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+    <div className="space-y-6 max-w-7xl mx-auto text-slate-900">
+      <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="font-bold text-2xl text-slate-900 tracking-tight font-display">
-              Autonomous Investment Committee
-            </h1>
-            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold">
-              3-ROUND DELIBERATION
-            </span>
-          </div>
-          <p className="font-mono text-xs text-slate-500 mt-1">
-            Real-time consensus verification · Multi-agent Wyckoff, order flow & risk vetoes
+          <h1 className="text-2xl font-bold">Team workspace</h1>
+          <p className="mt-2 text-sm text-slate-600 max-w-2xl">
+            Watch scheduled reviews as they happen. Each session keeps its own evidence,
+            specialist votes and committee decision. A recommendation is separate from an order fill.
+          </p>
+          {socketStatus !== 'connected' && <button type="button" className="min-h-11 px-3 mt-2 rounded-lg border border-slate-300 text-sm" onClick={() => connectSocket()}>Retry live connection</button>}
+          <p role="status" className="mt-2 flex items-center gap-2 text-sm">
+            <Activity size={16} aria-hidden="true" />
+            {socketStatus === 'connected' ? 'Live event connection established' : socketStatus === 'connecting' ? 'Connecting to live events…' : 'Live updates unavailable — displayed evidence may be incomplete'}
           </p>
         </div>
-
-        {/* Trigger controls */}
         <div className="flex items-center gap-3 flex-wrap">
-          <SymbolPicker
-            value={selectedAsset}
-            onChange={(sym, meta) => { if (!isDebating) setSelectedAsset(sym, meta); }}
-            data-testid="symbol-picker"
-          />
-
-          <span className="font-mono text-xs text-slate-500 font-bold">
-            {selectedAsset ? `[${(selectedMarket || getMarket(selectedAsset)).toUpperCase()}]` : ''}
-          </span>
-          <button
-            data-testid="debate-trigger"
-            onClick={triggerDebate}
-            disabled={triggering || isDebating || !selectedAsset}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-40"
-          >
-            {isDebating ? `⚡ DEBATING ${currentAsset}...` : triggering ? '⏳ Convening...' : selectedAsset ? `▶ CONVENE COMMITTEE ON ${selectedAsset}` : 'Pick a symbol'}
+          <SymbolPicker value={symbol} onChange={setSymbol} data-testid="symbol-picker" />
+          <button data-testid="debate-trigger" onClick={requestResearch} disabled={triggering || !symbol}
+            className="min-h-11 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+            {triggering ? 'Requesting…' : 'Request research only'}
           </button>
         </div>
+      </header>
+
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <label className="text-sm font-semibold flex items-center gap-3">
+          Observed session
+          <select aria-label="Observed debate session" className="min-h-11 rounded-lg border border-slate-300 px-3 max-w-full"
+            value={session?.id ?? ''} onChange={event => setSelectedId(event.target.value)} disabled={!sessions.length}>
+            {!sessions.length && <option value="">No session received</option>}
+            {sessions.map(item => <option key={item.id} value={item.id}>{item.asset || 'Asset not yet supplied'} · {item.status} · {item.id.slice(-8)}</option>)}
+          </select>
+        </label>
+        <p className="text-sm text-slate-600">{sessions.filter(item => item.status === 'running').length} sessions last observed in progress</p>
       </div>
+      {session && <LastUpdated receivedAt={session.receivedAt} label="Team event" staleAfterMs={120000} />}
 
-      {/* Round explanation */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {[
-          { round: 'Round 1', label: 'Opening Technical & Wire Arguments', color: '#D97706' },
-          { round: 'Round 2', label: 'Cross-Examination & Bearish Stress-Test', color: '#2563EB' },
-          { round: 'Round 3', label: 'Kelly Position Sizing & Final Verdict', color: '#059669' },
-        ].map(item => (
-          <div key={item.round} className="p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
-            <div className="font-mono text-[10px] font-bold uppercase mb-1" style={{ color: item.color }}>{item.round}</div>
-            <div className="text-xs font-bold text-slate-900">{item.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Vote tally bar */}
-      {totalVoted > 0 && (
-        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
-          <div className="font-mono text-xs text-slate-500 font-semibold mb-2">
-            LIVE VOTE TALLY — {totalVoted}/15 agents voted
-          </div>
-          <div className="flex h-3 rounded-full overflow-hidden gap-1 bg-slate-100 p-0.5">
-            {buyVotes  > 0 && <div style={{ flex: buyVotes,  background: '#059669', borderRadius: 4 }} title={`BUY: ${buyVotes}`} />}
-            {holdVotes > 0 && <div style={{ flex: holdVotes, background: '#D97706', borderRadius: 4 }} title={`HOLD: ${holdVotes}`} />}
-            {sellVotes > 0 && <div style={{ flex: sellVotes, background: '#DC2626', borderRadius: 4 }} title={`SELL: ${sellVotes}`} />}
-          </div>
-          <div className="flex gap-4 mt-2 font-mono text-xs font-bold">
-            <span className="text-emerald-600">BUY: {buyVotes}</span>
-            <span className="text-amber-600">HOLD: {holdVotes}</span>
-            <span className="text-red-600">SELL: {sellVotes}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Agent Cards */}
-      <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
-        <div className="font-mono text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider flex items-center justify-between">
-          <span>COUNCIL OF SPECIALISTS ({AGENTS.length})</span>
-          <span className="text-slate-500 font-semibold">Multi-Strategy Neural Committee</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-2.5">
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="text-lg font-semibold flex gap-2 items-center"><MessageSquare size={20} aria-hidden="true" />{session?.asset ? `Reviewing ${session.asset}` : 'Specialist team'}</h2>
+        <p className="text-sm text-slate-600 mt-1">
+          {session?.status === 'complete' ? 'Committee review complete' : session?.round === 4 ? 'Coordinator is synthesizing the evidence' : session?.round ? `Round ${session.round}: ${session.round === 1 ? 'independent opening arguments' : session.round === 2 ? 'challenge and rebuttal, when available' : 'final specialist votes'}` : 'Waiting for a server event. Idle does not prove a specialist is healthy.'}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mt-5">
           {AGENTS.map(agent => {
-            const state = agentStates[agent.id];
-            const bc = voteColor(state?.vote);
-            const pulse = state?.status === 'analyzing';
-            return (
-              <div key={agent.id} className="bg-slate-50 border rounded-lg p-2.5 transition-all"
-                style={{
-                  borderColor: state?.vote ? bc : '#E2E8F0',
-                  boxShadow: state?.vote ? `0 0 8px ${bc}25` : 'none',
-                }}
-              >
-                <div className="text-lg mb-1">{agent.icon}</div>
-                <div className="text-xs font-bold text-slate-900 truncate mb-1">{agent.name}</div>
-                {agent.veto && <div className="font-mono text-[9px] text-red-600 font-bold mb-1">⚡ VETO POWER</div>}
-                <div className="font-mono text-[10px] font-bold" style={{ color: bc }}>
-                  {state?.vote || (pulse ? 'DELIBERATING...' : 'READY')}
-                </div>
-                {state?.confidence !== undefined && (
-                  <div className="mt-2 h-1 bg-slate-200 rounded-full overflow-hidden">
-                    <div style={{ height: '100%', width: `${state.confidence}%`, background: bc, transition: 'width .5s' }} />
-                  </div>
-                )}
-              </div>
-            );
+            const state = session?.agents[agent.id];
+            return <article key={agent.id} className="rounded-lg bg-slate-50 p-3">
+              <h3 className="text-sm font-semibold">{agent.name}</h3>
+              {agent.veto && <p className="text-xs text-slate-600 mt-1">Risk veto role</p>}
+              <p className="mt-3 text-sm font-medium flex items-center gap-1">
+                <Circle size={10} aria-hidden="true" />{state?.error ? 'Provider error' : state?.status === 'analyzing' ? 'Analyzing' : state?.vote ?? 'Not observed'}
+              </p>
+              {state?.confidence !== undefined && !state.error && <p className="text-xs text-slate-600 mt-1">Reported confidence {state.confidence}%</p>}
+              {state?.reasoning && <p className="text-sm leading-relaxed mt-2 break-words">{state.reasoning}</p>}
+            </article>;
           })}
         </div>
-      </div>
+        <p className="text-sm mt-4">BUY {tally.buy} · SELL {tally.sell} · HOLD {tally.hold} · Provider errors {tally.errors}</p>
+      </section>
 
-      {/* Transcript + Decision */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Transcript */}
-        <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-col">
-          <div className="font-mono text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">
-            REAL-TIME DELIBERATION TRANSCRIPT
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-lg font-semibold">Evidence and discussion</h2>
+          <div className="max-h-[32rem] overflow-y-auto mt-4 space-y-5" aria-label="Debate transcript">
+            {!session?.entries.length && <p className="text-sm text-slate-600">No argument has been received for this session. This view contains only events observed since sign-in; older sessions require a persisted history view.</p>}
+            {session?.entries.map((entry, index) => <article key={`${session.id}-${index}`} className="border-b border-slate-200 pb-4">
+              <h3 className="text-sm font-semibold">{entry.agentName || 'Specialist'} <span className="font-normal text-slate-600">· Round {entry.round}{entry.vote ? ` · ${entry.vote}` : ''}</span></h3>
+              <p className="text-sm leading-relaxed mt-2 whitespace-pre-wrap break-words">{entry.content || 'No text supplied'}</p>
+            </article>)}
           </div>
-          <div ref={transcriptRef} className="max-h-80 overflow-y-auto space-y-2.5 pr-1 flex-1 font-mono text-xs">
-            {transcript.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                Trigger a council session above to stream real-time debate reasoning.
-              </div>
-            ) : (
-              transcript.map((item, i) => (
-                <div key={i} className="p-3 bg-slate-50 rounded-lg border-l-4 border border-slate-200" style={{ borderLeftColor: voteColor(item.vote) }}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-slate-900 text-xs">{item.agentName}</span>
-                    {item.vote && (
-                      <span className="font-bold text-xs px-1.5 py-0.5 rounded" style={{ color: voteColor(item.vote), background: `${voteColor(item.vote)}15` }}>
-                        {item.vote}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-slate-700 text-xs leading-relaxed font-sans">
-                    {item.content}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Final Decision */}
-        <div className="p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-col justify-between"
-          style={{ borderColor: finalDecision ? voteColor(finalDecision.decision) : undefined }}
-        >
-          <div>
-            <div className="font-mono text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">
-              COMMITTEE VERDICT & EXECUTION ORDER
-            </div>
-            {finalDecision ? (
-              <div>
-                <div className="text-4xl font-extrabold tracking-tight mb-4 font-mono" style={{ color: voteColor(finalDecision.decision) }}>
-                  {finalDecision.decision}
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <div className="font-mono text-[10px] text-slate-500 uppercase font-semibold">GO (CONVICTION)</div>
-                    <div className="text-2xl font-bold text-emerald-600 font-mono mt-1">{finalDecision.goVotes}</div>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <div className="font-mono text-[10px] text-slate-500 uppercase font-semibold">NO-GO (REJECT)</div>
-                    <div className="text-2xl font-bold text-red-600 font-mono mt-1">{finalDecision.noGoVotes}</div>
-                  </div>
-                </div>
-                <div className="font-mono text-xs text-slate-600 font-medium">
-                  Synthesized Confidence: <strong className="text-slate-900 font-mono">{typeof finalDecision.confidence === 'number' ? `${finalDecision.confidence.toFixed(1)}%` : '—'}</strong>
-                </div>
-              </div>
-            ) : isDebating ? (
-              <div className="text-center py-12">
-                <div className="text-3xl mb-2 animate-bounce">⚡</div>
-                <div className="font-mono text-xs text-blue-700 font-bold">Council analyzing multi-timeframe liquidity and risk...</div>
-              </div>
-            ) : (
-              <div className="text-center py-12 text-slate-400 font-mono text-xs">
-                Awaiting committee trigger. Select an asset and start deliberation.
-              </div>
-            )}
-          </div>
-        </div>
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-lg font-semibold flex gap-2 items-center"><ShieldCheck size={20} aria-hidden="true" />Committee decision</h2>
+          {result ? <>
+            <p className="text-3xl font-bold mt-5">{result.decision}</p>
+            <p className="text-sm mt-3">Review purpose: {result.purpose || 'Not supplied by this server version'}</p>
+            <p className="text-sm mt-2">Reported confidence: {result.confidence === undefined ? 'Unknown' : `${result.confidence}%`}. This is not a calibrated probability of profit.</p>
+            <p className="text-sm mt-3">{result.purpose === 'RESEARCH' ? 'Research only — cannot authorize a trade.' : result.approved ? 'Committee approved. Subsequent risk checks and broker confirmation are required.' : `No execution approval. ${result.blockReason || ''}`}</p>
+            {result.synthesis && <p className="text-sm leading-relaxed mt-4 whitespace-pre-wrap break-words">{result.synthesis}</p>}
+            <p className="text-sm text-slate-600 mt-5">Order status: not established by debate events. Check the trade ledger for broker evidence.</p>
+          </> : <p className="text-sm text-slate-600 mt-4">{session?.status === 'running' ? 'Awaiting the coordinator’s decision.' : 'No committee result received.'}</p>}
+        </section>
       </div>
     </div>
   );

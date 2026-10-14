@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DebateSessions, reduceDebateEvent } from '../utils/debateSessions';
 
 interface PriceUpdate {
   asset: string;
@@ -25,6 +26,10 @@ interface AgentCouncilState {
 }
 
 interface AppStore {
+  debateSessions: DebateSessions;
+  receiveDebateEvent: (event: string, payload: unknown) => void;
+  socketStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
+  setSocketStatus: (status: AppStore['socketStatus']) => void;
   // Auth
   token: string | null;
   user: any | null;
@@ -63,15 +68,31 @@ let storedToken: string | null = null;
 try { storedToken = typeof window !== 'undefined' ? localStorage.getItem('apex_token') : null; } catch { storedToken = null; }
 
 export const useStore = create<AppStore>((set) => ({
+  debateSessions: {},
+  socketStatus: 'disconnected',
+  setSocketStatus: (socketStatus) => set({ socketStatus }),
+  receiveDebateEvent: (event, payload) => set((state) => {
+    if (!state.token) return state;
+    const debateSessions = reduceDebateEvent(state.debateSessions, event, payload, Date.now());
+    if (debateSessions === state.debateSessions) return state;
+    const sessions = Object.values(debateSessions).sort((a, b) => b.receivedAt - a.receivedAt);
+    const active = sessions.filter(session => session.status === 'running');
+    const latest = active[0] ?? sessions[0];
+    const agentCouncil = Object.fromEntries(Object.entries(latest?.agents ?? {}).map(([id, agent]) => [id, {
+      status: agent.status, asset: latest?.asset,
+      vote: agent.vote ? { agentId: Number(id), agentName: `Specialist ${id}`, vote: agent.vote, confidence: agent.confidence ?? 0, reasoning: agent.reasoning ?? '' } : undefined,
+    }]));
+    return { debateSessions, agentCouncil, currentAnalysis: active.length ? [...new Set(active.map(session => session.asset || 'Unknown asset'))].join(', ') : null };
+  }),
   token: storedToken,
   user: null,
   setAuth: (token, user) => {
     localStorage.setItem('apex_token', token);
-    set({ token, user });
+    set({ token, user, debateSessions: {}, agentCouncil: {}, currentAnalysis: null, portfolio: null, recentTrades: [] });
   },
   logout: () => {
     localStorage.removeItem('apex_token');
-    set({ token: null, user: null });
+    set({ token: null, user: null, debateSessions: {}, agentCouncil: {}, currentAnalysis: null, portfolio: null, recentTrades: [] });
   },
 
   prices: {},

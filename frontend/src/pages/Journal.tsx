@@ -5,7 +5,8 @@ import { BookOpen, TrendingUp, TrendingDown } from 'lucide-react';
 import LastUpdated from '../components/common/LastUpdated';
 
 export default function JournalPage() {
-  const { data: journals = [] } = useQuery({ queryKey: ['journals'], queryFn: getJournals, refetchInterval: 60000 });
+  const journalsQ = useQuery({ queryKey: ['journals'], queryFn: getJournals, refetchInterval: 60000 });
+  const { data: journals = [] } = journalsQ;
 
   return (
     <div className="space-y-6">
@@ -15,7 +16,7 @@ export default function JournalPage() {
           <h1 className="font-sans font-bold text-2xl text-apex-text">Trading Journal</h1>
           <span className="font-mono text-xs text-apex-muted ml-2">AI-generated daily entries</span>
         </div>
-        <LastUpdated />
+        <LastUpdated query={journalsQ} label="Journal response" staleAfterMs={120000} />
       </div>
 
       <div className="space-y-4">

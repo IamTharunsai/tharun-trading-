@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useStore } from './store';
-import { connectSocket } from './services/socket';
+import { connectSocket, disconnectSocket } from './services/socket';
 
 // Pages
 import LoginPage from './pages/Login';
@@ -49,6 +49,7 @@ export default function App() {
     if (token) {
       connectSocket();
     }
+    return () => disconnectSocket();
   }, [token]);
 
   return (

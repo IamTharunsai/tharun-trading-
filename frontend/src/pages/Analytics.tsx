@@ -14,11 +14,12 @@ import LastUpdated from '../components/common/LastUpdated';
 export default function AnalyticsPage() {
   const [pnlRange, setPnlRange] = useState<'7D' | '14D' | '30D' | '90D'>('30D');
   // Everything here is computed from CLOSED trades — no snapshot/placeholder series.
-  const { data: closedData, isLoading } = useQuery({
+  const tradesQ = useQuery({
     queryKey: ['trades-closed-analytics'],
     queryFn: () => getTrades(1, 1000, { status: 'CLOSED' }),
     refetchInterval: 60000,
   });
+  const { data: closedData, isLoading } = tradesQ;
 
   const closedTrades: any[] = useMemo(() => {
     const list: any[] = Array.isArray(closedData?.trades) ? closedData.trades : Array.isArray(closedData) ? closedData : [];
@@ -84,7 +85,7 @@ export default function AnalyticsPage() {
             Verified performance metrics calculated strictly from authenticated closed broker executions
           </p>
         </div>
-        <LastUpdated />
+        <LastUpdated query={tradesQ} label="Closed trades response" staleAfterMs={120000} />
       </div>
 
       {/* Connected Advanced KPIs */}

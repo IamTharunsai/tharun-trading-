@@ -7,6 +7,7 @@ import { brokerEquity, fmtPct, fmtUsd, num, portfolioNav } from '../utils/format
 import { useStore } from '../store';
 import StatCard from '../components/common/StatCard';
 import AgentCouncilPanel from '../components/agents/AgentCouncilPanel';
+import TeamActivity from '../components/agents/TeamActivity';
 import RecentTrades from '../components/portfolio/RecentTrades';
 import PortfolioChart from '../components/charts/PortfolioChart';
 import ActivePositions from '../components/portfolio/ActivePositions';
@@ -33,7 +34,8 @@ import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
-  const { data: portfolio, isLoading: loadingPortfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
+  const portfolioQ = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
+  const { data: portfolio, isLoading: loadingPortfolio } = portfolioQ;
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats, refetchInterval: 30000 });
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
   const { data: liveAccounts } = useQuery({ queryKey: ['live-accounts'], queryFn: getLiveAccounts, refetchInterval: 30000, retry: false });
@@ -104,7 +106,7 @@ export default function DashboardPage() {
             </span>
           </p>
         </div>
-        <LastUpdated />
+        <LastUpdated query={portfolioQ} label="Portfolio response" staleAfterMs={15000} />
         <div className="flex items-center gap-3 flex-wrap">
           {killSwitchActive || sysStatus?.killSwitch ? (
             <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 font-mono text-xs text-red-700 font-bold">
@@ -176,6 +178,8 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      <TeamActivity />
 
       {/* Top Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
