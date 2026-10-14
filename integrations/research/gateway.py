@@ -26,6 +26,7 @@ JOB_LOCK = threading.Lock()
 PROXY_LOCK = threading.Lock()
 PROXY_KEY = os.urandom(32).hex()
 PROXY_CALLS = 0
+PROXY_RESERVED_TOKENS = 0
 PROXY_ACTIVE = False
 PROXY_JOB_ID = None
 PROVIDER_PROCESSES = set()
@@ -55,6 +56,29 @@ def completion_metadata(response):
     content = message.get('content') if isinstance(message, dict) else None
     return {'finishReason': reason if reason in ('stop', 'length', 'tool_calls', 'content_filter', 'function_call') else 'unknown',
             'contentCharacters': min(len(content), MAX_RESPONSE) if isinstance(content, str) else 0}
+
+
+def provider_output_limit(body):
+    # Pinned ontology JSON can exceed 4096 tokens; retrying with the same
+    # 1024-token ceiling caused the verified production truncation failure.
+    if SERVICE != 'mirofish' or body.get('response_format') != {'type': 'json_object'}:
+        return 1024
+    requested = body.get('max_tokens')
+    if requested is None:
+        return 8192
+    if type(requested) is not int or requested < 1:
+        raise Refusal('invalid_provider_output_limit')
+    return min(requested, 8192)
+
+
+def reserve_provider_budget(output_limit):
+    """Called under PROXY_LOCK; failed calls retain their reserved allowance."""
+    global PROXY_CALLS, PROXY_RESERVED_TOKENS
+    maximum_calls, maximum_tokens = (32, 65536) if SERVICE == 'mirofish' else (2, 2048)
+    if PROXY_CALLS >= maximum_calls or PROXY_RESERVED_TOKENS + output_limit > maximum_tokens:
+        raise Refusal('provider_call_budget_exhausted', 429)
+    PROXY_CALLS += 1
+    PROXY_RESERVED_TOKENS += output_limit
 
 
 def read_json(handler, maximum=MAX_BODY):
@@ -144,12 +168,13 @@ def readiness():
 
 
 def run_worker(body):
-    global PROXY_CALLS, PROXY_ACTIVE, PROXY_KEY, PROXY_JOB_ID
+    global PROXY_CALLS, PROXY_RESERVED_TOKENS, PROXY_ACTIVE, PROXY_KEY, PROXY_JOB_ID
     with tempfile.TemporaryDirectory(prefix="job-", dir=STATE) as home:
         with PROXY_LOCK:
             PROXY_KEY = os.urandom(32).hex()
             PROXY_JOB_ID = os.urandom(16).hex()
             PROXY_CALLS, PROXY_ACTIVE = 0, SERVICE in ("hermes", "mirofish")
+            PROXY_RESERVED_TOKENS = 0
         interpreter = "/engine/backend/.venv/bin/python" if SERVICE == "mirofish" else "/engine/.venv/bin/python"
         env = {"PATH": str(Path(interpreter).parent) + ":/usr/local/bin:/usr/bin:/bin", "HOME": home,
                "TMPDIR": home, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "/engine",
@@ -206,6 +231,7 @@ def run_worker(body):
                 if SERVICE == "mirofish":
                     retain_mirofish_ownership(Path(home))
                 print(json.dumps({'event': 'research_worker_finished', 'service': SERVICE, 'providerCalls': PROXY_CALLS,
+                                  'reservedOutputTokens': PROXY_RESERVED_TOKENS,
                                   'jobId': PROXY_JOB_ID, 'entryPoint': 'research_endpoint'}), flush=True)
 
 
@@ -379,7 +405,8 @@ class ProviderProxy(Handler):
             if len(json.dumps(messages, ensure_ascii=False).encode()) > 48000 or body.get("stream"):
                 raise Refusal("provider_request_limit")
             # Provider I/O gets its own killable child and absolute deadline.
-            payload = {"model": MODEL, "messages": messages, "max_tokens": 1024, "temperature": 0.2}
+            output_limit = provider_output_limit(body)
+            payload = {"model": MODEL, "messages": messages, "max_tokens": output_limit, "temperature": 0.2}
             if MODEL == 'nvidia/nemotron-3-super-120b-a12b':
                 # Official model contract: disable hidden thinking within this small output budget.
                 payload.update(temperature=1.0, top_p=0.95,
@@ -391,9 +418,9 @@ class ProviderProxy(Handler):
                     payload['response_format'] = {'type': 'json_object'}
             with tempfile.TemporaryFile(dir=STATE) as output:
                 with PROXY_LOCK:
-                    if not PROXY_ACTIVE or not self.authenticated(PROXY_KEY) or PROXY_CALLS >= (32 if SERVICE == 'mirofish' else 2):
+                    if not PROXY_ACTIVE or not self.authenticated(PROXY_KEY):
                         raise Refusal("provider_call_budget_exhausted", 429)
-                    PROXY_CALLS += 1
+                    reserve_provider_budget(output_limit)
                     job_id = PROXY_JOB_ID
                     ready_read, ready_write = os.pipe()
                     process = subprocess.Popen([sys.executable, str(ROOT / "provider_worker.py")],

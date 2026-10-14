@@ -47,6 +47,8 @@ Minimal graph ownership claims are recorded before cloud creation and retained i
 
 ## Validation
 
+MiroFish schema requests allow at most 8,192 output tokens, respecting smaller positive upstream requests. Other responses remain capped at 1,024. Each MiroFish job conservatively reserves at most 65,536 output tokens across at most 32 calls, including failed calls; unused reservation is not refunded. Hermes retains its two-call, 2,048-token allowance. These bounds do not certify accuracy or completeness and do not allow unlimited generation.
+
 Operational diagnostics answer three questions: which scenario stage failed, whether provider generation stopped at its token limit, and how many calls that job admitted. Logs contain fixed event names, a random job ID, entry point, bounded counts and an allowlisted completion reason. Ontology errors become fixed enum codes; no raw exceptions, document content, model text or provider credentials are logged. Configuration readiness alone does not prove a functional scenario. A complete metrics/tracing dashboard remains separate work.
 
 Pure Python fixture tests cover authentication, absolute input deadlines, quotas, provenance, scenario sequencing, platform readiness, process containment, trace binding and ownership recording. Backend fixtures cover pinned identity, fixed hosts, owner route configuration, deadlines, response bounds, sanitization and evidence-only results. Fixtures do not prove upstream providers or live scenario outcomes.

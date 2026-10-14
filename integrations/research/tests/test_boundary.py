@@ -16,6 +16,32 @@ import gateway
 
 
 class InputBoundary(unittest.TestCase):
+    def test_schema_limit_fits_pinned_ontology_without_uncapping_other_requests(self):
+        with patch.object(gateway, 'SERVICE', 'mirofish'):
+            self.assertEqual(gateway.provider_output_limit({'response_format': {'type': 'json_object'}}), 8192)
+            self.assertEqual(gateway.provider_output_limit({'response_format': {'type': 'json_object'}, 'max_tokens': 4096}), 4096)
+            self.assertEqual(gateway.provider_output_limit({'response_format': {'type': 'json_object'}, 'max_tokens': 100000}), 8192)
+            self.assertEqual(gateway.provider_output_limit({'max_tokens': 100000}), 1024)
+            for value in (0, -1, True, 'unbounded', 1.5, []):
+                with self.assertRaises(gateway.Refusal):
+                    gateway.provider_output_limit({'response_format': {'type': 'json_object'}, 'max_tokens': value})
+        with patch.object(gateway, 'SERVICE', 'hermes'):
+            self.assertEqual(gateway.provider_output_limit({'response_format': {'type': 'json_object'}, 'max_tokens': 100000}), 1024)
+
+    def test_larger_schema_requests_share_a_conservative_job_allowance(self):
+        with patch.object(gateway, 'SERVICE', 'mirofish'), patch.object(gateway, 'PROXY_CALLS', 0), \
+                patch.object(gateway, 'PROXY_RESERVED_TOKENS', 0):
+            for _ in range(8):
+                gateway.reserve_provider_budget(8192)
+            with self.assertRaises(gateway.Refusal) as failure:
+                gateway.reserve_provider_budget(1)
+            self.assertEqual(failure.exception.status, 429)
+            self.assertEqual(gateway.PROXY_CALLS, 8)
+            self.assertEqual(gateway.PROXY_RESERVED_TOKENS, 65536)
+        with patch.object(gateway, 'SERVICE', 'mirofish'), patch.object(gateway, 'PROXY_CALLS', 32), \
+                patch.object(gateway, 'PROXY_RESERVED_TOKENS', 32768), self.assertRaises(gateway.Refusal):
+            gateway.reserve_provider_budget(1024)
+
     def test_provider_completion_metadata_never_includes_model_content(self):
         response = {'choices': [{'finish_reason': 'length', 'message': {'content': 'private fixture'}}]}
         self.assertEqual(gateway.completion_metadata(response), {'finishReason': 'length', 'contentCharacters': 15})
