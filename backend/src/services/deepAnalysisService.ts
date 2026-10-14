@@ -338,41 +338,45 @@ async function storeDeepAnalysis(symbol: string, a: DeepCompanyAnalysis): Promis
 
 // ── FORMAT FOR AGENT PROMPT ───────────────────────────────────────────────────
 export function formatDeepAnalysisForAgents(a: DeepCompanyAnalysis): string {
-  const mcap = a.marketCap > 1e12 ? `$${(a.marketCap / 1e12).toFixed(1)}T`
-    : a.marketCap > 1e9 ? `$${(a.marketCap / 1e9).toFixed(1)}B`
-    : a.marketCap > 1e6 ? `$${(a.marketCap / 1e6).toFixed(0)}M` : 'N/A';
-
-  const revenueStr = a.revenueHistory.slice(0, 3).map(r =>
-    `${r.year}: $${(r.value / 1e9).toFixed(1)}B${r.growth != null ? ` (${r.growth > 0 ? '+' : ''}${r.growth.toFixed(1)}%)` : ''}`
-  ).join(' | ');
-
-  const marginStr = a.operatingMarginHistory.slice(0, 2).map(r =>
-    `${r.year}: ${r.value.toFixed(1)}%`
-  ).join(' | ');
-
-  const analystStr = `${a.strongBuy}StrongBuy/${a.buy}Buy/${a.hold}Hold/${a.sell}Sell → ${a.analystConsensus}`;
-
+  // Historical/provider JSON can contain null despite the TypeScript model.
+  // Missing evidence must remain missing, never become zero or stop a debate.
+  const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+  const fixed = (value: unknown, digits: number, suffix = '') => finite(value) ? value.toFixed(digits) + suffix : 'Unavailable';
+  const billions = (value: unknown) => finite(value) ? `$${(value / 1e9).toFixed(1)}B` : 'Unavailable';
+  const history = (value: unknown): Record<string, unknown>[] => Array.isArray(value)
+    ? value.filter((row): row is Record<string, unknown> => row !== null && typeof row === 'object' && !Array.isArray(row)) : [];
+  const list = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  const mcap = finite(a.marketCap) && a.marketCap > 1e12 ? `$${(a.marketCap / 1e12).toFixed(1)}T`
+    : finite(a.marketCap) && a.marketCap > 1e9 ? `$${(a.marketCap / 1e9).toFixed(1)}B`
+    : finite(a.marketCap) && a.marketCap > 1e6 ? `$${(a.marketCap / 1e6).toFixed(0)}M` : 'Unavailable';
+  const revenueStr = history(a.revenueHistory).slice(0, 3).map(row =>
+    `${typeof row.year === 'string' ? row.year : 'Year unavailable'}: ${billions(row.value)} (growth ${finite(row.growth) ? `${row.growth > 0 ? '+' : ''}${row.growth.toFixed(1)}%` : 'unavailable'})`
+  ).join(' | ') || 'Unavailable';
+  const marginStr = history(a.operatingMarginHistory).slice(0, 2).map(row =>
+    `${typeof row.year === 'string' ? row.year : 'Year unavailable'}: ${fixed(row.value, 1, '%')}`
+  ).join(' | ') || 'Unavailable';
+  const analystStr = `${fixed(a.strongBuy, 0)}StrongBuy/${fixed(a.buy, 0)}Buy/${fixed(a.hold, 0)}Hold/${fixed(a.sell, 0)}Sell → ${a.analystConsensus || 'Unavailable'}`;
   const insiderStr = a.insiderNetSentiment === 'NEUTRAL' ? 'Neutral'
-    : `${a.insiderNetSentiment} — ${a.insiderBuying > a.insiderSelling ? `buying ${a.insiderBuying.toLocaleString()} shares` : `selling ${a.insiderSelling.toLocaleString()} shares`}`;
-
-  const lines = [
+    : finite(a.insiderBuying) && finite(a.insiderSelling)
+      ? `${a.insiderNetSentiment || 'Unavailable'} — ${a.insiderBuying > a.insiderSelling ? `buying ${a.insiderBuying.toLocaleString('en-US')} shares` : `selling ${a.insiderSelling.toLocaleString('en-US')} shares`}`
+      : 'Unavailable';
+  const risks = list(a.keyRisks);
+  const strengths = list(a.keyStrengths);
+  return [
     `[${a.symbol}] ${a.companyName} | ${a.sector} | MCap: ${mcap}`,
     `Revenue: ${revenueStr}`,
-    `Op Margin: ${marginStr} | FCF: ${a.freeCashFlow ? `$${(a.freeCashFlow / 1e9).toFixed(1)}B` : 'N/A'}`,
-    `Debt/Equity: ${a.debtToEquity?.toFixed(2) || 'N/A'} (${a.debtLevel}) | Cash: ${a.totalCash ? `$${(a.totalCash / 1e9).toFixed(1)}B` : 'N/A'}`,
-    `Earnings Beat Rate: ${a.earningsBeatRate.toFixed(0)}% of quarters`,
+    `Op Margin: ${marginStr} | FCF: ${billions(a.freeCashFlow)}`,
+    `Debt/Equity: ${fixed(a.debtToEquity, 2)} (${a.debtLevel}) | Cash: ${billions(a.totalCash)}`,
+    `Earnings Beat Rate: ${fixed(a.earningsBeatRate, 0, '%')} of quarters`,
     `Analysts: ${analystStr}`,
     `Insiders: ${insiderStr}`,
-    `Fundamental Score: ${a.overallFundamentalScore}/100`,
-    `Bull Case: ${a.bullCase}`,
-    `Bear Case: ${a.bearCase}`,
-    a.keyRisks.length > 0 ? `Key Risks: ${a.keyRisks.join(', ')}` : '',
-    a.keyStrengths.length > 0 ? `Key Strengths: ${a.keyStrengths.join(', ')}` : '',
-  ];
-
-  return lines.filter(Boolean).join('\n');
+    `Fundamental Score: ${fixed(a.overallFundamentalScore, 0, '/100')}`,
+    `Bull Case: ${a.bullCase || 'Unavailable'}`,
+    `Bear Case: ${a.bearCase || 'Unavailable'}`,
+    risks.length ? `Key Risks: ${risks.join(', ')}` : '',
+    strengths.length ? `Key Strengths: ${strengths.join(', ')}` : '',
+  ].filter(Boolean).join('\n');
 }
-
 // ── BATCH REFRESH (run weekly for all known stocks) ───────────────────────────
 export async function refreshFundamentalsForSymbol(symbol: string): Promise<void> {
   await fetchDeepAnalysis(symbol);
