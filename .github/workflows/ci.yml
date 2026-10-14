@@ -109,6 +109,8 @@ jobs:
         run: npx jest --runInBand --runTestsByPath tests/predictionExecution.authority.test.ts tests/predictionExecution.plan.test.ts tests/predictionOrderEvidence.test.ts tests/polymarketUSRest.test.ts tests/polymarketUSExecution.test.ts tests/polymarketUS.marketData.test.ts tests/polymarketUSAccount.test.ts
       - name: Verify legacy execution refusal and actual scheduled paper status
         run: npx jest --runInBand --runTestsByPath tests/polymarketGreed.route.test.ts tests/polymarketMoneyGreed.retirement.test.ts tests/polymarketRuntime.test.ts
+      - name: Verify incomplete company evidence cannot crash committee prompts
+        run: npx jest --runInBand --runTestsByPath tests/deepAnalysis.formatting.test.ts tests/debateEngine.technicianGrounding.test.ts tests/debateEngine.regimeLessons.test.ts
 
   frontend-build:
     runs-on: ubuntu-latest
