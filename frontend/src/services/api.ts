@@ -179,7 +179,8 @@ export interface DataProviderStatus { configured: boolean; healthy?: boolean }
 export interface SystemStatus {
   scheduler: 'online' | 'offline';
   tradingMode: 'paper' | 'live';
-  polymarket: { mode: 'paper' | 'live'; usConnected: boolean; usStatus?: string; usConfigured?: boolean };
+  polymarket: { mode: 'paper' | 'live'; usConnected: boolean; usStatus?: string; usConfigured?: boolean;
+    liveReadiness?: { ready: boolean; code: string; reason: string } };
   llm: { fast: LlmTierStatus; smart: LlmTierStatus; spendTodayUsd: number; budgetUsd: number; callsToday?: number };
   alpaca: { connected: boolean; mode: 'paper' | 'live' };
   intraday: {
