@@ -1097,7 +1097,7 @@ greedRouter.post('/', requireOwner, async (req: Request, res: Response) => {
     const { activateGreedAgent, deactivateGreedAgent } = await import('../services/polymarketMoneyGreed');
     if (active) {
       const result = await activateGreedAgent(greedMode);
-      res.json(result);
+      res.status(409).json(result);
     } else {
       const result = await deactivateGreedAgent();
       res.json(result);
