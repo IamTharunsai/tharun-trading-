@@ -7,7 +7,8 @@ const reasonOf = (v: any): string =>
 export function isErrorVote(v: any): boolean {
   if (!v || typeof v !== 'object') return true;
   if (v.error || v.isError) return true;
-  const r = reasonOf(v);
+  const r = reasonOf(v) || String(v.openingArgument ?? '').trim();
+  if (/^analysis unavailable$/i.test(r)) return true;
   if (/^error\b/i.test(r) || /provider error|llm (call )?failed|api error|rate limit|timed? ?out/i.test(r)) return true;
   const conf = Number(v.confidence);
   // A zero-confidence vote with no argument at all is a failed call, not an opinion.

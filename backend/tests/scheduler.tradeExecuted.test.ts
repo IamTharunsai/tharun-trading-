@@ -71,6 +71,18 @@ import { executeTradeSignal } from '../src/trading/executionEngine';
 import { runDebateForAsset } from '../src/jobs/scheduler';
 
 describe('runDebateForAsset — tradeExecuted reflects the real execution outcome', () => {
+  it('never reaches risk or execution for research even if a faulty council claims approval', async () => {
+    const council = require('../src/agents/debateEngine').runInvestmentCommitteeDebate;
+    const risk = require('../src/trading/riskManager').validateTradeSignal;
+    council.mockClear(); risk.mockClear(); (executeTradeSignal as jest.Mock).mockClear();
+    council.mockResolvedValueOnce({ ...baseTranscript, executionApproved: true, positionSizePct: 5 });
+    const result = await runDebateForAsset('RESEARCH_FIXTURE', 'stocks', { bypassGate: true, purpose: 'RESEARCH' });
+    expect(council).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'TRENDING_BULL',
+      expect.anything(), 'COUNCIL', undefined, undefined, 'RESEARCH');
+    expect(risk).not.toHaveBeenCalled(); expect(executeTradeSignal).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ executionApproved: false, positionSizePct: 0, tradeExecuted: false });
+  });
+
   it('sets tradeExecuted true when executeTradeSignal actually places the order', async () => {
     (executeTradeSignal as jest.Mock).mockResolvedValue(true);
     const transcript = await runDebateForAsset('AAPL', 'stocks', { bypassGate: true });

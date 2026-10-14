@@ -3,9 +3,17 @@ import toast from 'react-hot-toast';
 import { useStore } from '../store';
 
 let socket: Socket | null = null;
+let recoveryNeeded = false;
 
 export function connectSocket() {
-  if (socket?.connected) return socket;
+  if (socket) {
+    if (recoveryNeeded || !socket.active) {
+      recoveryNeeded = false;
+      useStore.getState().setSocketStatus('connecting');
+      socket.connect();
+    }
+    return socket;
+  }
 
   socket = io(import.meta.env.VITE_API_URL || '/', {
     transports: ['websocket', 'polling'],
@@ -17,13 +25,25 @@ export function connectSocket() {
   });
 
   const store = useStore.getState();
+  const observingToken = store.token;
+  store.setSocketStatus('connecting');
 
   socket.on('connect', () => {
-    console.log('🔌 Socket connected');
+    recoveryNeeded = false;
+    store.setSocketStatus('connected');
   });
 
   socket.on('disconnect', () => {
-    console.log('🔌 Socket disconnected');
+    store.setSocketStatus('disconnected');
+  });
+
+  socket.on('connect_error', () => {
+    if (socket && !socket.active) recoveryNeeded = true;
+    store.setSocketStatus('error');
+  });
+  socket.io.on('reconnect_failed', () => {
+    recoveryNeeded = true;
+    store.setSocketStatus('error');
   });
 
   // ── REAL-TIME PRICE UPDATES ──────────────────────────────────────────────────
@@ -31,54 +51,25 @@ export function connectSocket() {
     store.updatePrice(data);
   });
 
-  // ── DEBATE ENGINE EVENTS (debateEngine.ts emits these) ───────────────────────
-  socket.on('debate:start', (data: any) => {
-    store.resetCouncil();
-    store.setCurrentAnalysis(data.asset);
-    // Mark all 14 agents as analyzing
-    for (let i = 1; i <= 14; i++) {
-      store.updateAgentStatus(i, 'analyzing', undefined, data.asset);
-    }
-  });
-
-  socket.on('debate:agent-speaking', (data: any) => {
-    store.updateAgentStatus(data.agentId, 'analyzing', undefined, data.asset || store.currentAnalysis || '');
-  });
-
-  socket.on('debate:agent-voted', (data: any) => {
-    store.updateAgentStatus(data.agentId, 'voted', {
-      agentId: data.agentId,
-      agentName: data.agentName,
-      vote: data.vote || data.finalVote,
-      confidence: data.confidence,
-      reasoning: data.openingArgument || data.argument || '',
-    }, store.currentAnalysis || '');
-  });
-
-  socket.on('debate:final-vote', (data: any) => {
-    store.updateAgentStatus(data.agentId, 'voted', {
-      agentId: data.agentId,
-      agentName: data.agentName,
-      vote: data.finalVote,
-      confidence: data.confidence,
-      reasoning: data.finalReason || '',
-    }, store.currentAnalysis || '');
-  });
-
+  // Session IDs preserve simultaneous stock, crypto and position-review debates.
+  for (const event of ['debate:start', 'debate:round', 'debate:agent-speaking',
+    'debate:agent-voted', 'debate:cross-examination', 'debate:final-vote',
+    'debate:master-thinking', 'debate:complete']) {
+    socket.on(event, (data: unknown) => {
+      if (observingToken && useStore.getState().token === observingToken) store.receiveDebateEvent(event, data);
+    });
+  }
   socket.on('debate:complete', (data: any) => {
-    store.setCurrentAnalysis(null);
-    const t = data.transcript;
-    if (t) {
-      const buyCount  = t.round3?.filter((v: any) => v.finalVote === 'BUY').length  || 0;
-      const sellCount = t.round3?.filter((v: any) => v.finalVote === 'SELL').length || 0;
-      if (t.executionApproved) {
-        toast.success(`🤖 COMMITTEE: ${t.finalDecision} ${t.asset} — executing trade!`, { duration: 6000 });
-      } else {
-        toast(`🏛️ ${t.asset}: ${t.finalDecision} (${buyCount}B/${sellCount}S) — ${t.blockReason || 'held'}`, { duration: 5000 });
-      }
+    const transcript = data?.transcript;
+    if (!transcript) return;
+    const asset = typeof transcript.asset === 'string' ? transcript.asset : 'Unknown asset';
+    const decision = typeof transcript.finalDecision === 'string' ? transcript.finalDecision : 'Unknown';
+    if (transcript.executionApproved === true) {
+      toast(`${asset}: ${decision} approved by committee. Broker execution is not confirmed.`, { duration: 6000 });
+    } else {
+      toast(`${asset}: ${decision} — ${transcript.blockReason || 'No execution approval'}`, { duration: 5000 });
     }
   });
-
   // ── LEGACY ORCHESTRATOR EVENTS (kept for compatibility) ──────────────────────
   socket.on('council:start', (data: any) => {
     store.resetCouncil();
@@ -143,5 +134,8 @@ export function getSocket() { return socket; }
 
 export function disconnectSocket() {
   socket?.disconnect();
+  socket?.removeAllListeners();
   socket = null;
+  recoveryNeeded = false;
+  useStore.getState().setSocketStatus('disconnected');
 }

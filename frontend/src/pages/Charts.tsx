@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   BarChart2, Cpu, Eye, Filter, Layers, TrendingUp, TrendingDown,
   Activity, ShieldCheck, CheckCircle2, AlertTriangle, Info,
@@ -12,6 +13,7 @@ import {
 import SymbolPicker from '../components/common/SymbolPicker';
 import { useSelectedSymbol } from '../hooks/useDefaultSymbol';
 import { glossaryTitle } from '../constants/glossary';
+import { chartSelection } from '../utils/chartSelection';
 
 const REGIME_LABELS: Record<string, string> = {
   TRENDING_BULL: 'Trending Bull',
@@ -29,7 +31,19 @@ const REGIME_LABELS: Record<string, string> = {
 };
 
 export default function ChartsPage() {
-  const { symbol: selected, market, setSymbol: setSelected, isLoading: defaultLoading } = useSelectedSymbol('all');
+  const { symbol: defaultSymbol, market: defaultMarket, setSymbol, isLoading } = useSelectedSymbol('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linked = chartSelection(searchParams);
+  const selected = linked?.symbol ?? defaultSymbol;
+  const market = linked?.market ?? defaultMarket;
+  const defaultLoading = linked === null && isLoading;
+  const setSelected = (symbol: string, meta?: { market?: 'stocks' | 'crypto' }) => {
+    setSymbol(symbol, meta);
+    const next = new URLSearchParams(searchParams);
+    next.set('symbol', symbol);
+    next.set('market', meta?.market ?? market);
+    setSearchParams(next);
+  };
   const [timeframe, setTimeframe] = useState<'1m' | '5m' | '15m' | '1h' | '4h' | '1D' | '1W'>('1D');
   const [range, setRange] = useState<'1D' | '5D' | '1M' | '3M' | '6M' | '1Y'>('3M');
   const [activeTab, setActiveTab] = useState<'chart' | 'candles_table' | 'polymarket' | 'ca_cnn' | 'ca_regime' | 'ca_confluence' | 'volume_micro' | 'diagnostic'>('chart');
@@ -38,16 +52,17 @@ export default function ChartsPage() {
   const chartInstance = useRef<any>(null);
 
   // Queries
-  const { data: liveChartData, isLoading: liveChartLoading, refetch: refetchLiveChart } = useQuery({
-    queryKey: ['live-chart', selected, timeframe, range],
-    queryFn: () => getLiveChart(selected, timeframe, range),
+  const liveChartQ = useQuery({
+    queryKey: ['live-chart', selected, market, timeframe, range],
+    queryFn: () => getLiveChart(encodeURIComponent(selected), timeframe, range),
     refetchInterval: 30000,
     enabled: !!selected,
   });
+  const { data: liveChartData, isLoading: liveChartLoading, refetch: refetchLiveChart } = liveChartQ;
 
   const { data: snapshot, isLoading: candlesLoading } = useQuery({
     queryKey: ['candles', selected, market],
-    queryFn: () => getStockCandles(selected, market),
+    queryFn: () => getStockCandles(encodeURIComponent(selected), market),
     refetchInterval: 60000,
     enabled: !!selected && market === 'crypto',
   });
@@ -67,7 +82,7 @@ export default function ChartsPage() {
 
   const { data: chartAi, isLoading: aiLoading, refetch: refetchAi } = useQuery({
     queryKey: ['chart-ai', selected, market],
-    queryFn: () => getChartIntelligence(selected, market),
+    queryFn: () => getChartIntelligence(encodeURIComponent(selected), market),
     refetchInterval: 60000,
     enabled: !!selected,
   });
@@ -234,7 +249,7 @@ export default function ChartsPage() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <LastUpdated />
+          <LastUpdated query={liveChartQ} label="Chart response" staleAfterMs={60000} />
           {price != null && (
             <div className="font-mono font-bold text-xl text-apex-text bg-apex-surface px-3 py-1 rounded-lg border border-apex-border">
               ${price.toFixed(2)}
@@ -257,6 +272,8 @@ export default function ChartsPage() {
           </button>
         </div>
       </div>
+
+      {linked?.error && <p role="alert" className="font-sans text-sm text-apex-red">{linked.error}</p>}
 
       {!selected && (
         <div className="card p-10 text-center" data-testid="chart-empty">

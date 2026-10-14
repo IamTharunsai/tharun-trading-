@@ -76,7 +76,8 @@ const safeFormat = (v: any, fmt: string) => {
 };
 
 function MarketNewsTab() {
-  const { data: rawNews = [] } = useQuery({ queryKey: ['news'], queryFn: getNews, refetchInterval: 60000 });
+  const newsQ = useQuery({ queryKey: ['news'], queryFn: getNews, refetchInterval: 60000 });
+  const { data: rawNews = [] } = newsQ;
   const news = dedupeNews(Array.isArray(rawNews) ? rawNews : Array.isArray((rawNews as any)?.news) ? (rawNews as any).news : []);
 
   const sentimentBadge = (score: number) => {
@@ -91,6 +92,7 @@ function MarketNewsTab() {
 
   return (
     <div className="space-y-3">
+      <LastUpdated query={newsQ} label="News response" staleAfterMs={120000} />
       {news.map((n: any) => {
         if (!n) return null;
         const assets = parseArray(n.assetsMentioned);
@@ -154,26 +156,37 @@ function GeopoliticsTab() {
   const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedSentiment, setSelectedSentiment] = useState<string>('ALL');
+  const [receivedAt, setReceivedAt] = useState<number | null>(null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+    let active = true;
     const fetchData = async () => {
+      if (active) setRefreshing(true);
       try {
         const [newsResponse, eventsResponse, sentimentResponse] = await Promise.all([
           api.get('/monitor/news', { params: { minutes: 120 } }),
           api.get('/monitor/geopolitics', { params: { hours: 24 } }),
           api.get('/monitor/sentiment'),
         ]);
+        if (!active) return;
         setNews(dedupeNews(Array.isArray(newsResponse.data?.news) ? newsResponse.data.news : []));
         setEvents(dedupeNews(Array.isArray(eventsResponse.data?.events) ? eventsResponse.data.events : []));
         setSentiment(sentimentResponse.data || null);
+        setReceivedAt(Date.now());
+        setRefreshFailed(false);
       } catch (err) {
+        if (active) setRefreshFailed(true);
         console.error('Failed to fetch data', err);
+      } finally {
+        if (active) setRefreshing(false);
       }
     };
 
     fetchData();
     const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+    return () => { active = false; clearInterval(interval); };
   }, []);
 
   const filteredNews = news.filter(n => {
@@ -184,6 +197,8 @@ function GeopoliticsTab() {
 
   return (
     <div className="space-y-4">
+      <LastUpdated receivedAt={receivedAt} isError={refreshFailed} isFetching={refreshing}
+        label="Geopolitics response" staleAfterMs={60000} />
       {sentiment && (
         <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -343,11 +358,13 @@ function GeopoliticsTab() {
 }
 
 function IpoCalendarTab() {
-  const { data: rawIpos = [] } = useQuery({ queryKey: ['ipo-calendar'], queryFn: getIpoCalendar, staleTime: 60 * 60000 });
+  const iposQ = useQuery({ queryKey: ['ipo-calendar'], queryFn: getIpoCalendar, staleTime: 60 * 60000 });
+  const { data: rawIpos = [] } = iposQ;
   const ipos = Array.isArray(rawIpos) ? rawIpos : Array.isArray((rawIpos as any)?.ipos) ? (rawIpos as any).ipos : [];
 
   return (
     <div className="space-y-3">
+      <LastUpdated query={iposQ} label="IPO calendar response" staleAfterMs={60 * 60000} />
       {ipos.length === 0 && (
         <div className="p-12 text-center bg-white border border-slate-200 rounded-xl font-mono text-xs text-slate-400">
           No upcoming IPOs in the next 30 days
@@ -395,7 +412,6 @@ export default function NewsPage() {
             <p className="font-mono text-xs text-slate-500 mt-0.5">Continuous Multi-Asset Real-Time Sentiment & Geopolitical Feed</p>
           </div>
         </div>
-        <LastUpdated />
       </div>
 
       <div className="flex gap-2 border-b border-slate-200 pb-2">
