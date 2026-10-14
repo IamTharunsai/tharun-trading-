@@ -43,11 +43,12 @@ export default function CopyTradingPage() {
     refetchInterval: 30000
   });
 
-  const { data: rawFollowers, isLoading: loadingFollowers } = useQuery({
+  const followersQ = useQuery({
     queryKey: ['copy-trading-followers'],
     queryFn: getCopyTradingFollowers,
     refetchInterval: 10000
   });
+  const { data: rawFollowers, isLoading: loadingFollowers } = followersQ;
 
   const { data: rawAuditLogs, isLoading: loadingLogs } = useQuery({
     queryKey: ['copy-trading-audit'],
@@ -143,7 +144,7 @@ export default function CopyTradingPage() {
             <Plus size={14} />
             <span>REGISTER FOLLOWER ACCOUNT</span>
           </button>
-          <LastUpdated />
+          <LastUpdated query={followersQ} label="Followers response" staleAfterMs={30000} />
         </div>
       </div>
 

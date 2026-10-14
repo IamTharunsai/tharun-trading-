@@ -23,7 +23,9 @@ const analyzedTradeIds = new Set<string>();
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
 
-export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY' } = {}) {
+export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY'; purpose?: 'ENTRY' | 'RESEARCH' } = {}) {
+  const purpose = opts.purpose ?? 'ENTRY';
+  if (purpose !== 'ENTRY' && purpose !== 'RESEARCH') throw new Error('Invalid debate execution purpose');
   if (isKillSwitchActive()) return;
   const lockKey = `${asset}:${market}`;
   if (debateLocks.has(lockKey)) return;
@@ -67,7 +69,16 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       volumeAvg20: snapshot.indicators.volumeAvg20, atr14: snapshot.indicators.atr14,
     });
     const portfolio = await getPortfolioState();
-    const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime, opts.executionLane ?? 'COUNCIL');
+    const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime, opts.executionLane ?? 'COUNCIL', undefined, undefined, purpose);
+    // Research is blocked before risk/execution, independently of the returned vote.
+    if (purpose === 'RESEARCH') {
+      transcript.purpose = 'RESEARCH';
+      transcript.executionApproved = false;
+      transcript.positionSizePct = 0;
+      transcript.tradeExecuted = false;
+      transcript.blockReason = 'Research only — no execution authority';
+      return transcript;
+    }
     if (transcript.executionApproved && transcript.finalDecision !== 'HOLD') {
       if (!transcript.decisionId) {
         transcript.executionApproved = false;

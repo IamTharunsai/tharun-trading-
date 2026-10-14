@@ -133,11 +133,12 @@ const MetricCard = ({ label, value, sub, tone = 'neutral', icon }: {
 export default function TearsheetPage() {
   const [range, setRange] = useState<'7D' | '30D' | '90D' | 'ALL'>('30D');
 
-  const { data: closedData, isLoading } = useQuery({
+  const tradesQ = useQuery({
     queryKey: ['trades-tearsheet'],
     queryFn: () => getTrades(1, 2000, { status: 'CLOSED' }),
     refetchInterval: 120000,
   });
+  const { data: closedData, isLoading } = tradesQ;
 
   const { data: snapshots = [] } = useQuery({
     queryKey: ['snapshots-90'],
@@ -286,7 +287,7 @@ export default function TearsheetPage() {
               background: range === r ? '#7c3aed' : '#f1f5f9', color: range === r ? '#fff' : '#64748b',
             }}>{r}</button>
           ))}
-          <LastUpdated />
+          <LastUpdated query={tradesQ} label="Closed trades response" staleAfterMs={240000} />
         </div>
       </div>
 

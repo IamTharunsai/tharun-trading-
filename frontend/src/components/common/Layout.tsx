@@ -15,6 +15,7 @@ import LiveTicker from './LiveTicker';
 import ErrorBoundary from './ErrorBoundary';
 import CommandPalette from './CommandPalette';
 import { useSystemStatus } from '../../hooks/useSystemStatus';
+import { csvRow } from '../../utils/csv';
 
 const testIdForPath = (path: string) => `nav-${path === '/' ? 'home' : path.replace(/^\//, '').replace(/\//g, '-')}`;
 
@@ -122,7 +123,7 @@ export default function Layout() {
     const updateTimes = () => {
       const now = new Date();
       setTimeUtc(now.toUTCString().slice(17, 25) + ' UTC');
-      setTimeEst(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }) + ' EST');
+      setTimeEst(now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false, timeZoneName: 'short' }));
     };
     updateTimes();
     const interval = setInterval(updateTimes, 1000);
@@ -134,12 +135,20 @@ export default function Layout() {
       if (killSwitchActive) {
         await deactivateKillSwitch();
         setKillSwitch(false);
-        toast.success('Trading resumed');
+        toast.success('Emergency stop released. New orders still require risk approval.');
       } else {
-        if (!confirm('ACTIVATE EMERGENCY KILL SWITCH? This halts all algorithmic order execution immediately.')) return;
-        await activateKillSwitch();
+        if (!confirm('Activate emergency stop? This halts new algorithmic orders and requests liquidation of the current account’s open positions. Exit orders can remain pending or fail. Confirm only if you intend to close those positions.')) return;
+        const result = await activateKillSwitch();
         setKillSwitch(true);
-        toast.error('EMERGENCY KILL SWITCH ACTIVATED — Trading Halted');
+        const pending = Array.isArray(result.pending) ? result.pending.length : null;
+        const errors = Array.isArray(result.errors) ? result.errors.length : null;
+        if (pending === null || errors === null) {
+          toast('Emergency stop active. Liquidation status is unknown; inspect the account and exit orders.', { duration: 10000 });
+        } else if (pending || errors) {
+          toast.error(`Emergency stop active. ${pending} exits pending; ${errors} errors. Account liquidation is not confirmed.`, { duration: 10000 });
+        } else {
+          toast('Emergency stop active. Check the trade ledger for confirmed closures.', { duration: 8000 });
+        }
       }
     } catch (e: any) {
       toast.error('Kill switch request failed: ' + (e?.response?.data?.error || e?.message || 'unknown error'));
@@ -148,40 +157,35 @@ export default function Layout() {
 
   const handleExportCsv = async () => {
     try {
-      toast.loading('Generating Institutional BLPAPI Export...', { id: 'export' });
-      const [portfolio, tradesData] = await Promise.all([
-        getPortfolio().catch(() => ({})),
-        getTrades(1, 100).catch(() => ({ trades: [] }))
-      ]);
-
-      const trades = tradesData.trades || [];
-      let csvContent = 'data:text/csv;charset=utf-8,';
-      csvContent += '--- INSTITUTIONAL BLOOMBERG BLPAPI EXPORT ---\n';
-      csvContent += `Generated,${new Date().toISOString()}\n`;
-      csvContent += `Total NAV,${portfolio.totalValue || 0}\n`;
-      csvContent += `Cash Balance,${portfolio.cashBalance || 0}\n\n`;
-
-      csvContent += '--- TRADES LEDGER ---\n';
-      csvContent += 'Trade ID,Asset,Market,Type,Quantity,Entry Price,Exit Price,P&L,Status,Date\n';
-
-      for (const t of trades) {
-        csvContent += `"${t.id}","${t.asset}","${t.market}","${t.type}",${t.quantity || 0},${t.entryPrice || 0},${t.exitPrice || 0},${t.pnl || 0},"${t.status}","${t.openedAt || t.createdAt || ''}"\n`;
+      toast.loading('Preparing Bhishma account export…', { id: 'export' });
+      const [portfolio, tradesData] = await Promise.all([getPortfolio(), getTrades(1, 100)]);
+      if (!portfolio || !Array.isArray(tradesData?.trades)) throw new Error('Account export response unavailable');
+      const trades = tradesData.trades;
+      let csvContent = csvRow(['Bhishma account export']);
+      csvContent += csvRow(['Generated UTC', new Date().toISOString()]);
+      csvContent += csvRow(['Coverage', `First ${trades.length} returned trade rows; this is not a full historical ledger export`]);
+      csvContent += csvRow(['Account equity', portfolio.totalEquity]);
+      csvContent += csvRow(['Cash balance', portfolio.cashBalance]);
+      csvContent += csvRow(['Broker mode', portfolio.brokerMode]);
+      csvContent += csvRow(['Data source', portfolio.dataSource]);
+      csvContent += csvRow(['Trade ID', 'Asset', 'Market', 'Type', 'Quantity', 'Entry price', 'Exit price', 'P&L', 'Status', 'Date']);
+      for (const trade of trades) {
+        csvContent += csvRow([trade.id, trade.asset, trade.market, trade.type, trade.quantity,
+          trade.entryPrice, trade.exitPrice, trade.pnl, trade.status, trade.openedAt ?? trade.createdAt]);
       }
-
-      const encodedUri = encodeURI(csvContent);
+      const url = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8' }));
       const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `THARUN_TERMINAL_BLPAPI_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.href = url;
+      link.download = `BHISHMA_ACCOUNT_${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
-
-      toast.success('Export completed! BLPAPI CSV downloaded.', { id: 'export' });
-    } catch (err) {
-      toast.error('Failed to generate export', { id: 'export' });
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success(`Account export downloaded: ${trades.length} returned trade rows.`, { id: 'export' });
+    } catch {
+      toast.error('Account export failed. No financial values were substituted; retry when the account service is available.', { id: 'export' });
     }
   };
-
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -270,7 +274,7 @@ export default function Layout() {
             className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-xs font-medium transition-colors shadow-xs"
           >
             <FileSpreadsheet size={13} className="text-emerald-600" />
-            <span>BLPAPI EXCEL EXPORT</span>
+            <span>EXPORT ACCOUNT CSV</span>
           </button>
 
           <button

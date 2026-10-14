@@ -18,7 +18,8 @@ const REGIME_LABELS: Record<string, string> = {
 };
 
 export default function InvestmentPage() {
-  const { data: portfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 10000 });
+  const portfolioQ = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 10000 });
+  const { data: portfolio } = portfolioQ;
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 10000 });
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats });
   const { data: universe } = useQuery({ queryKey: ['stocks-universe'], queryFn: getStocksUniverse, refetchInterval: 60000 });
@@ -79,7 +80,7 @@ export default function InvestmentPage() {
             Live portfolio composition + regime-driven strategy guidance — no fixed rules, agents adapt to market conditions
           </p>
         </div>
-        <LastUpdated />
+        <LastUpdated query={portfolioQ} label="Portfolio response" staleAfterMs={30000} />
       </div>
 
       {/* Live Portfolio Stats */}

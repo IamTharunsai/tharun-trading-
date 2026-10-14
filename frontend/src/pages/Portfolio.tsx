@@ -9,7 +9,8 @@ import { PieChart as PieIcon, TrendingUp, Layers, DollarSign, Briefcase } from '
 import StatCard from '../components/common/StatCard';
 
 export default function PortfolioPage() {
-  const { data: portfolio, isLoading: loadingPortfolio } = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
+  const portfolioQ = useQuery({ queryKey: ['portfolio'], queryFn: getPortfolio, refetchInterval: 5000 });
+  const { data: portfolio, isLoading: loadingPortfolio } = portfolioQ;
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
   const { data: snapshots = [] } = useQuery({ queryKey: ['snapshots-90'], queryFn: () => getSnapshots(90) });
 
@@ -66,7 +67,7 @@ export default function PortfolioPage() {
             Real-time capital distribution, 90-day NAV trajectory, and dynamic Kelly weightings
           </p>
         </div>
-        <LastUpdated />
+        <LastUpdated query={portfolioQ} label="Portfolio response" staleAfterMs={15000} />
       </div>
 
       {/* Top Metrics Cards */}

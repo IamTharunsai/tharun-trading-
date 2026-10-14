@@ -360,7 +360,7 @@ agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
     const { asset = 'BTC', market = 'crypto' } = req.body;
     const { runDebateForAsset } = await import('../jobs/scheduler');
     res.json({ message: `Debate triggered for ${asset}`, asset, status: 'running' });
-    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true }).catch(() => {});
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true, purpose: 'RESEARCH' }).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger debate' });
   }
@@ -435,7 +435,7 @@ agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Resp
     const { runDebateForAsset } = await import('../jobs/scheduler');
     // Respond immediately, run debate in background
     res.json({ message: `🏛️ Full debate starting for ${asset} (${market}) — check DebateRoom for live updates`, asset, market, status: 'running' });
-    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true }).catch((err: any) => {
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true, purpose: 'ENTRY' }).catch((err: any) => {
       console.error('run-and-trade debate failed:', err?.message);
     });
   } catch (err: any) {

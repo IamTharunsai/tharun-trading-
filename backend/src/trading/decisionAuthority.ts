@@ -24,8 +24,10 @@ export function authorizePersistedDecision(raw: unknown, signal: TradeSignal, mo
     throw new Error('DECISION_AUTHORITY: missing, blocked, executed or mismatched decision');
   }
   const snapshot = decision.marketSnapshot;
-  if (snapshot?.positionReview !== undefined || snapshot?.executionPlan?.purpose === 'POSITION_REVIEW') {
-    throw new Error('DECISION_AUTHORITY: held-position research has no execution authority');
+  if (snapshot?.positionReview !== undefined
+    || (snapshot?.purpose !== undefined && snapshot.purpose !== 'ENTRY')
+    || (snapshot?.executionPlan?.purpose !== undefined && snapshot.executionPlan.purpose !== 'ENTRY')) {
+    throw new Error('DECISION_AUTHORITY: research has no execution authority');
   }
   const timestamp = new Date(decision.timestamp).getTime();
   if (!snapshot || snapshot.asset !== signal.asset || !Number.isFinite(snapshot.timestamp)

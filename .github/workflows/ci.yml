@@ -111,6 +111,8 @@ jobs:
         run: npx jest --runInBand --runTestsByPath tests/polymarketGreed.route.test.ts tests/polymarketMoneyGreed.retirement.test.ts tests/polymarketRuntime.test.ts
       - name: Verify incomplete company evidence cannot crash committee prompts
         run: npx jest --runInBand --runTestsByPath tests/deepAnalysis.formatting.test.ts tests/debateEngine.technicianGrounding.test.ts tests/debateEngine.regimeLessons.test.ts
+      - name: Verify research cannot authorize an order and entry decisions retain their authority
+        run: npx jest --runInBand --runTestsByPath tests/committee.behavior.test.ts tests/decisionAuthority.test.ts tests/scheduler.tradeExecuted.test.ts
       - name: Verify authenticated research service contracts with mocked services
         run: npx jest --runInBand --runTestsByPath tests/researchServices.test.ts
 
@@ -149,3 +151,5 @@ jobs:
 
       - name: Build (TypeScript + Vite)
         run: npm run build
+      - name: Verify real freshness markup, chart links and interleaved debate evidence
+        run: node --test tests/experienceContracts.cjs

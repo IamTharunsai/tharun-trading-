@@ -20,11 +20,12 @@ export function TradesPage() {
   const [filterMarket, setFilterMarket] = useState<'all' | 'stocks' | 'crypto' | 'polymarket'>('all');
   const [filterOutcome, setFilterOutcome] = useState<'all' | 'winners' | 'losers' | 'open' | 'rejected'>('all');
 
-  const { data, isLoading } = useQuery({
+  const tradesQ = useQuery({
     queryKey: ['trades-full', page, filterMarket],
     queryFn: () => getTrades(page, PAGE_SIZE, filterMarket !== 'all' ? { market: filterMarket } : undefined),
     refetchInterval: 15000
   });
+  const { data, isLoading } = tradesQ;
 
   const { data: stats } = useQuery({
     queryKey: ['trade-stats', filterMarket],
@@ -137,7 +138,7 @@ export function TradesPage() {
             <Download size={13} />
             EXPORT AUDIT CSV
           </button>
-          <LastUpdated />
+          <LastUpdated query={tradesQ} label="Trade page response" staleAfterMs={45000} />
         </div>
       </div>
 

@@ -179,7 +179,7 @@ export interface CrossExam { challenger: string; target: string; challenge: stri
 
 export interface DebateTranscript {
   sentiment?: { score: number; mentionCount: number; volumeZScore: number; multiplier: number; veto: boolean; reason: string } | null;
-  purpose?: 'ENTRY' | 'POSITION_REVIEW';
+  purpose?: 'ENTRY' | 'POSITION_REVIEW' | 'RESEARCH';
   id: string;
   decisionId?: string;
   inputFingerprint: string;
@@ -531,8 +531,10 @@ export async function runInvestmentCommitteeDebate(
   regimeAnalysis?: RegimeAnalysis,
   executionLane: 'COUNCIL' | 'INTRADAY' = 'COUNCIL',
   positionReview?: PositionResearchContext,
-  reviewControl?: ResearchControl
+  reviewControl?: ResearchControl,
+  executionPurpose: 'ENTRY' | 'RESEARCH' = 'ENTRY'
 ): Promise<DebateTranscript> {
+  if (executionPurpose !== 'ENTRY' && executionPurpose !== 'RESEARCH') throw new Error('Invalid debate execution purpose');
   reviewControl?.signal.throwIfAborted();
   const callResearch = (params: Parameters<typeof anthropic.messages.create>[0]) => callWithRetry(params, 3, reviewControl);
 
@@ -568,7 +570,7 @@ export async function runInvestmentCommitteeDebate(
     if (sentimentService.isSentimentEnabled()) sentimentData = await sentimentService.getSentiment(asset, { market: snapshot.market, includeX: true });
   } catch { sentimentData = null; }
   reviewControl?.signal.throwIfAborted();
-  const inputFingerprint = createHash('sha256').update(JSON.stringify({ version: 'bhishma-council-4', snapshot, portfolio, marketRegime, regimeAnalysis, decisionMode, executionLane, positionReview, sentimentData })).digest('hex');
+  const inputFingerprint = createHash('sha256').update(JSON.stringify({ version: 'bhishma-council-5', snapshot, portfolio, marketRegime, regimeAnalysis, decisionMode, executionLane, positionReview, executionPurpose, sentimentData })).digest('hex');
   const checkpoint = await loadDebateCheckpoint(asset, inputFingerprint);
   if (checkpoint) {
     logger.info(`♻️  Resuming debate for ${asset} from checkpoint (${checkpoint.status})`);
@@ -582,7 +584,7 @@ export async function runInvestmentCommitteeDebate(
   io?.emit('debate:start', { debateId, asset, price: snapshot.price, regime: marketRegime });
 
   const transcript: DebateTranscript = {
-    purpose: positionReview ? 'POSITION_REVIEW' : 'ENTRY',
+    purpose: positionReview ? 'POSITION_REVIEW' : executionPurpose,
     id: debateId,
     inputFingerprint,
     agentVotes: [],
@@ -1051,9 +1053,9 @@ export async function runInvestmentCommitteeDebate(
       volumeZScore: sentimentData.volumeZScore, multiplier: sentimentMultiplier, veto: gate.veto, reason: gate.reason };
     if (gate.veto || sentimentMultiplier === 0) { approved = false; blockReason = gate.reason; }
   }
-  if (positionReview) {
+  if (positionReview || executionPurpose === 'RESEARCH') {
     approved = false;
-    blockReason = 'Held-position research only — no execution authority';
+    blockReason = positionReview ? 'Held-position research only — no execution authority' : 'Research only — no execution authority';
   }
   transcript.executionApproved = approved;
   transcript.blockReason = blockReason || undefined;
@@ -1087,7 +1089,7 @@ export async function runInvestmentCommitteeDebate(
       data: { ...__test__buildAgentDecisionData({
         asset, finalDecision: transcript.finalDecision, finalConfidence: transcript.finalConfidence,
         blockReason, agentArguments: transcript.agentArguments,
-        snapshot: { ...snapshot, inputFingerprint, evidenceBundle, sentiment: transcript.sentiment ?? null, ...(positionReview ? { positionReview } : {}), executionPlan: {
+        snapshot: { ...snapshot, purpose: transcript.purpose, inputFingerprint, evidenceBundle, sentiment: transcript.sentiment ?? null, ...(positionReview ? { positionReview } : {}), executionPlan: {
           purpose: transcript.purpose,
           version: 1, approved: transcript.executionApproved, mode: decisionMode, market: snapshot.market, lane: executionLane,
           direction: transcript.finalDecision, confidence: transcript.finalConfidence,

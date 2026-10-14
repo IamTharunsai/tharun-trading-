@@ -14,24 +14,27 @@ export default function AlternativeDataPage() {
   const { symbol: selectedSymbol, setSymbol: setSelectedSymbol } = useSelectedSymbol('stocks');
   const [activeTab, setActiveTab] = useState<'streams' | 'job_agent' | 'iv_crush' | 'ai_arsenal'>('streams');
 
-  const { data: altData, isLoading: altLoading, refetch: refetchAlt } = useQuery({
+  const altQ = useQuery({
     queryKey: ['alternative-data', selectedSymbol],
     queryFn: () => getAlternativeData(selectedSymbol),
     refetchInterval: 60000,
     enabled: !!selectedSymbol,
   });
+  const { data: altData, isLoading: altLoading, refetch: refetchAlt } = altQ;
 
-  const { data: ivCrushList, isLoading: ivLoading } = useQuery({
+  const ivQ = useQuery({
     queryKey: ['earnings-iv-crush'],
     queryFn: getEarningsIvCrush,
     refetchInterval: 60000,
   });
+  const { data: ivCrushList, isLoading: ivLoading } = ivQ;
 
-  const { data: arsenalList } = useQuery({
+  const arsenalQ = useQuery({
     queryKey: ['ai-arsenal'],
     queryFn: getAiArsenal,
     staleTime: 300000,
   });
+  const { data: arsenalList } = arsenalQ;
 
   const streams: any[] = Array.isArray(altData?.streams) ? altData.streams : [];
   const jobVelocity = altData?.jobPostingVelocity;
@@ -62,7 +65,9 @@ export default function AlternativeDataPage() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <LastUpdated />
+          <LastUpdated query={activeTab === 'iv_crush' ? ivQ : activeTab === 'ai_arsenal' ? arsenalQ : altQ}
+            label={activeTab === 'iv_crush' ? 'Earnings response' : activeTab === 'ai_arsenal' ? 'Arsenal response' : 'Alternative data response'}
+            staleAfterMs={activeTab === 'ai_arsenal' ? 300000 : 120000} />
           <SymbolPicker value={selectedSymbol} market="stocks" onChange={(sym, meta) => setSelectedSymbol(sym, meta)} data-testid="symbol-picker" />
           <button
             data-testid="alt-rescan"

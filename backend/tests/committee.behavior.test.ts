@@ -62,6 +62,29 @@ describe('real committee behavior with dummy providers', () => {
     (routedMessagesCreate as jest.Mock).mockImplementation(defaultReply);
   });
 
+  it('persists research-only purpose and refuses replay despite unanimous valid BUY research', async () => {
+    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
+    const { authorizePersistedDecision } = require('../src/trading/decisionAuthority');
+    const input = snapshot();
+    const result = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL', undefined, 'COUNCIL', undefined, undefined, 'RESEARCH');
+    expect(result.finalDecision).toBe('BUY');
+    expect(result.agentVotes).toHaveLength(14);
+    expect(result.purpose).toBe('RESEARCH');
+    expect(result.executionApproved).toBe(false);
+    expect(result.positionSizePct).toBe(0);
+    const saved = (prisma.agentDecision.create as jest.Mock).mock.calls[0][0].data;
+    expect(saved.marketSnapshot.purpose).toBe('RESEARCH');
+    expect(saved.marketSnapshot.executionPlan).toMatchObject({ purpose: 'RESEARCH', approved: false, positionSizePct: 0 });
+    // Even a caller clearing the human-readable block and inflating plan flags
+    // cannot turn the stored research-purpose decision into order authority.
+    const forged = { ...saved, id: result.decisionId, timestamp: new Date(), executed: false, executionReason: null,
+      marketSnapshot: { ...saved.marketSnapshot, executionPlan: { ...saved.marketSnapshot.executionPlan, approved: true, positionSizePct: 1 } } };
+    const signal = { asset: 'AAPL', market: 'stocks', direction: 'BUY', confidence: result.finalConfidence,
+      entryPrice: input.price, stopLossPrice: result.stopLossPrice, takeProfitPrice: result.takeProfitPrice,
+      positionSizePct: 1, reasoning: 'attempted research replay', agentDecisionId: result.decisionId };
+    expect(() => authorizePersistedDecision(forged, signal, 'paper')).toThrow();
+  });
+
   it('uses the forecast and same evidence in opening, final voting and synthesis, then returns its saved decision ID', async () => {
     const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const input = snapshot();
@@ -74,7 +97,7 @@ describe('real committee behavior with dummy providers', () => {
     const masterCall = (routedMessagesCreate as jest.Mock).mock.calls.find(([p]) => p.model.includes('sonnet'))![0];
     expect(JSON.stringify(finalCall.messages)).toContain('105.00');
     expect(JSON.stringify(masterCall.messages)).toContain('105.00');
-    expect(JSON.stringify(prisma.agentDecision.create.mock.calls[0][0].data.marketSnapshot)).toContain('AAPL');
+    expect(JSON.stringify((prisma.agentDecision.create as jest.Mock).mock.calls[0][0].data.marketSnapshot)).toContain('AAPL');
   });
 
   it('cannot approve when the current decision fails to persist', async () => {

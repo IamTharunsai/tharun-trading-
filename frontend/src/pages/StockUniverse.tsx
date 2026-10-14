@@ -405,7 +405,7 @@ export default function StockUniversePage() {
   const [selected, setSelected] = useState<any | null>(null);
 
   // 1. Full 10,400+ US Stock Marketplace Directory
-  const { data: allStocksData, isLoading: allStocksLoading } = useQuery({
+  const allStocksQ = useQuery({
     queryKey: ['all-stocks', search, selectedSector, tradableOnly],
     queryFn: () => getAllStocksFiltered({
       search: search || undefined,
@@ -415,20 +415,23 @@ export default function StockUniversePage() {
     }),
     staleTime: 30000
   });
+  const { data: allStocksData, isLoading: allStocksLoading } = allStocksQ;
 
   // 2. Cross-Industry Alternative Boom & Ripple Radar
-  const { data: rippleOpportunities, isLoading: rippleLoading } = useQuery({
+  const rippleQ = useQuery({
     queryKey: ['cross-industry-ripple'],
     queryFn: getCrossIndustryRipple,
     staleTime: 60000
   });
+  const { data: rippleOpportunities, isLoading: rippleLoading } = rippleQ;
 
   // 3. Agent Analyzed Assets
-  const { data: rawStocks, isLoading } = useQuery({
+  const analyzedQ = useQuery({
     queryKey: ['stocks-universe'],
     queryFn: getStocksUniverse,
     refetchInterval: 60000,
   });
+  const { data: rawStocks, isLoading } = analyzedQ;
 
   const stocks: any[] = useMemo(() => {
     if (Array.isArray(rawStocks)) return rawStocks;
@@ -517,7 +520,9 @@ export default function StockUniversePage() {
             Complete US marketplace directory, GICS sector categorization, alternative industry ripple radar, and committee deliberation
           </p>
         </div>
-        <LastUpdated />
+        <LastUpdated query={activeTab === 'all_us_market' ? allStocksQ : activeTab === 'ripple_radar' ? rippleQ : analyzedQ}
+          label={activeTab === 'all_us_market' ? 'Directory response' : activeTab === 'ripple_radar' ? 'Ripple response' : 'Analyzed stocks response'}
+          staleAfterMs={activeTab === 'all_us_market' ? 60000 : 120000} />
       </div>
 
       {/* ── Top Level 3-Tier Tab Navigation ────────────────────────── */}
