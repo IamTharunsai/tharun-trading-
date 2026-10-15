@@ -105,6 +105,8 @@ jobs:
 
       - name: TypeScript check
         run: npx tsc --noEmit -p .
+      - name: Verify provider completion, structured acceptance and cancellation contracts
+        run: npx jest --runInBand --runTestsByPath tests/llmCompletion.test.ts tests/llmCancellation.test.ts tests/platformUpgrade.test.ts
       - name: Verify prediction execution and account contracts with mocked providers
         run: npx jest --runInBand --runTestsByPath tests/predictionExecution.authority.test.ts tests/predictionExecution.plan.test.ts tests/predictionOrderEvidence.test.ts tests/polymarketUSRest.test.ts tests/polymarketUSExecution.test.ts tests/polymarketUS.marketData.test.ts tests/polymarketUSAccount.test.ts
       - name: Verify legacy execution refusal and actual scheduled paper status

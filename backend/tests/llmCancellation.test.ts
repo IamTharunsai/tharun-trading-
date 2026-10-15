@@ -1,4 +1,5 @@
 jest.mock('axios', () => ({ __esModule: true, default: { post: jest.fn() } }));
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn() } }));
 import axios from 'axios';
 import { routedMessagesCreate } from '../src/utils/llmRouter';
 beforeEach(() => {
@@ -19,5 +20,7 @@ test('in-flight cancellation reaches HTTP and never starts a fallback provider',
   controller.abort(new Error('fixture canceled'));
   await expect(result).rejects.toThrow('fixture canceled');
   expect(axios.post).toHaveBeenCalledTimes(1);
-  expect(axios.post).toHaveBeenCalledWith(expect.any(String), expect.anything(), expect.objectContaining({ signal: controller.signal }));
+  const forwarded = (axios.post as jest.Mock).mock.calls[0][2].signal;
+  expect(forwarded.aborted).toBe(true);
+  expect(forwarded.reason).toBe(controller.signal.reason);
 });

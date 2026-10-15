@@ -4,6 +4,7 @@
 //  - intraday fast-lane indicators and setup scorer
 //  - FRED macro line formatting
 jest.mock('axios');
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 import axios from 'axios';
 import { routedMessagesCreate, attemptChain, stripReasoning, parseJsonLoose, providerFor } from '../src/utils/llmRouter';
 import { universe, UniverseSymbol, slug } from '../src/services/universeService';
@@ -22,7 +23,7 @@ describe('LLM router — provider failover', () => {
     process.env.NVIDIA_API_KEY = 'nvapi-real-looking';
     process.env.LLM_PROVIDER_FAST = 'anthropic';
     const anthropicCreate = jest.fn().mockRejectedValue(Object.assign(new Error('400 Your credit balance is too low to access the Anthropic API.'), { status: 400 }));
-    mockedPost.mockResolvedValue({ data: { choices: [{ message: { content: '{"vote":"BUY"}' } }], usage: { prompt_tokens: 10, completion_tokens: 5 } } });
+    mockedPost.mockResolvedValue({ data: { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '{"vote":"BUY"}' } }], usage: { prompt_tokens: 10, completion_tokens: 5 } } });
 
     const res = await routedMessagesCreate({ model: 'claude-haiku-4-5', max_tokens: 50, messages: [{ role: 'user', content: 'hi' }] }, anthropicCreate);
     expect(anthropicCreate).toHaveBeenCalledTimes(1);
@@ -39,7 +40,7 @@ describe('LLM router — provider failover', () => {
     delete process.env.ANTHROPIC_API_KEY;
     mockedPost
       .mockRejectedValueOnce(Object.assign(new Error('503'), { response: { status: 503, data: { error: 'overloaded' } } }))
-      .mockResolvedValueOnce({ data: { choices: [{ message: { content: 'ok' } }] } });
+      .mockResolvedValueOnce({ data: { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }] } });
     const res = await routedMessagesCreate({ model: 'claude-haiku-4-5', max_tokens: 10, messages: [{ role: 'user', content: 'x' }] });
     expect(res.model).toBe('openai/gpt-oss-20b');
     expect(mockedPost).toHaveBeenCalledTimes(2);

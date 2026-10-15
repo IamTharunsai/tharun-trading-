@@ -46,8 +46,8 @@ router.get('/status', async (_req: Request, res: Response) => {
       usConfigured: pmUs.isPolymarketUSConfigured(),
     },
     llm: {
-      fast: { provider: llm.fast.provider, model: llm.fast.model, healthy: llm.fast.healthy, lastError: llm.fast.lastError },
-      smart: { provider: llm.smart.provider, model: llm.smart.model, healthy: llm.smart.healthy, lastError: llm.smart.lastError },
+      fast: llm.fast,
+      smart: llm.smart,
       spendTodayUsd: Number(spend.usd.toFixed(4)),
       callsToday: (spend as any).calls ?? null,
       budgetUsd: spend.budget,
