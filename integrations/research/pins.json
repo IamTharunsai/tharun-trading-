@@ -1,0 +1,6 @@
+{
+  "graphify": {"repository": "Graphify-Labs/graphify", "commit": "7536dc0665dba4adacca1a323c84fedb217ddc5d", "license": "Apache-2.0"},
+  "hermes": {"repository": "NousResearch/hermes-agent", "commit": "ea45ec3936720abef431439152e75b2fc7dd4039", "license": "MIT"},
+  "mirofish": {"repository": "666ghj/MiroFish", "commit": "7657031ac01184afe2cb220f5ee3545573b5e843", "license": "AGPL-3.0"},
+  "corpus": {"repository": "IamTharunsai/tharun-trading-", "commit": "3280a7cafec5ecb9c32f0d1d5bb7af0419d6b9bf"}
+}

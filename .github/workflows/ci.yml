@@ -113,6 +113,26 @@ jobs:
         run: npx jest --runInBand --runTestsByPath tests/deepAnalysis.formatting.test.ts tests/debateEngine.technicianGrounding.test.ts tests/debateEngine.regimeLessons.test.ts
       - name: Verify research cannot authorize an order and entry decisions retain their authority
         run: npx jest --runInBand --runTestsByPath tests/committee.behavior.test.ts tests/decisionAuthority.test.ts tests/scheduler.tradeExecuted.test.ts
+      - name: Verify authenticated research service contracts with mocked services
+        run: npx jest --runInBand --runTestsByPath tests/researchServices.test.ts
+
+  research-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify request, quota and scenario contracts in isolated loopback container
+        run: >-
+          docker run --rm --network none --read-only --cap-drop ALL
+          --security-opt no-new-privileges --pids-limit 64 --memory 1g --cpus 1
+          --user 65534:65534 --tmpfs /tmp:rw,nosuid,nodev,size=128m,mode=1777
+          --env HOME=/tmp --env TMPDIR=/tmp --env PYTHONDONTWRITEBYTECODE=1
+          --mount type=bind,src=${{ github.workspace }}/integrations/research,dst=/source,readonly
+          python:3.12.12-slim-bookworm python -B -m unittest discover -s /source/tests -v
 
   frontend-build:
     runs-on: ubuntu-latest
