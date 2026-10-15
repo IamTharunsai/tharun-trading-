@@ -155,3 +155,6 @@ jobs:
         run: npm run build
       - name: Verify real freshness markup, chart links and interleaved debate evidence
         run: node --test tests/experienceContracts.cjs
+      - name: Verify authentication session query isolation and late response cancellation
+        timeout-minutes: 2
+        run: node --test tests/sessionQueryIsolation.cjs
