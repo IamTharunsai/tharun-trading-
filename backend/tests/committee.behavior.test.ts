@@ -35,7 +35,7 @@ import { getForecast } from '../src/services/kronosService';
 import { routedMessagesCreate } from '../src/utils/llmRouter';
 // Load and transform the real committee before Jest starts an individual test's
 // five-second deadline. Cold TypeScript loading is not committee execution.
-import { runInvestmentCommitteeDebate } from '../src/agents/debateEngine';
+import { runInvestmentCommitteeDebate, getLlmSpendToday } from '../src/agents/debateEngine';
 import type { PositionResearchContext } from '../src/agents/debateEngine';
 import type { TradeSignal } from '../src/agents/types';
 import { authorizePersistedDecision } from '../src/trading/decisionAuthority';
@@ -76,6 +76,19 @@ describe('real committee behavior with dummy providers', () => {
     (routedMessagesCreate as jest.Mock).mockImplementation(defaultReply);
   });
 
+  it('retains reported generation usage when structured responses are refused', async () => {
+    const before = getLlmSpendToday();
+    (routedMessagesCreate as jest.Mock).mockRejectedValue(Object.assign(new Error('schema_invalid'), {
+      code: 'schema_invalid', reportedUsage: { model: 'claude-haiku-4-5-20251001', provider: 'anthropic', usage: { input_tokens: 100, output_tokens: 20 } },
+    }));
+    const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
+    const observedCalls = (routedMessagesCreate as jest.Mock).mock.calls.length;
+    expect(observedCalls).toBe(28);
+    expect(getLlmSpendToday().calls - before.calls).toBe(observedCalls);
+    expect(getLlmSpendToday().usd - before.usd).toBeCloseTo(observedCalls * 0.0002, 8);
+    expect(result.executionApproved).toBe(false);
+  });
+
   it('persists research-only purpose and refuses replay despite unanimous valid BUY research', async () => {
     const input = snapshot();
     const result = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL', undefined, 'COUNCIL', undefined, undefined, 'RESEARCH');
@@ -84,6 +97,10 @@ describe('real committee behavior with dummy providers', () => {
     expect(result.purpose).toBe('RESEARCH');
     expect(result.executionApproved).toBe(false);
     expect(result.positionSizePct).toBe(0);
+    const requests = (routedMessagesCreate as jest.Mock).mock.calls;
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every(call => call[2]?.structured === true && typeof call[2]?.validateText === 'function')).toBe(true);
+    expect(() => requests[0][2].validateText('{"vote":"INVALID"}')).toThrow();
     const saved = (prisma.agentDecision.create as jest.Mock).mock.calls[0][0].data;
     expect(saved.marketSnapshot.purpose).toBe('RESEARCH');
     expect(saved.marketSnapshot.executionPlan).toMatchObject({ purpose: 'RESEARCH', approved: false, positionSizePct: 0 });

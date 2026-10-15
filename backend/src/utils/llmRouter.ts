@@ -22,6 +22,8 @@
 // 14 agents errored → every debate defaulted to HOLD) cannot recur silently.
 import axios from 'axios';
 import Anthropic from '@anthropic-ai/sdk';
+import { randomUUID } from 'crypto';
+import { logger } from './logger';
 
 export type LlmTier = 'fast' | 'smart';
 export type LlmProvider = 'anthropic' | 'ollama' | 'nvidia' | 'openai_compat';
@@ -80,7 +82,7 @@ export function stripReasoning(text: string): string {
 }
 
 /** Translate an Anthropic Messages request into an OpenAI chat request. */
-export function toOpenAiChat(params: any, model: string) {
+export function toOpenAiChat(params: any, model: string, provider?: LlmProvider, structured = false) {
   const messages: Array<{ role: string; content: string }> = [];
   const system = flattenContent(params.system);
   if (system) messages.push({ role: 'system', content: system });
@@ -91,38 +93,87 @@ export function toOpenAiChat(params: any, model: string) {
     max_tokens: params.max_tokens,
     temperature: params.temperature ?? 0.3,
     stream: false,
+    // NVIDIA documents these body fields for these exact models. Do not forward
+    // them to unrelated compatible endpoints or change ordinary chat sampling.
+    ...(structured && provider === 'nvidia' && NEMOTRON_MODELS.has(model) ? {
+      temperature: 1, top_p: 0.95,
+      chat_template_kwargs: { enable_thinking: false, force_nonempty_content: true },
+    } : {}),
   };
 }
 
 // ── health tracking (surfaced on /api/system/status) ──────────────────────────
-interface ProviderHealth { ok: number; fail: number; lastError?: string; lastErrorAt?: string; lastOkAt?: string }
+const NEMOTRON_MODELS = new Set(['nvidia/nemotron-3-super-120b-a12b', 'nvidia/nemotron-3-ultra-550b-a55b']);
+export type CompletionCode = 'truncated' | 'refused' | 'unexpected_tools' | 'malformed_envelope' | 'empty' | 'incomplete_reasoning' | 'invalid_json' | 'schema_invalid';
+const SAFE_ERROR_CODES = new Set<CompletionCode>(['truncated', 'refused', 'unexpected_tools', 'malformed_envelope', 'empty', 'incomplete_reasoning', 'invalid_json', 'schema_invalid']);
+class CompletionError extends Error {
+  constructor(readonly code: CompletionCode) { super(code); }
+}
+export interface LlmRequestOptions {
+  signal?: AbortSignal;
+  structured?: boolean;
+  /** The caller's domain schema remains authoritative. Never log thrown details. */
+  validateText?: (text: string) => void;
+  context?: { debateId: string; entryPoint: 'committee' | 'position_review' };
+}
+export interface LlmTextResponse {
+  content: Array<{ type: 'text'; text: string }>;
+  usage: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  provider: LlmProvider;
+  model: string;
+  completion: { finishReason: 'stop' | 'end_turn'; validation: 'text' | 'json' | 'schema' };
+}
+interface ProviderHealth {
+  ok: number; fail: number; lastAccepted: boolean; transportHealthy: boolean; completionHealthy: boolean | null;
+  structuredHealthy: boolean | null; lastError?: string; lastErrorAt?: string; lastOkAt?: string;
+}
 const health: Record<string, ProviderHealth> = {};
-function mark(provider: string, ok: boolean, err?: any) {
-  const h = (health[provider] ||= { ok: 0, fail: 0 });
+function mark(provider: LlmProvider, model: string, ok: boolean, transported: boolean, completed: boolean, structured: boolean, err?: any) {
+  const key = `${provider}/${model}`;
+  // Configuration churn cannot grow this process-local diagnostic cache forever.
+  if (!health[key] && Object.keys(health).length >= 64) delete health[Object.keys(health)[0]];
+  const h = (health[key] ||= { ok: 0, fail: 0, lastAccepted: false, transportHealthy: false, completionHealthy: null, structuredHealthy: null });
+  h.lastAccepted = ok;
+  h.transportHealthy = transported;
+  h.completionHealthy = transported ? completed : null;
+  if (structured) h.structuredHealthy = ok;
   if (ok) { h.ok++; h.lastOkAt = new Date().toISOString(); }
-  else { h.fail++; h.lastError = describeError(err).slice(0, 300); h.lastErrorAt = new Date().toISOString(); }
+  else { h.fail++; h.lastError = describeError(err); h.lastErrorAt = new Date().toISOString(); }
 }
 export function getLlmHealth() {
   const describe = (tier: LlmTier) => {
     const provider = providerFor(tier);
-    const h = health[provider];
-    const healthy = !h || !h.lastErrorAt || (h.lastOkAt ? h.lastOkAt > h.lastErrorAt : false);
-    return { provider, model: modelFor(tier), healthy, lastError: h?.lastError || null };
+    const model = modelFor(tier);
+    const h = health[`${provider}/${model}`];
+    const healthy = !!h && h.lastAccepted && h.transportHealthy && h.completionHealthy === true && h.structuredHealthy !== false;
+    return { provider, model, healthy, observed: !!h, transportHealthy: h?.transportHealthy ?? null,
+      completionHealthy: h?.completionHealthy ?? null, structuredHealthy: h?.structuredHealthy ?? null,
+      lastError: healthy ? null : h?.lastError || null };
   };
   return { fast: describe('fast'), smart: describe('smart'), providers: health };
 }
 
 export function describeError(err: any): string {
-  const data = err?.response?.data;
-  if (data) return typeof data === 'string' ? data : JSON.stringify(data);
-  return err?.message || String(err);
+  if (err instanceof CompletionError) return err.code;
+  if (SAFE_ERROR_CODES.has(err?.code) || ['transport_error', 'timeout', 'aborted'].includes(err?.code)) return err.code;
+  if (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT') return 'timeout';
+  if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') return 'aborted';
+  return 'transport_error';
 }
 
 /** Errors worth trying the next provider for (vs. a bug in our own request). */
 function isFailover(err: any): boolean {
+  // Invalid answers do not spend another attempt. Domain repair/retry requires
+  // separate admission/accounting and an absolute chain deadline.
+  if (err instanceof CompletionError) return false;
   const status = err?.status ?? err?.response?.status;
-  const msg = describeError(err).toLowerCase();
-  if (msg.includes('credit balance') || msg.includes('quota') || msg.includes('overloaded')) return true;
+  // Preserve existing quota/credit failover even when a provider puts its hint
+  // only in a 400 body. Inspect bounded known string fields privately; never
+  // serialize the body or reuse this hint as an error/log/status message.
+  const body = err?.response?.data;
+  const hints = [err?.message, body, body?.message, body?.code, body?.error,
+    body?.error?.message, body?.error?.type, body?.error?.code];
+  if (hints.some(value => typeof value === 'string' && /credit balance|quota|overloaded/i.test(value.slice(0, 2048)))) return true;
   if (!status) return true; // network / timeout
   return status === 401 || status === 402 || status === 403 || status === 404 || status === 410 || status === 429 || status >= 500;
 }
@@ -133,26 +184,72 @@ function anthropic(): Anthropic {
   return anthropicClient;
 }
 
-async function callOpenAiCompat(provider: LlmProvider, model: string, params: any, signal?: AbortSignal) {
+async function callOpenAiCompat(provider: LlmProvider, model: string, params: any, options: LlmRequestOptions) {
   const { baseUrl, apiKey } = endpoint(provider);
   if (!baseUrl) throw new Error(`LLM provider ${provider} has no base URL configured`);
   if (provider === 'nvidia' && !hasKey(apiKey)) throw new Error('NVIDIA_API_KEY not set');
-  const res = await axios.post(`${baseUrl.replace(/\/$/, '')}/chat/completions`, toOpenAiChat(params, model), {
+  const res = await axios.post(`${baseUrl.replace(/\/$/, '')}/chat/completions`, toOpenAiChat(params, model, provider, options.structured), {
     headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-    timeout: Number(process.env.LLM_TIMEOUT_MS || 60000),
-    signal,
+    timeout: requestTimeoutMs(),
+    signal: options.signal,
   });
-  const text = stripReasoning(res.data?.choices?.[0]?.message?.content ?? '');
-  if (!text) throw Object.assign(new Error(`${provider}/${model} returned empty content`), { status: 502 });
-  return {
-    content: [{ type: 'text', text }],
-    usage: {
-      input_tokens: res.data?.usage?.prompt_tokens || 0,
-      output_tokens: res.data?.usage?.completion_tokens || 0,
-    },
-    model,
-    provider,
-  };
+  return res.data;
+}
+
+function requestTimeoutMs(): number {
+  const configured = Number(process.env.LLM_TIMEOUT_MS || 60000);
+  return Number.isSafeInteger(configured) && configured >= 1 ? Math.min(120000, configured) : 60000;
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+function reportedUsage(provider: LlmProvider, data: any): LlmTextResponse['usage'] {
+  return provider === 'anthropic' ? {
+    input_tokens: tokenCount(data?.usage?.input_tokens), output_tokens: tokenCount(data?.usage?.output_tokens),
+    cache_read_input_tokens: tokenCount(data?.usage?.cache_read_input_tokens), cache_creation_input_tokens: tokenCount(data?.usage?.cache_creation_input_tokens),
+  } : { input_tokens: tokenCount(data?.usage?.prompt_tokens), output_tokens: tokenCount(data?.usage?.completion_tokens) };
+}
+
+function completeText(provider: LlmProvider, data: any): { text: string; finishReason: 'stop' | 'end_turn'; usage: LlmTextResponse['usage'] } {
+  let raw: unknown;
+  let finishReason: 'stop' | 'end_turn';
+  if (provider === 'anthropic') {
+    if (data?.stop_reason === 'refusal') throw new CompletionError('refused');
+    if (data?.stop_reason === 'max_tokens' || data?.stop_reason === 'model_context_window_exceeded') throw new CompletionError('truncated');
+    if (data?.stop_reason === 'tool_use' || (Array.isArray(data?.content) && data.content.some((block: any) => block?.type === 'tool_use' || block?.type === 'server_tool_use'))) throw new CompletionError('unexpected_tools');
+    if (data?.stop_reason !== 'end_turn' || !Array.isArray(data?.content)) throw new CompletionError('malformed_envelope');
+    if (data.content.some((block: any) => block?.type !== 'text' || typeof block?.text !== 'string')) throw new CompletionError('malformed_envelope');
+    raw = data.content.map((block: any) => block.text).join('\n');
+    finishReason = 'end_turn';
+  } else {
+    const choice = data?.choices?.[0];
+    const message = choice?.message;
+    if (choice?.finish_reason === 'length') throw new CompletionError('truncated');
+    if (choice?.finish_reason === 'content_filter' || message?.refusal) throw new CompletionError('refused');
+    if (choice?.finish_reason === 'tool_calls' || choice?.finish_reason === 'function_call' || message?.function_call
+      || (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0)) throw new CompletionError('unexpected_tools');
+    if (!Array.isArray(data?.choices) || data.choices.length !== 1 || choice?.finish_reason !== 'stop'
+      || message?.role !== 'assistant' || typeof message?.content !== 'string'
+      || (message.tool_calls != null && !Array.isArray(message.tool_calls))) throw new CompletionError('malformed_envelope');
+    raw = message.content;
+    finishReason = 'stop';
+  }
+  if (typeof raw !== 'string' || raw.length > 65536) throw new CompletionError('malformed_envelope');
+  let thinking = false;
+  for (const tag of raw.match(/<\/?think>/gi) || []) {
+    if (tag.toLowerCase() === '<think>') {
+      if (thinking) throw new CompletionError('incomplete_reasoning');
+      thinking = true;
+    } else {
+      if (!thinking) throw new CompletionError('incomplete_reasoning');
+      thinking = false;
+    }
+  }
+  if (thinking) throw new CompletionError('incomplete_reasoning');
+  const text = stripReasoning(raw);
+  if (!text) throw new CompletionError('empty');
+  return { text, finishReason, usage: reportedUsage(provider, data) };
 }
 
 type Attempt = { provider: LlmProvider; model: string };
@@ -177,30 +274,93 @@ export function attemptChain(params: any): Attempt[] {
  * Anthropic-compatible `messages.create` that routes to the configured provider
  * and fails over down the chain. `anthropicCreate` can be injected for tests.
  */
-export async function routedMessagesCreate(params: any, anthropicCreate?: (p: any, options?: { signal?: AbortSignal }) => Promise<any>, options: { signal?: AbortSignal } = {}): Promise<any> {
+export async function routedMessagesCreate(params: any, anthropicCreate?: (p: any, options?: { signal?: AbortSignal }) => Promise<any>, options: LlmRequestOptions = {}): Promise<LlmTextResponse> {
   options.signal?.throwIfAborted();
+  // One deadline covers the existing fallback chain and SDK retry delays. A
+  // later provider cannot reset it; caller cancellation still takes precedence.
+  const deadline = AbortSignal.timeout(requestTimeoutMs());
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+  let lastReportedUsage: { model: string; provider: LlmProvider; usage: LlmTextResponse['usage'] } | undefined;
+  const timeoutError = () => Object.assign(new Error('All LLM providers failed: timeout'), { code: 'timeout', status: 504, reportedUsage: lastReportedUsage });
   const chain = attemptChain(params);
+  const callId = randomUUID();
   let lastErr: any;
-  for (const { provider, model } of chain) {
+  for (const [attemptIndex, { provider, model }] of chain.entries()) {
     options.signal?.throwIfAborted();
+    if (deadline.aborted) throw timeoutError();
+    const started = Date.now();
+    let transported = false, completed = false;
+    let completion: ReturnType<typeof completeText> | undefined;
+    const context = options.context;
+    // Only internally generated debate IDs and enumerated entry points cross
+    // this boundary. Never serialize caller metadata or raw model identifiers.
+    const correlation = context && /^debate_[0-9a-f-]{36}$/.test(context.debateId)
+      && ['committee', 'position_review'].includes(context.entryPoint)
+      ? { debateId: context.debateId, entryPoint: context.entryPoint } : {};
+    let observedFinishReason: string | undefined;
+    let observedCharacters: number | undefined;
+    let inputTokens: number | undefined, outputTokens: number | undefined;
+    const emit = (validationCode: string, err?: any) => {
+      const status = err?.status ?? err?.response?.status;
+      const metadata = { event: validationCode === 'ok' ? 'llm_attempt_completed' : 'llm_attempt_refused', callId, ...correlation,
+        provider, model: NEMOTRON_MODELS.has(model) || ['openai/gpt-oss-20b', 'claude-haiku-4-5-20251001', 'claude-sonnet-5'].includes(model) ? model : 'other',
+        attemptIndex, validationCode, latencyMs: Math.max(0, Date.now() - started),
+        httpStatusClass: transported ? '2xx' : Number.isInteger(status) && status >= 100 && status < 600 ? `${Math.floor(status / 100)}xx` : undefined,
+        requestedMaxTokens: tokenCount(params.max_tokens), contentCharacters: observedCharacters,
+        finishReason: observedFinishReason, inputTokens, outputTokens };
+      if (validationCode === 'ok') logger.info('llm_attempt_completed', metadata);
+      else logger.warn('llm_attempt_refused', metadata);
+    };
     try {
       const res = provider === 'anthropic'
-        ? await (anthropicCreate || ((p: any, requestOptions?: { signal?: AbortSignal }) => anthropic().messages.create(p, requestOptions)))({ ...params, model }, options)
-        : await callOpenAiCompat(provider, model, params, options.signal);
-      options.signal?.throwIfAborted();
-      mark(provider, true);
-      if (provider === 'anthropic') return { ...res, provider: 'anthropic', model };
-      return res;
+        ? await (anthropicCreate || ((p: any, requestOptions?: { signal?: AbortSignal }) => anthropic().messages.create(p, requestOptions)))({ ...params, model }, { signal })
+        : await callOpenAiCompat(provider, model, params, { ...options, signal });
+      transported = true;
+      lastReportedUsage = { provider, model, usage: reportedUsage(provider, res) };
+      signal.throwIfAborted();
+      const rawFinishReason = provider === 'anthropic' ? res?.stop_reason : res?.choices?.[0]?.finish_reason;
+      observedFinishReason = ['stop', 'end_turn', 'length', 'max_tokens', 'model_context_window_exceeded', 'refusal', 'content_filter', 'tool_calls', 'function_call', 'tool_use', 'stop_sequence', 'pause_turn'].includes(rawFinishReason)
+        ? rawFinishReason : 'unknown';
+      inputTokens = tokenCount(provider === 'anthropic' ? res?.usage?.input_tokens : res?.usage?.prompt_tokens);
+      outputTokens = tokenCount(provider === 'anthropic' ? res?.usage?.output_tokens : res?.usage?.completion_tokens);
+      const rawText = provider === 'anthropic' ? undefined : res?.choices?.[0]?.message?.content;
+      observedCharacters = typeof rawText === 'string' ? rawText.length : undefined;
+      completion = completeText(provider, res);
+      completed = true;
+      if (options.structured || options.validateText) {
+        try {
+          if (options.validateText) options.validateText(completion.text);
+          else JSON.parse(completion.text);
+        } catch (err) {
+          throw new CompletionError(err instanceof SyntaxError ? 'invalid_json' : 'schema_invalid');
+        }
+      }
+      signal.throwIfAborted();
+      mark(provider, model, true, transported, completed, !!options.validateText);
+      emit('ok');
+      return { content: [{ type: 'text', text: completion.text }], usage: completion.usage, provider, model,
+        completion: { finishReason: completion.finishReason, validation: options.validateText ? 'schema' : options.structured ? 'json' : 'text' } };
     } catch (err: any) {
-      if (options.signal?.aborted) throw options.signal.reason;
-      mark(provider, false, err);
+      if (options.signal?.aborted) { emit('aborted'); throw options.signal.reason; }
+      if (deadline.aborted) {
+        const err = timeoutError();
+        mark(provider, model, false, transported, completed, !!options.validateText, err);
+        emit('timeout'); throw err;
+      }
+      mark(provider, model, false, transported, completed, !!options.validateText, err);
+      emit(describeError(err), err);
       lastErr = err;
       if (!isFailover(err)) break;
     }
   }
   const e: any = new Error(`All LLM providers failed: ${describeError(lastErr)}`);
   e.status = lastErr?.status ?? lastErr?.response?.status;
-  e.cause = lastErr;
+  // Do not retain the raw HTTP error as cause: it may contain prompts, headers
+  // and response bodies and be serialized by caller error logging.
+  e.code = describeError(lastErr);
+  // Preserve finite reported usage for callers that previously accounted a
+  // returned HTTP-200 response before rejecting its JSON/domain schema.
+  e.reportedUsage = lastReportedUsage;
   throw e;
 }
 

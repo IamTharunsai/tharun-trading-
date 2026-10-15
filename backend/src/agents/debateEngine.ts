@@ -15,7 +15,7 @@ import { intermarketService } from '../services/intermarketService';
 import { getMacroSnapshot, macroLine } from '../services/fredService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
-import { routedMessagesCreate, providerFor } from '../utils/llmRouter';
+import { routedMessagesCreate, providerFor, LlmRequestOptions } from '../utils/llmRouter';
 import { openingArgumentSchema, finalVoteSchema, masterDecisionSchema, checkpointArgumentSchema, checkpointEvidenceSchema, exchangeSchema } from './responseSchemas';
 import { getActiveMode } from '../trading/brokerRouter';
 
@@ -95,7 +95,12 @@ function assertBudget() {
 
 // Call the LLM with automatic retry on 429 rate limit
 export interface ResearchControl { signal: AbortSignal; beforeCall?: () => Promise<void>; }
-async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3, control?: ResearchControl): Promise<any> {
+function accountReportedUsage(response: { model: string; provider?: string; usage: any }) {
+  logUsage(response.model, response.usage);
+  callsToday++;
+  spendUsd += estimateCallCostUsd(response.model, response.usage, response.provider);
+}
+async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3, control?: ResearchControl, responseOptions?: LlmRequestOptions): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       control?.signal.throwIfAborted();
@@ -103,12 +108,14 @@ async function callWithRetry(params: Parameters<typeof anthropic.messages.create
       control?.signal.throwIfAborted();
       assertBudget();
       // Routed: Anthropic by default, or Ollama / NVIDIA NIM per LLM_PROVIDER_FAST/SMART.
-      const response = await routedMessagesCreate(params, (p, options) => anthropic.messages.create(p, options), control ? { signal: control.signal } : undefined);
-      logUsage((response as any).model || params.model, (response as any).usage);
-      callsToday++;
-      spendUsd += estimateCallCostUsd(String((response as any).model || params.model), (response as any).usage, (response as any).provider);
+      const response = await routedMessagesCreate(params, (p, options) => anthropic.messages.create(p, options), { ...responseOptions, signal: control?.signal });
+      accountReportedUsage({ model: response.model || params.model, usage: response.usage, provider: response.provider });
       return response;
     } catch (err: any) {
+      // Router failures carry only normalized usage, never a raw HTTP error.
+      // Refusing an answer must not make an observed generation disappear from
+      // the tally that previously ran before downstream schema rejection.
+      if (err?.reportedUsage) accountReportedUsage(err.reportedUsage);
       if (err?.status === 429 && attempt < maxRetries) {
         const rawDelay = parseInt(err?.headers?.['retry-after'] || '15');
         const retryAfter = (Number.isFinite(rawDelay) ? Math.min(60, Math.max(1, rawDelay)) : 15) * 1000;
@@ -536,7 +543,9 @@ export async function runInvestmentCommitteeDebate(
 ): Promise<DebateTranscript> {
   if (executionPurpose !== 'ENTRY' && executionPurpose !== 'RESEARCH') throw new Error('Invalid debate execution purpose');
   reviewControl?.signal.throwIfAborted();
-  const callResearch = (params: Parameters<typeof anthropic.messages.create>[0]) => callWithRetry(params, 3, reviewControl);
+  const callResearch = (params: Parameters<typeof anthropic.messages.create>[0], validateText: (text: string) => void) => callWithRetry(params, 3, reviewControl, {
+    structured: true, validateText, context: { debateId, entryPoint: positionReview ? 'position_review' : 'committee' },
+  });
 
   // Account-specific held-position research is retrieved through a scoped API,
   // not broadcast on the existing global debate channel.
@@ -713,7 +722,7 @@ export async function runInvestmentCommitteeDebate(
               { type: 'text', text: `YOUR ROLE:\n${agent.systemPrompt}\n\nState your position with specific numbers.` }
             ]
           }]
-        });
+        }, text => { openingArgumentSchema.parse(extractJSON(text)); });
 
         const content = response.content[0];
         if (content.type !== 'text') throw new Error('Bad response');
@@ -751,7 +760,7 @@ export async function runInvestmentCommitteeDebate(
         max_tokens: 1536,
         system: devilAgent.systemPrompt + `\n${COMPACT_KNOWLEDGE}\n\nRespond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep openingArgument under 40 words and each factor/warning under 12 words:\n{"vote":"BUY"|"SELL"|"HOLD","confidence":0-100,"openingArgument":"<challenge>","keyFactors":["<f1>"],"riskWarnings":["<w1>"],"weaknessOfMyOwnView":"<weakness>"}`,
         messages: [{ role: 'user', content: `Other agents:\n\n${round1Summary}\n\nMarket: ${round1Prompt}\n\nWhat is your counter-argument?` }]
-      });
+      }, text => { openingArgumentSchema.parse(extractJSON(text)); });
       const dc = devilResponse.content[0];
       if (!dc || dc.type !== 'text') throw new Error('Devil opening response must contain text');
       if (dc.type === 'text') {
@@ -807,7 +816,7 @@ export async function runInvestmentCommitteeDebate(
           max_tokens: 300,
           system: `You are ${challenger.agentName}. You voted ${challenger.vote} (${challenger.confidence}%) on ${asset}. The committee is leaning ${dominantView.direction}, led by ${dominantView.leadAgent.agentName}'s argument: "${dominantView.leadAgent.openingArgument}"\n\nIssue ONE sharp, specific challenge to that argument, under 30 words. Respond with ONLY {"challenge":"<text>"}`,
           messages: [{ role: 'user', content: `${round1Prompt}\n\nWhat is your strongest specific challenge to their argument?` }]
-        });
+        }, text => { exchangeSchema.shape.challenge.parse(extractJSON(text).challenge); });
         const cc = challengeResponse.content[0];
         const challengeText = cc.type === 'text' ? extractJSON(cc.text).challenge : null;
 
@@ -817,7 +826,7 @@ export async function runInvestmentCommitteeDebate(
             max_tokens: 300,
             system: `You are ${dominantView.leadAgent.agentName}. You voted ${dominantView.leadAgent.vote} (${dominantView.leadAgent.confidence}%) on ${asset}, arguing: "${dominantView.leadAgent.openingArgument}"\n\n${challenger.agentName} just challenged you: "${challengeText}"\n\nRespond directly to their specific point, under 30 words. Respond with ONLY {"rebuttal":"<text>"}`,
             messages: [{ role: 'user', content: `${round1Prompt}\n\nDefend your position against this specific challenge.` }]
-          });
+          }, text => { exchangeSchema.shape.rebuttal.parse(extractJSON(text).rebuttal); });
           const rc = rebuttalResponse.content[0];
           const rebuttalText = (rc.type === 'text' ? extractJSON(rc.text).rebuttal : null) || 'No response';
 
@@ -853,7 +862,7 @@ export async function runInvestmentCommitteeDebate(
           role: 'user',
           content: `EVIDENCE — input ${inputFingerprint}:\n${round1Prompt}\n\nYou voted: ${originalVote?.vote || 'HOLD'}\n\nAfter debate:\n${debateSummary}\n\nFinal vote? Respond with ONLY the JSON object below, nothing before or after it, no markdown fences. Keep finalReason under 15 words:\n{"finalVote":"BUY"|"SELL"|"HOLD","confidence":0-100,"changedMind":true|false,"finalReason":"<reason>"}`
         }]
-      });
+      }, text => { finalVoteSchema.parse(extractJSON(text)); });
       const content = response.content[0];
       if (content.type !== 'text') throw new Error('Bad response');
       const parsed = finalVoteSchema.parse(extractJSON(content.text));
@@ -963,7 +972,7 @@ export async function runInvestmentCommitteeDebate(
         max_tokens: 1800,
         system: [{ type: 'text', text: MASTER_COORDINATOR_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: fullDebateContext }]
-      });
+      }, text => { masterDecisionSchema.parse(extractJSON(text)); });
 
       const mc = masterResponse.content[0];
       if (mc.type !== 'text') throw new Error(`Master Coordinator returned non-text content block: ${mc.type}`);
