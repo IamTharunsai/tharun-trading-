@@ -1,3 +1,4 @@
+import { deepDiveRouter } from './deepDive';
 import { privateResponse } from '../middleware/privateResponse';
 import { recordPredictionSimulation, listPredictionSimulations } from './predictionSimulation';
 import { entryDecisionWhere } from '../trading/decisionVisibility';
@@ -665,66 +666,7 @@ marketRouter.get('/polymarket/edge/predictions', privateResponse, requireOwner, 
 marketRouter.post('/predictions/wager', privateResponse, requireOwner, recordPredictionSimulation);
 marketRouter.get('/predictions/simulations', privateResponse, requireOwner, listPredictionSimulations);
 
-marketRouter.post('/ai-deep-dive', async (req: Request, res: Response) => {
-  try {
-    const { symbol, assetClass = 'stock' } = req.body || {};
-    if (!symbol) return res.status(400).json({ error: 'symbol is required' });
-    let analysis = '';
-
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const { GoogleGenAI } = await import('@google/genai');
-        const ai = new GoogleGenAI();
-        const prompt = `You are the Lead Quantitative Researcher and Chief Risk Officer at an elite autonomous quantitative hedge fund (Bloomberg Terminal / Institutional tier).
-Conduct a comprehensive, surgical, deep-dive analysis on ${symbol} (${assetClass}).
-Provide:
-1. Executive Verdict (STRONG BUY, BUY, NEUTRAL, TRIM, SHORT) with Conviction Score (0-100%)
-2. Multi-Timeframe Technical Microstructure (Order flow, Key Liquidity Pools, Wyckoff Accumulation/Distribution Phase, Support/Resistance)
-3. Fundamental & Macro Catalyst Analysis (DCF Multiple, Margin of Safety, Earnings Catalysts, Fed Rate Sensitivity)
-4. Polymarket / Sentiment Alignment (Smart money positioning, Put/Call Skew, Retail Sentiment Divergence)
-5. Institutional Execution Parameters: Exact Entry Price, Trailing Stop-Loss (in $ and %), Take-Profit Target 1, Target 2, Recommended Kelly Criterion Position Size (0-15% of portfolio).
-Keep it dense, quantitative, institutional, and structured with clear headings.`;
-
-        const resAi = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt
-        });
-        analysis = resAi.text || '';
-      } catch (e: any) {
-        console.warn('Gemini deep dive fallback:', e.message);
-      }
-    }
-
-    if (!analysis) {
-      analysis = `### 1. Executive Verdict: STRONG ACCUMULATION (86% Conviction)
-${symbol} presents an institutional asymmetric risk/reward opportunity. Multi-timeframe trend structure exhibits pristine higher-low compression with institutional absorption at key volume shelf nodes.
-
-### 2. Microstructure & Technical Alignment
-- **Market Structure**: Wyckoff Phase D (Sign of Strength) confirmation.
-- **Liquidity Pools**: Resting sell-side liquidity at +4.8% and +9.2% above current price.
-- **Momentum & Volatility**: RSI (14) sitting at 58.4 in healthy expansion corridor; Bollinger Band contraction suggests impending volatility breakout.
-
-### 3. Macro & Quantitative Catalysts
-- Zero debt refinancing drag over next 24 months; operating leverage accelerating.
-- Correlation to broader indices remains contained (Beta: 1.18), providing idiosyncratic alpha.
-
-### 4. Risk-Weighted Execution Parameters
-- **Recommended Entry**: Market / Limit at current bid-ask midpoint.
-- **Dynamic Hard Stop-Loss**: -3.4% below swing liquidity sweep.
-- **Take-Profit Targets**: TP1 @ +6.2% (scale 50%), TP2 @ +12.8% (runner).
-- **Kelly Sizing**: 8.5% of total portfolio equity.`;
-    }
-
-    res.json({
-      symbol,
-      assetClass,
-      analysis,
-      timestamp: new Date().toISOString()
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'AI Deep Dive failed' });
-  }
-});
+marketRouter.use('/ai-deep-dive', deepDiveRouter);
 
 // ── Upcoming IPOs (Finnhub, cached 6h) ─────────────────────────────────────────
 marketRouter.get('/ipo-calendar', async (_req: Request, res: Response) => {

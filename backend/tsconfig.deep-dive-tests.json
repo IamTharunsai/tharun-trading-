@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
+  "include": ["src/**/*", "tests/groundedDeepDive*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

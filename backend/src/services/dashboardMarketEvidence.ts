@@ -151,6 +151,15 @@ async function stockSnapshots(symbols: string[]) {
   return record(response.data);
 }
 
+/** Exact-symbol research read. Do not share the screener's universe cache key. */
+export async function getResearchStockQuote(symbol: string) {
+  if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol)) throw new Error('invalid_symbol');
+  const snapshots = await stockSnapshots([symbol]);
+  if (!snapshots[symbol]) throw new Error('market_feed_unavailable');
+  return { symbol, market: 'stocks' as const, ...normalizeStockSnapshot(snapshots[symbol]),
+    source: 'Alpaca IEX' as const, receivedAt: received() };
+}
+
 export async function getDashboardSectors() {
   return cached('sectors', 60_000, async () => {
     const snapshots: Record<string, any> = await stockSnapshots(SECTORS.map(([, ticker]) => ticker)).catch(() => ({}));
