@@ -37,7 +37,7 @@ jobs:
           --workdir /source/frontend --entrypoint /usr/bin/env mcr.microsoft.com/playwright:v1.64.0-noble
           -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp TMPDIR=/tmp NODE_ENV=test
           PLAYWRIGHT_BROWSERS_PATH=/ms-playwright SOURCE_COMMIT=${{ github.sha }}
-          /usr/bin/timeout --signal=KILL 270s /bin/sh -c 'node node_modules/typescript/bin/tsc --noEmit && node node_modules/vite/bin/vite.js build --config vite.visual.config.ts --outDir /tmp/commons-dist && node tests/visual/capture.cjs'
+          /usr/bin/timeout --signal=KILL 270s /bin/sh -c 'node node_modules/typescript/bin/tsc --noEmit && node node_modules/vite/bin/vite.js build --config vite.visual.config.cjs --outDir /tmp/commons-dist && node tests/visual/capture.cjs'
       - name: Preserve exact-head visual evidence
         if: always()
         uses: actions/upload-artifact@v4
