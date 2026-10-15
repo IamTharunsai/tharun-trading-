@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../utils/prisma';
 import { appConfig } from '../utils/config';
 import { logger } from '../utils/logger';
+import { notifySessionRevoked } from '../utils/sessionRevocation';
 
 export interface AuthenticatedUser {
   id: string;
@@ -18,8 +19,13 @@ export interface AuthRequest extends Request {
 // Persistent token revocation backed by the database (survives process restart)
 const memoryRevocationCache = new Set<string>();
 
+export function isTokenLocallyRevoked(token: string): boolean {
+  return memoryRevocationCache.has(token);
+}
+
 export async function revokeToken(token: string): Promise<void> {
   memoryRevocationCache.add(token);
+  notifySessionRevoked(token);
   try {
     await prisma.revokedToken.create({ data: { token } });
     logger.info('🔒 Token revoked server-side and recorded to persistent database');
