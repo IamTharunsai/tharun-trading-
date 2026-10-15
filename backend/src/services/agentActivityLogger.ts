@@ -86,13 +86,16 @@ export async function getActivityFeed(): Promise<AgentActivityFeed> {
     const activities = await prisma.systemLog.findMany({
       where: {
         timestamp: { gte: oneHourAgo },
-        service: { startsWith: 'agent-' }
+        service: { startsWith: 'agent-' },
+        NOT: { service: { startsWith: 'agent-chat-' } }
       },
       orderBy: { timestamp: 'desc' },
       take: 200
     });
 
     const parsedActivities: AgentActivity[] = activities
+      // Defense in depth for legacy chat records: never publish private conversation metadata.
+      .filter(log => /^agent-\d+$/.test(log.service))
       .map((log: any) => {
         try {
           return typeof log.metadata === 'string'

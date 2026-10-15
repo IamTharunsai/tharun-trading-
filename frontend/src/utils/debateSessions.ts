@@ -6,12 +6,19 @@ export interface DebateAgent {
   confidence?: number;
   reasoning?: string;
   error?: boolean;
+  /** Browser receipt of this specialist's evidence, not a provider timestamp. */
+  lastReceivedAt?: number;
+  /** Stage established by the specialist event; never inferred from session progress. */
+  round?: number;
 }
 export interface DebateEntry {
+  agentId?: number;
   agentName: string;
   content: string;
   round: number;
   vote?: string;
+  /** Receipt of the event or complete transcript containing this entry. */
+  receivedAt?: number;
 }
 export interface DebateSession {
   id: string;
@@ -36,6 +43,35 @@ const object = (value: unknown): Record<string, any> | null =>
 const text = (value: unknown, limit = 16000) => typeof value === 'string' ? value.slice(0, limit) : '';
 const confidence = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : undefined;
 const vote = (value: unknown) => value === 'BUY' || value === 'SELL' || value === 'HOLD' ? value : undefined;
+const validAgentId = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
+const evidenceRound = (value: unknown): number | undefined =>
+  value === 1 || value === 2 || value === 3 ? value : undefined;
+
+// Explicit roster aliases accommodate frontend labels, server labels and the
+// legacy unprefixed names. Unknown names stay unattributed; no fuzzy matching.
+const agentNameAliases: readonly (readonly [number, readonly string[]])[] = [
+  [1, ['The Technician', 'Technician']],
+  [2, ['The Newshound', 'Newshound']],
+  [3, ['The Sentiment Analyst', 'Sentiment Analyst']],
+  [4, ['The Fundamental Analyst', 'Fundamental Analyst']],
+  [5, ['The Risk Manager', 'Risk Manager']],
+  [6, ['The Trend Prophet', 'Trend Prophet']],
+  [7, ['The Volume Detective', 'Volume Detective']],
+  [8, ['The Whale Watcher', 'Whale Watcher']],
+  [9, ['The Macro Economist', 'Macro Economist']],
+  [10, ["The Devil's Advocate", "Devil's Advocate"]],
+  [11, ['Elliott Wave']],
+  [12, ['Options Flow']],
+  [13, ['Arbitrageur']],
+  [14, ['Quant Forecaster']],
+];
+const agentAliases: Readonly<Record<string, number>> = Object.fromEntries(
+  agentNameAliases.flatMap(([id, names]) => names.map(name => [name.toLowerCase(), id]))
+);
+const crossExamAgentId = (name: unknown): number | undefined =>
+  typeof name === 'string' && Object.prototype.hasOwnProperty.call(agentAliases, name.trim().toLowerCase())
+    ? agentAliases[name.trim().toLowerCase()] : undefined;
 
 // Only explicit server debate IDs join events. Asset names alone cannot safely
 // distinguish concurrent research, entry and held-position review sessions.
@@ -58,22 +94,25 @@ export function reduceDebateEvent(previous: DebateSessions, event: string, paylo
   } else if (event === 'debate:master-thinking') {
     session.round = 4;
   } else if (event === 'debate:agent-speaking') {
-    if (!Number.isInteger(agentId) || agentId < 1 || agentId > 100) return previous;
-    session.agents = { ...session.agents, [agentId]: { ...session.agents[agentId], status: 'analyzing' } };
+    if (!validAgentId(agentId)) return previous;
+    session.agents = { ...session.agents, [agentId]: {
+      ...session.agents[agentId], status: 'analyzing', lastReceivedAt: now, round: evidenceRound(data.round),
+    } };
   } else if (event === 'debate:agent-voted' || event === 'debate:final-vote') {
-    if (!Number.isInteger(agentId) || agentId < 1 || agentId > 100) return previous;
+    if (!validAgentId(agentId)) return previous;
     const final = event === 'debate:final-vote';
     const reasoning = text(final ? data.finalReason : (data.openingArgument ?? data.argument ?? data.reasoning));
     const state: DebateAgent = {
       status: 'voted', vote: vote(data.finalVote ?? data.vote), confidence: confidence(data.confidence), reasoning,
       error: isErrorVote({ ...data, reasoning }),
+      lastReceivedAt: now, round: final ? 3 : 1,
     };
     session.agents = { ...session.agents, [agentId]: state };
-    session.entries = [...session.entries, { agentName: text(data.agentName, 100) || `Specialist ${agentId}`, content: reasoning || 'No argument supplied', round: final ? 3 : 1, vote: state.vote }].slice(-300);
+    session.entries = [...session.entries, { agentId, agentName: text(data.agentName, 100) || `Specialist ${agentId}`, content: reasoning || 'No argument supplied', round: final ? 3 : 1, vote: state.vote, receivedAt: now }].slice(-300);
   } else if (event === 'debate:cross-examination') {
     session.entries = [...session.entries,
-      { agentName: text(data.challenger, 100), content: text(data.challenge), round: 2 },
-      { agentName: text(data.target, 100), content: text(data.rebuttal), round: 2 },
+      { agentId: crossExamAgentId(data.challenger), agentName: text(data.challenger, 100), content: text(data.challenge), round: 2, receivedAt: now },
+      { agentId: crossExamAgentId(data.target), agentName: text(data.target, 100), content: text(data.rebuttal), round: 2, receivedAt: now },
     ].slice(-300);
   } else if (event === 'debate:complete') {
     const transcript = object(data.transcript);
@@ -90,20 +129,20 @@ export function reduceDebateEvent(previous: DebateSessions, event: string, paylo
       const agents: Record<number, DebateAgent> = {};
       for (const item of transcript.round3) {
         const row = object(item);
-        if (!row || !Number.isInteger(row.agentId) || row.agentId < 1 || row.agentId > 100) continue;
-        agents[row.agentId] = { status: 'voted', vote: vote(row.finalVote), confidence: confidence(row.confidence), reasoning: text(row.reason), error: isErrorVote(row) };
+        if (!row || !validAgentId(row.agentId)) continue;
+        agents[row.agentId] = { status: 'voted', vote: vote(row.finalVote), confidence: confidence(row.confidence), reasoning: text(row.reason), error: isErrorVote(row), lastReceivedAt: now, round: 3 };
       }
       session.agents = agents;
     }
     const entries: DebateEntry[] = [];
     for (const row of Array.isArray(transcript.round1) ? transcript.round1 : []) {
-      entries.push({ agentName: text(row?.agentName, 100), content: text(row?.argument), round: 1, vote: vote(row?.vote) });
+      entries.push({ agentId: validAgentId(row?.agentId) ? row.agentId : undefined, agentName: text(row?.agentName, 100), content: text(row?.argument), round: 1, vote: vote(row?.vote), receivedAt: now });
     }
     for (const row of Array.isArray(transcript.round2) ? transcript.round2 : []) {
-      entries.push({ agentName: text(row?.challenger, 100), content: text(row?.challenge), round: 2 }, { agentName: text(row?.target, 100), content: text(row?.rebuttal), round: 2 });
+      entries.push({ agentId: crossExamAgentId(row?.challenger), agentName: text(row?.challenger, 100), content: text(row?.challenge), round: 2, receivedAt: now }, { agentId: crossExamAgentId(row?.target), agentName: text(row?.target, 100), content: text(row?.rebuttal), round: 2, receivedAt: now });
     }
     for (const row of Array.isArray(transcript.round3) ? transcript.round3 : []) {
-      entries.push({ agentName: text(row?.agentName, 100), content: text(row?.reason), round: 3, vote: vote(row?.finalVote) });
+      entries.push({ agentId: validAgentId(row?.agentId) ? row.agentId : undefined, agentName: text(row?.agentName, 100), content: text(row?.reason), round: 3, vote: vote(row?.finalVote), receivedAt: now });
     }
     if (entries.length) session.entries = entries.slice(-300);
   } else return previous;

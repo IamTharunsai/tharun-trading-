@@ -30,7 +30,7 @@ export default function AgentChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const { symbol: asset, setSymbol: setAsset } = useSelectedSymbol('all');
+  const { symbol: asset, market, setSymbol: setAsset } = useSelectedSymbol('all');
   const prices = useStore(s => s.prices);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -67,7 +67,8 @@ export default function AgentChatPage() {
       const response = await api.post(`/chat/${selectedAgent.id}`, {
         message: queryText,
         conversationHistory: messages.slice(-8),
-        asset
+        asset,
+        market
       });
 
       setMessages(prev => [...prev, {
