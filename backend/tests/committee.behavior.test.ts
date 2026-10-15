@@ -21,10 +21,24 @@ jest.mock('../src/services/fredService', () => ({ getMacroSnapshot: jest.fn().mo
 jest.mock('../src/services/optionsFlowService', () => ({ optionsFlowService: { analyzeOptionsFlow: jest.fn().mockResolvedValue({ callPutRatio: 1.2, sentiment: 'BULLISH', confidence: 80, callVolume: 200, putVolume: 100, unusualActivity: [] }) } }));
 jest.mock('../src/services/kronosService', () => ({ getForecast: jest.fn() }));
 jest.mock('../src/utils/llmRouter', () => ({ routedMessagesCreate: jest.fn(), providerFor: jest.fn(() => 'ollama') }));
+// The committee only needs the current mode here; broker clients and network
+// sentiment are separate contracts, not dependencies of these dummy-provider tests.
+jest.mock('../src/trading/brokerRouter', () => ({ getActiveMode: jest.fn(() => 'paper') }));
+jest.mock('../src/services/sentimentService', () => ({
+  isSentimentEnabled: jest.fn(() => false),
+  getSentiment: jest.fn(),
+  evaluateSentimentGate: jest.fn(),
+}));
 
 import { prisma } from '../src/utils/prisma';
 import { getForecast } from '../src/services/kronosService';
 import { routedMessagesCreate } from '../src/utils/llmRouter';
+// Load and transform the real committee before Jest starts an individual test's
+// five-second deadline. Cold TypeScript loading is not committee execution.
+import { runInvestmentCommitteeDebate } from '../src/agents/debateEngine';
+import type { PositionResearchContext } from '../src/agents/debateEngine';
+import type { TradeSignal } from '../src/agents/types';
+import { authorizePersistedDecision } from '../src/trading/decisionAuthority';
 
 const reply = (data: any) => ({ content: [{ type: 'text', text: JSON.stringify(data) }], provider: 'ollama', model: 'fixture', usage: { input_tokens: 1, output_tokens: 1 } });
 const defaultReply = (params: any) => {
@@ -63,8 +77,6 @@ describe('real committee behavior with dummy providers', () => {
   });
 
   it('persists research-only purpose and refuses replay despite unanimous valid BUY research', async () => {
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
-    const { authorizePersistedDecision } = require('../src/trading/decisionAuthority');
     const input = snapshot();
     const result = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL', undefined, 'COUNCIL', undefined, undefined, 'RESEARCH');
     expect(result.finalDecision).toBe('BUY');
@@ -79,14 +91,13 @@ describe('real committee behavior with dummy providers', () => {
     // cannot turn the stored research-purpose decision into order authority.
     const forged = { ...saved, id: result.decisionId, timestamp: new Date(), executed: false, executionReason: null,
       marketSnapshot: { ...saved.marketSnapshot, executionPlan: { ...saved.marketSnapshot.executionPlan, approved: true, positionSizePct: 1 } } };
-    const signal = { asset: 'AAPL', market: 'stocks', direction: 'BUY', confidence: result.finalConfidence,
+    const signal: TradeSignal = { asset: 'AAPL', market: 'stocks', direction: 'BUY', confidence: result.finalConfidence,
       entryPrice: input.price, stopLossPrice: result.stopLossPrice, takeProfitPrice: result.takeProfitPrice,
-      positionSizePct: 1, reasoning: 'attempted research replay', agentDecisionId: result.decisionId };
+      positionSizePct: 1, reasoning: 'attempted research replay', agentDecisionId: result.decisionId! };
     expect(() => authorizePersistedDecision(forged, signal, 'paper')).toThrow();
   });
 
   it('uses the forecast and same evidence in opening, final voting and synthesis, then returns its saved decision ID', async () => {
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const input = snapshot();
     const result = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL');
     expect(getForecast).toHaveBeenCalledWith('AAPL', input.candles, 5);
@@ -102,7 +113,6 @@ describe('real committee behavior with dummy providers', () => {
 
   it('cannot approve when the current decision fails to persist', async () => {
     (prisma.agentDecision.create as jest.Mock).mockRejectedValueOnce(new Error('fixture database unavailable'));
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.executionApproved).toBe(false);
     expect(result.decisionId).toBeUndefined();
@@ -112,7 +122,6 @@ describe('real committee behavior with dummy providers', () => {
 
   it('treats malformed vote enums and confidence as unavailable research, never valid consensus', async () => {
     (routedMessagesCreate as jest.Mock).mockImplementation((params: any) => params.model.includes('sonnet') ? defaultReply(params) : reply({ vote: 'LEVERAGE', finalVote: 'LEVERAGE', confidence: 'NaN', openingArgument: 'invalid', finalReason: 'invalid' }));
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.executionApproved).toBe(false);
     expect(result.agentVotes.every((v: any) => v.vote === 'HOLD' && Number.isFinite(v.confidence))).toBe(true);
@@ -120,7 +129,6 @@ describe('real committee behavior with dummy providers', () => {
 
   it('does not use a master response with an invalid direction', async () => {
     (routedMessagesCreate as jest.Mock).mockImplementation((params: any) => params.model.includes('sonnet') ? reply({ finalDecision: 'ALL_IN', confidence: 100, synthesis: 'invalid', blockReason: null }) : defaultReply(params));
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.finalDecision).toBe('HOLD');
     expect(result.executionApproved).toBe(false);
@@ -128,16 +136,14 @@ describe('real committee behavior with dummy providers', () => {
 
   it('forces the quantitative forecaster to abstain when no real forecast exists', async () => {
     (getForecast as jest.Mock).mockResolvedValueOnce(null);
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
-    expect(result.agentVotes.find((v: any) => v.agentId === 14).vote).toBe('HOLD');
+    expect(result.agentVotes.find((v: any) => v.agentId === 14)!.vote).toBe('HOLD');
   });
 
   it('runs all specialists with actual held context but persists no execution authority', async () => {
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const holding = { id: 'holding-1', asset: 'AAPL', market: 'stocks', side: 'BUY', quantity: 3,
       entryPrice: 99, stopLossPrice: 97, takeProfitPrice: 105, openedAt: new Date('2025-01-01T00:00:00Z') };
-    const context = { positionId: holding.id, asset: holding.asset, side: 'BUY', quantity: 3,
+    const context: PositionResearchContext = { positionId: holding.id, asset: holding.asset, side: 'BUY', quantity: 3,
       entryPrice: holding.entryPrice, stopLossPrice: holding.stopLossPrice, takeProfitPrice: holding.takeProfitPrice,
       accountId: 'paper-account', brokerMode: 'paper', openedAt: holding.openedAt.toISOString() };
     const result = await runInvestmentCommitteeDebate(snapshot(), { ...portfolio, accountId: 'paper-account',
@@ -154,7 +160,6 @@ describe('real committee behavior with dummy providers', () => {
     expect(JSON.stringify(finalCall.messages)).toContain('POSITION_REVIEW');
   });
   it('rejects canceled research before any paid council call', async () => {
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const controller = new AbortController(); controller.abort(new Error('fixture canceled'));
     await expect(runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL', undefined, 'COUNCIL', undefined, { signal: controller.signal })).rejects.toThrow('fixture canceled');
     expect(routedMessagesCreate).not.toHaveBeenCalled();
@@ -162,15 +167,13 @@ describe('real committee behavior with dummy providers', () => {
 
   it('rejects changed-input checkpoints even when their age is fresh', async () => {
     (prisma.debateCheckpoint.findUnique as jest.Mock).mockResolvedValue({ status: 'ROUND1_DONE', updatedAt: new Date(), inputFingerprint: 'different-input', round1Results: [{ agentId: 1, vote: 'SELL', confidence: 99 }] });
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.agentVotes).toHaveLength(14);
-    expect(result.agentVotes.find((v: any) => v.agentId === 1).vote).toBe('BUY');
+    expect(result.agentVotes.find((v: any) => v.agentId === 1)!.vote).toBe('BUY');
   });
 
   it('enforces the default daily-loss gate despite unanimous high-confidence research', async () => {
     delete process.env.DAILY_LOSS_LIMIT_PCT;
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), { ...portfolio, pnlDayPct: -3 }, 'TRENDING_BULL');
     expect(result.executionApproved).toBe(false);
     expect(result.blockReason).toMatch(/daily loss/i);
@@ -183,7 +186,6 @@ describe('real committee behavior with dummy providers', () => {
       }
       return defaultReply(params);
     });
-    const { runInvestmentCommitteeDebate } = require('../src/agents/debateEngine');
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.executionApproved).toBe(false);
     expect(result.blockReason).toMatch(/risk reviewer/i);
