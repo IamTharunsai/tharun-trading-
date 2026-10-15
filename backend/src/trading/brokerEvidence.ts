@@ -102,6 +102,7 @@ export async function applyBrokerExitEvidence(scope: AccountScope, positionId: s
       // Flat inventory is not a confirmed closed lifecycle while another leg or
       // replacement may still execute. verifyPositionInventory closes it later.
       status: 'OPEN', evidenceVersion: { increment: fill.deltaQuantity > QUANTITY_EPS ? 1 : 0 },
+      ...(fill.deltaQuantity > QUANTITY_EPS ? { accountingStatus: 'RECONCILING', accountingError: 'AWAITING_BROKER_INVENTORY_CONFIRMATION' } : {}),
       ...(remaining <= QUANTITY_EPS ? { unrealizedPnl: 0, unrealizedPnlPct: 0 } : {}),
     } });
     await tx.brokerOrderEvidence.update({ where: { id: cursor.id }, data: { status: order.status,
@@ -251,6 +252,7 @@ async function applyLinkedFee(scope: AccountScope, activity: AlpacaActivity) {
     const basis = remainingLots.reduce((sum, lot) => sum + remainingLotQuantity(lot) * lot.entryPrice, 0);
     await tx.position.update({ where: { id: positionId }, data: {
       ...(feeQuantity ? { quantity: remaining, ...(remaining > QUANTITY_EPS ? { entryPrice: basis / remaining } : {}) } : {}),
+      ...(feeQuantity ? { accountingStatus: 'RECONCILING', accountingError: 'AWAITING_BROKER_INVENTORY_CONFIRMATION' } : {}),
       evidenceVersion: { increment: 1 } } });
     await tx.brokerActivity.update({ where: { id: retained.id }, data: { appliedAt: new Date(), attributionStatus: 'APPLIED' } });
   });

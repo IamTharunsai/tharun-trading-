@@ -12,15 +12,15 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const where = { accountId: scope.accountId, brokerMode: scope.mode };
   const prices = getCurrentPrices();
   const rows = await prisma.position.findMany({ where: { ...where, status: 'OPEN' } });
-  const positions = rows.map(position => ({ ...position, ledgerQuantity: position.quantity,
-    quantity: position.brokerObservedQuantity ?? position.quantity }));
+  const positions = rows.map(position => ({ ...position, ledgerQuantity: position.quantity }));
   let invested = 0;
   let unrealizedPnl = 0;
   for (const position of positions) {
-    if (position.quantity <= 0) continue; // Keep unresolved ledger rows visible.
     const price = Number(prices[position.asset] ?? position.currentPrice);
     if (!Number.isFinite(price) || price <= 0) throw new Error('POSITION_VALUE_UNAVAILABLE');
-    invested += price * position.quantity;
+    // Exposure includes observed holdings; trade P&L uses execution inventory.
+    invested += price * Math.max(position.quantity, position.brokerObservedQuantity ?? 0);
+    if (position.quantity <= 0) continue; // Keep unresolved ledger rows visible.
     const pnl = (price - position.entryPrice) * position.quantity * (position.side === 'SELL' ? -1 : 1);
     const pnlPct = (price - position.entryPrice) / position.entryPrice * 100 * (position.side === 'SELL' ? -1 : 1);
     unrealizedPnl += pnl;

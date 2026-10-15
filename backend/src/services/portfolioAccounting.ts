@@ -110,7 +110,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
 
   for (const pos of openPositions) {
     const currentPrice = prices[pos.asset] || pos.currentPrice;
-    const positionValue = currentPrice * pos.quantity;
+    const positionValue = currentPrice * Math.max(pos.quantity, pos.brokerObservedQuantity ?? 0);
     investedCollateral += positionValue;
 
     const isShort = pos.side === 'SELL';
