@@ -60,7 +60,7 @@ test('crypto uses asset identity and refuses ambiguous symbols', async () => {
   (getDashboardCryptoAssets as jest.Mock).mockResolvedValue([{ id: 'one', symbol: 'BTC' }, { id: 'two', symbol: 'BTC' }]);
   await expect(loadResearchFacts({ symbol: 'BTC', assetClass: 'crypto' })).rejects.toThrow('evidence_unavailable');
 });
-test.each([[], [{ id: 'bitcoin', symbol: 'BTC', price: 70000, observedAt: null, receivedAt }]])('missing crypto coverage does not fabricate price %j', async rows => {
+test.each([{ rows: [] }, { rows: [{ id: 'bitcoin', symbol: 'BTC', price: 70000, observedAt: null, receivedAt }] }])('missing crypto coverage does not fabricate price %j', async ({ rows }) => {
   (getDashboardCryptoAssets as jest.Mock).mockResolvedValue(rows);
   await expect(runGroundedDeepDive({ symbol: 'BTC', assetClass: 'crypto' })).rejects.toThrow('evidence_unavailable');
   expect(llm).not.toHaveBeenCalled();
