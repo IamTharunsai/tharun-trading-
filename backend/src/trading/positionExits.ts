@@ -1,14 +1,36 @@
 import { createHash } from 'crypto';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
-import { AccountScope, brokerSymbol, getVerifiedAccountScope } from './accountScope';
+import type { AlpacaOrder } from '../services/alpacaBroker';
+import { AccountScope, brokerSymbol, getVerifiedAccountScope, positionScopeKey } from './accountScope';
+import { applyBrokerExitEvidence, FINAL_ORDER_STATES, markAccountingUnknown, QUANTITY_EPS,
+  readOrderChain, reconcileProtectionEvidence, remainingLotQuantity } from './brokerEvidence';
 
 export interface ExitResult { closed: boolean; pending?: boolean; orderId?: string; pnl?: number; pnlPct?: number; error?: string; }
 const ACTIVE = ['PREPARING', 'SUBMITTING', 'SUBMITTED', 'PARTIAL', 'RECONCILIATION_REQUIRED'];
-const TERMINAL = ['filled', 'canceled', 'expired', 'rejected', 'stopped'];
-const EPS = 1e-7;
+const norm = (value: string) => value.replace('/', '').toUpperCase();
 
-/** All prices and quantities below come from broker evidence, never the HTTP caller. */
+/** Holdings verify inventory; they never supply realized price or P&L. */
+export async function verifyPositionInventory(positionId: string, scope: AccountScope) {
+  const position = await prisma.position.findUniqueOrThrow({ where: { id: positionId } });
+  if (position.accountId !== scope.accountId || position.brokerMode !== scope.mode) throw new Error('POSITION_ACCOUNT_UNVERIFIED');
+  const holding = await scope.broker.getPosition(brokerSymbol(position.asset, position.market));
+  const quantity = holding ? Math.abs(Number(holding.qty)) : 0;
+  if (!Number.isFinite(quantity) || (holding && (holding.side === 'short' ? 'SELL' : 'BUY') !== position.side)) throw new Error('POSITION_SIDE_OR_QUANTITY_UNVERIFIED');
+  const trades = await prisma.trade.findMany({ where: { positionId, accountId: scope.accountId, brokerMode: scope.mode, status: 'OPEN' } });
+  const outstanding = trades.reduce((sum, trade) => sum + remainingLotQuantity(trade), 0);
+  const pending = await prisma.executionIntent.count({ where: { accountId: scope.accountId, mode: scope.mode, asset: position.asset,
+    status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED'] } } });
+  const agrees = pending === 0 && Math.abs(quantity - outstanding) <= QUANTITY_EPS && Math.abs(position.quantity - outstanding) <= QUANTITY_EPS;
+  const observed = await prisma.position.updateMany({ where: { id: positionId, evidenceVersion: position.evidenceVersion }, data: { brokerObservedQuantity: quantity,
+    brokerObservedAt: new Date(), ...(holding ? { brokerObservedEntryPrice: Number(holding.avg_entry_price) } : {}),
+    accountingStatus: agrees ? 'RECONCILED' : 'RECONCILIATION_REQUIRED',
+    accountingError: agrees ? null : 'BROKER_INVENTORY_AND_EXECUTION_LOTS_DISAGREE' } });
+  if (observed.count !== 1) throw new Error('POSITION_EVIDENCE_CHANGED');
+  if (!agrees) throw new Error('BROKER_INVENTORY_AND_EXECUTION_LOTS_DISAGREE');
+  return { position, quantity, version: position.evidenceVersion };
+}
+
 export async function requestPositionExit(positionId: string, reason: string, suppliedScope?: AccountScope): Promise<ExitResult> {
   try {
     if (process.env.DRY_RUN === 'true') return { closed: false, error: 'DRY_RUN: no broker exit submitted' };
@@ -16,186 +38,115 @@ export async function requestPositionExit(positionId: string, reason: string, su
     const position = await prisma.position.findUnique({ where: { id: positionId } });
     if (!position || position.accountId !== scope.accountId || position.brokerMode !== scope.mode
       || !['stocks', 'crypto'].includes(position.market)) return { closed: false, error: 'POSITION_ACCOUNT_UNVERIFIED' };
-    if (position.status === 'CLOSED') return { closed: true, pnl: 0 };
+    if (position.status === 'CLOSED') return { closed: true };
     const cycleBase = `${position.id}:${position.openedAt.toISOString()}:`;
     let intent = await prisma.positionExit.findFirst({ where: { positionId, cycleKey: { startsWith: cycleBase } }, orderBy: { createdAt: 'desc' } });
     let attempt = 1;
     if (intent && ['TERMINAL_PARTIAL', 'TERMINAL_UNFILLED'].includes(intent.status)) {
-      const maxAttempts = Number(process.env.EXIT_MAX_ATTEMPTS ?? 3);
-      if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20 || intent.attempt >= maxAttempts) {
-        return { closed: false, error: 'EXIT_RETRY_LIMIT_REQUIRES_REVIEW' };
-      }
+      const limit = Number(process.env.EXIT_MAX_ATTEMPTS ?? 3);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20 || intent.attempt >= limit) return { closed: false, pending: true, error: 'EXIT_RETRY_LIMIT_REQUIRES_REVIEW' };
       if (Date.now() - intent.updatedAt.getTime() < 15000) return { closed: false, pending: true };
-      attempt = intent.attempt + 1;
-      intent = null;
+      attempt = intent.attempt + 1; intent = null;
     }
-    const cycleKey = cycleBase + attempt;
+    if (intent?.status === 'RECORDED') return { closed: false, pending: true, orderId: intent.brokerOrderId ?? undefined };
+    if (intent && intent.status !== 'PREPARING') return observeExit(intent, scope);
     if (!intent) {
+      const cycleKey = cycleBase + attempt;
       try {
-        intent = await prisma.positionExit.create({ data: {
-          cycleKey, positionId: position.id, accountId: scope.accountId, brokerMode: scope.mode,
-          symbol: brokerSymbol(position.asset, position.market), side: position.side === 'SELL' ? 'buy' : 'sell',
-          quantity: position.quantity, clientOrderId: `bx-${createHash('sha256').update(cycleKey).digest('hex').slice(0, 40)}`,
-          reason, attempt, status: 'PREPARING',
-        } });
+        intent = await prisma.positionExit.create({ data: { cycleKey, positionId, accountId: scope.accountId, brokerMode: scope.mode,
+          symbol: brokerSymbol(position.asset, position.market), side: position.side === 'SELL' ? 'buy' : 'sell', quantity: position.quantity,
+          clientOrderId: `bx-${createHash('sha256').update(cycleKey).digest('hex').slice(0, 40)}`, reason, attempt, status: 'PREPARING' } });
       } catch (error: any) {
         if (error?.code !== 'P2002') throw error;
         intent = await prisma.positionExit.findUnique({ where: { cycleKey } });
       }
     }
-    if (!intent) throw new Error('Cannot save exit identity');
-    if (intent.status === 'RECORDED') return { closed: true, orderId: intent.brokerOrderId ?? undefined };
-    if (intent.status !== 'PREPARING') return await observeExit(intent, scope);
-
+    if (!intent) throw new Error('EXIT_IDENTITY_UNAVAILABLE');
+    await reconcileProtectionEvidence(scope, positionId);
+    // Unknown inventory must not first cancel functioning protective orders.
+    await verifyPositionInventory(positionId, scope);
     const orders = await scope.broker.listOrdersVerified('open', 500);
-    if (orders.length >= 500) throw new Error('Open order scan exceeded its bound');
-    const symbolOrders = orders.flatMap(order => [order, ...(order.legs ?? [])]).filter(order => order.symbol === intent!.symbol && !TERMINAL.includes(order.status));
-    for (const order of symbolOrders) await scope.broker.cancelOrder(order.id);
-    for (const order of symbolOrders) {
-      const state = await scope.broker.getOrder(order.id);
-      if (!state || !TERMINAL.includes(state.status)) throw new Error('CANCELLATION_UNCONFIRMED');
-    }
-    const holding = await scope.broker.getPosition(intent.symbol);
-    if (!holding) {
-      // Broker brackets can fill before this monitor runs. Only a known parent
-      // order's filled exit leg can establish the price; a quote cannot.
-      const trades = await prisma.trade.findMany({ where: { positionId, status: 'OPEN' } });
-      if (trades.length === 1 && trades[0].brokerOrderId) {
-        const parent = await scope.broker.getOrder(trades[0].brokerOrderId);
-        const legs = (parent?.legs ?? []).filter((leg: any) => leg.symbol === intent!.symbol && leg.side === intent!.side
-          && leg.status === 'filled' && Math.abs(Number(leg.filled_qty) - intent!.quantity) < EPS);
-        if (legs.length === 1) {
-          await prisma.positionExit.updateMany({ where: { id: intent.id, status: 'PREPARING' }, data: { brokerOrderId: legs[0].id, evidenceKind: 'PROTECTION_LEG', status: 'SUBMITTED' } });
-          return await applyExitObservation(intent, legs[0], scope, true);
+    if (orders.length >= 500) throw new Error('OPEN_ORDER_SCAN_BOUND_EXCEEDED');
+    const symbolOrders = new Map<string, AlpacaOrder>(orders.flatMap(order => [order, ...(order.legs ?? [])])
+      .filter(order => norm(order.symbol) === norm(intent!.symbol)).map(order => [order.id, order] as const));
+    for (const order of symbolOrders.values()) {
+      if (!FINAL_ORDER_STATES.has(order.status)) await scope.broker.cancelOrder(order.id);
+      const chain = await readOrderChain(scope, order.id);
+      if (!FINAL_ORDER_STATES.has(chain[chain.length - 1].status)) throw new Error('CANCELLATION_UNCONFIRMED');
+      for (const state of chain) {
+        if (Number(state.filled_qty) > 0) {
+          if (state.side !== intent.side) throw new Error('OPENING_ORDER_FILL_REQUIRES_ENTRY_RECONCILIATION');
+          await applyBrokerExitEvidence(scope, positionId, state, 'APPLICATION_EXIT');
         }
       }
-      throw new Error('BROKER_FLAT_EXIT_EVIDENCE_REQUIRED');
     }
-    const quantity = Math.abs(Number(holding.qty));
-    const side = holding.side === 'short' ? 'buy' : 'sell';
-    if (!(Number.isFinite(quantity) && quantity > 0) || Math.abs(quantity - intent.quantity) > EPS || side !== intent.side) {
-      throw new Error('POSITION_QUANTITY_OR_SIDE_DRIFT');
+    await reconcileProtectionEvidence(scope, positionId);
+    const verified = await verifyPositionInventory(positionId, scope);
+    if (verified.quantity <= QUANTITY_EPS) {
+      await prisma.positionExit.update({ where: { id: intent.id }, data: { status: 'RECORDED' } });
+      return { closed: true };
     }
-    const claimed = await prisma.positionExit.updateMany({ where: { id: intent.id, status: 'PREPARING' }, data: { status: 'SUBMITTING' } });
+    // The same account/symbol lock as entries and evidence application. No
+    // network operations inside the transaction; reject a changed evidence version.
+    const claimed = await prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${positionScopeKey(scope.accountId, scope.mode, position.asset)}))`;
+      const latest = await tx.position.findUniqueOrThrow({ where: { id: positionId } });
+      const lots = await tx.trade.findMany({ where: { positionId, accountId: scope.accountId, brokerMode: scope.mode, status: 'OPEN' } });
+      const outstanding = lots.reduce((sum, lot) => sum + remainingLotQuantity(lot), 0);
+      const pending = await tx.executionIntent.count({ where: { asset: position.asset, accountId: scope.accountId, mode: scope.mode,
+        status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED'] } } });
+      const otherExit = await tx.positionExit.count({ where: { positionId, id: { not: intent!.id }, status: { in: ACTIVE } } });
+      if (latest.evidenceVersion !== verified.version || latest.openedAt.getTime() !== position.openedAt.getTime()
+        || latest.accountingStatus !== 'RECONCILED' || pending || otherExit
+        || Math.abs(outstanding - verified.quantity) > QUANTITY_EPS || Math.abs(latest.quantity - outstanding) > QUANTITY_EPS) throw new Error('EXIT_PREFLIGHT_CHANGED');
+      return tx.positionExit.updateMany({ where: { id: intent!.id, status: 'PREPARING' }, data: { status: 'SUBMITTING', quantity: verified.quantity } });
+    });
     if (claimed.count !== 1) return { closed: false, pending: true };
-    // Stable client identity is persisted before POST. No timeout path reposts.
-    const order = await scope.broker.createOrder({ symbol: intent.symbol, qty: quantity, side: intent.side as 'buy' | 'sell',
+    const order = await scope.broker.createOrder({ symbol: intent.symbol, qty: verified.quantity, side: intent.side as 'buy' | 'sell',
       type: 'market', time_in_force: position.market === 'crypto' ? 'gtc' : 'day', client_order_id: intent.clientOrderId });
-    if (!order?.id) throw new Error('Broker exit returned no identity');
+    if (!order?.id) throw new Error('BROKER_EXIT_IDENTITY_UNAVAILABLE');
     await prisma.positionExit.updateMany({ where: { id: intent.id, status: { in: ACTIVE } }, data: { brokerOrderId: order.id, status: 'SUBMITTED' } });
-    return await observeExit({ ...intent, brokerOrderId: order.id, status: 'SUBMITTED' }, scope);
+    return observeExit({ ...intent, quantity: verified.quantity, brokerOrderId: order.id }, scope);
   } catch (error: any) {
-    logger.error('Position exit not confirmed', { positionId, error: error?.message });
-    // PREPARING remains retryable because no submission claim was acquired yet.
+    const message = error?.message || 'EXIT_UNAVAILABLE';
+    logger.warn('Exit evidence or submission remains pending', { positionId, reason: message });
+    await markAccountingUnknown(positionId, message).catch(() => {});
     await prisma.positionExit.updateMany({ where: { positionId, status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIAL', 'RECONCILIATION_REQUIRED'] } },
-      data: { status: 'RECONCILIATION_REQUIRED', error: error?.message } }).catch(() => {});
-    return { closed: false, pending: true, error: error?.message || 'EXIT_UNAVAILABLE' };
+      data: { status: 'RECONCILIATION_REQUIRED', error: message } }).catch(() => {});
+    return { closed: false, pending: true, error: message };
   }
 }
 
 async function observeExit(intent: any, scope: AccountScope): Promise<ExitResult> {
-  const order = intent.brokerOrderId ? await scope.broker.getOrder(intent.brokerOrderId)
+  const initial = intent.brokerOrderId ? await scope.broker.getOrderVerified(intent.brokerOrderId)
     : await scope.broker.getOrderByClientOrderId(intent.clientOrderId);
-  if (!order) {
-    await prisma.positionExit.updateMany({ where: { id: intent.id, status: { in: ACTIVE } },
-      data: { error: 'EXIT_ORDER_UNAVAILABLE' } });
-    return { closed: false, pending: true, error: 'EXIT_ORDER_UNAVAILABLE' };
+  if (!initial) return { closed: false, pending: true, error: 'EXIT_ORDER_UNAVAILABLE' };
+  if (initial.client_order_id !== intent.clientOrderId || norm(initial.symbol) !== norm(intent.symbol) || initial.side !== intent.side) throw new Error('EXIT_ORDER_IDENTITY_MISMATCH');
+  const chain = await readOrderChain(scope, initial.id);
+  let pnl = 0;
+  for (const state of chain) {
+    const applied = await applyBrokerExitEvidence(scope, intent.positionId, state, 'APPLICATION_EXIT'); pnl += applied.pnl;
   }
-  return applyExitObservation(intent, order, scope, intent.evidenceKind === 'PROTECTION_LEG');
+  const last = chain[chain.length - 1];
+  const verified = await verifyPositionInventory(intent.positionId, scope);
+  const closed = verified.quantity <= QUANTITY_EPS;
+  const terminal = FINAL_ORDER_STATES.has(last.status);
+  await prisma.positionExit.update({ where: { id: intent.id }, data: { brokerOrderId: initial.id,
+    status: closed ? 'RECORDED' : terminal ? (chain.some(order => Number(order.filled_qty) > 0) ? 'TERMINAL_PARTIAL' : 'TERMINAL_UNFILLED') : 'PARTIAL',
+    brokerEvidence: JSON.parse(JSON.stringify(chain)), realizedPnl: { increment: pnl }, error: null } });
+  return { closed, pending: !closed, orderId: initial.id, ...(pnl !== 0 ? { pnl } : {}) };
 }
 
-async function applyExitObservation(intent: any, order: any, scope: AccountScope, protectionLeg = false): Promise<ExitResult> {
-  if (order.symbol !== intent.symbol || order.side !== intent.side || !order.id
-    || (!protectionLeg && order.client_order_id !== intent.clientOrderId)
-    || (protectionLeg && intent.brokerOrderId && order.id !== intent.brokerOrderId)) throw new Error('EXIT_ORDER_IDENTITY_MISMATCH');
-  const filledQuantity = Number(order.filled_qty);
-  const filledPrice = Number(order.filled_avg_price);
-  const terminal = TERMINAL.includes(order.status);
-  if (!Number.isFinite(filledQuantity) || filledQuantity < 0 || filledQuantity > intent.quantity + EPS) throw new Error('INVALID_EXIT_FILL_QUANTITY');
-  if (filledQuantity === 0) {
-    await prisma.positionExit.updateMany({ where: { id: intent.id, status: { in: ACTIVE } }, data: {
-      status: terminal ? 'TERMINAL_UNFILLED' : 'SUBMITTED', brokerOrderId: order.id,
-      brokerEvidence: JSON.parse(JSON.stringify(order)),
-    } });
-    return { closed: false, pending: !terminal, orderId: order.id, ...(terminal ? { error: `EXIT_${order.status.toUpperCase()}` } : {}) };
-  }
-  if (!Number.isFinite(filledPrice) || filledPrice <= 0) throw new Error('INVALID_EXIT_FILL_PRICE');
-  const remaining = Math.max(0, intent.quantity - filledQuantity);
-  const holding = await scope.broker.getPosition(intent.symbol);
-  const brokerRemaining = holding ? Math.abs(Number(holding.qty)) : 0;
-  if (!Number.isFinite(brokerRemaining) || Math.abs(brokerRemaining - remaining) > EPS
-    || (holding && (holding.side === 'short' ? 'buy' : 'sell') !== intent.side)) throw new Error('EXIT_FILL_AND_HOLDING_DISAGREE');
-  const notional = filledQuantity * filledPrice;
-  return prisma.$transaction(async tx => {
-    const current = await tx.positionExit.findUnique({ where: { id: intent.id } });
-    if (!current || current.accountId !== scope.accountId || current.brokerMode !== scope.mode) throw new Error('EXIT_ACCOUNT_MISMATCH');
-    if (current.status === 'RECORDED') return { closed: true, orderId: order.id };
-    if (filledQuantity < current.appliedQuantity - EPS) return { closed: false, pending: true, orderId: order.id };
-    const deltaQuantity = filledQuantity - current.appliedQuantity;
-    const deltaNotional = notional - current.appliedNotional;
-    const claimed = await tx.positionExit.updateMany({ where: { id: intent.id, appliedQuantity: current.appliedQuantity,
-      appliedNotional: current.appliedNotional, status: { in: ACTIVE } }, data: { status: 'RECORDING' } });
-    if (claimed.count !== 1) return { closed: false, pending: true, orderId: order.id };
-    let pnl = 0;
-    let basisDelta = 0;
-    const trades = await tx.trade.findMany({ where: { positionId: intent.positionId, accountId: scope.accountId,
-      brokerMode: scope.mode, status: 'OPEN' }, orderBy: [{ openedAt: 'asc' }, { id: 'asc' }] });
-    const outstanding = trades.reduce((sum, trade) => sum + trade.quantity - trade.closedQuantity, 0);
-    const previouslyRemaining = intent.quantity - current.appliedQuantity;
-    if (Math.abs(outstanding - previouslyRemaining) > EPS) throw new Error('EXIT_LOT_ATTRIBUTION_UNAVAILABLE');
-    if (deltaQuantity > EPS) {
-      const deltaPrice = deltaNotional / deltaQuantity;
-      if (!Number.isFinite(deltaPrice) || deltaPrice <= 0) throw new Error('INVALID_INCREMENTAL_EXIT_PRICE');
-      let toAllocate = deltaQuantity;
-      for (const trade of trades) {
-        if (toAllocate <= EPS) break;
-        const allocated = Math.min(toAllocate, trade.quantity - trade.closedQuantity);
-        const gross = (deltaPrice - trade.entryPrice) * allocated * (trade.type === 'SELL' ? -1 : 1);
-        const realizedPnl = trade.realizedPnl + gross - trade.fees * allocated / trade.quantity;
-        const closedQuantity = trade.closedQuantity + allocated;
-        const exitNotional = trade.exitNotional + deltaPrice * allocated;
-        const lotClosed = Math.abs(closedQuantity - trade.quantity) < EPS;
-        pnl += gross - trade.fees * allocated / trade.quantity;
-        basisDelta += trade.entryPrice * allocated;
-        await tx.trade.update({ where: { id: trade.id }, data: {
-          closedQuantity, realizedPnl, exitNotional,
-          ...(lotClosed ? { status: 'CLOSED', pnl: realizedPnl, pnlPct: realizedPnl / (trade.entryPrice * trade.quantity) * 100,
-            exitPrice: exitNotional / closedQuantity, closedAt: new Date(), exitReason: intent.reason } : {}),
-          reconciliationStatus: lotClosed ? 'BROKER_EXIT_CONFIRMED' : 'BROKER_PARTIAL_EXIT',
-        } });
-        toAllocate -= allocated;
-      }
-    }
-    const closed = terminal && remaining < EPS;
-    const cycleRealized = current.realizedPnl + pnl;
-    const cycleBasis = current.entryBasis + basisDelta;
-    await tx.position.update({ where: { id: intent.positionId }, data: {
-      quantity: remaining, brokerObservedQuantity: brokerRemaining, status: closed ? 'CLOSED' : 'OPEN', currentPrice: filledPrice,
-      ...(closed ? { unrealizedPnl: 0, unrealizedPnlPct: 0 } : {}),
-    } });
-    await tx.positionExit.update({ where: { id: intent.id }, data: {
-      status: closed ? 'RECORDED' : terminal ? 'TERMINAL_PARTIAL' : 'PARTIAL',
-      brokerOrderId: order.id, appliedQuantity: filledQuantity, appliedNotional: notional,
-      realizedPnl: cycleRealized, entryBasis: cycleBasis,
-      brokerEvidence: JSON.parse(JSON.stringify(order)), error: null,
-    } });
-    return { closed, pending: !terminal, orderId: order.id, pnl: closed ? cycleRealized : pnl,
-      ...(closed && cycleBasis > 0 ? { pnlPct: cycleRealized / cycleBasis * 100 } : {}) };
-  });
-}
-
-export async function reconcilePositionExits(scope?: AccountScope): Promise<void> {
+export async function reconcilePositionExits(suppliedScope?: AccountScope): Promise<void> {
   if (process.env.DRY_RUN === 'true') return;
-  const verified = scope ?? await getVerifiedAccountScope();
-  const intents = await prisma.positionExit.findMany({ where: { accountId: verified.accountId,
-    brokerMode: verified.mode, status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIAL', 'RECONCILIATION_REQUIRED'] } },
-    orderBy: { updatedAt: 'asc' }, take: 50 });
+  const scope = suppliedScope ?? await getVerifiedAccountScope();
+  const intents = await prisma.positionExit.findMany({ where: { accountId: scope.accountId, brokerMode: scope.mode,
+    status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIAL', 'RECONCILIATION_REQUIRED'] } }, orderBy: { updatedAt: 'asc' }, take: 50 });
   for (const intent of intents) {
-    try { await observeExit(intent, verified); }
+    try { await observeExit(intent, scope); }
     catch (error: any) {
-      await prisma.positionExit.updateMany({ where: { id: intent.id, status: { in: ACTIVE } }, data: {
-        status: 'RECONCILIATION_REQUIRED', error: error?.message,
-      } });
+      await markAccountingUnknown(intent.positionId, error?.message || 'EXIT_EVIDENCE_UNAVAILABLE');
+      await prisma.positionExit.update({ where: { id: intent.id }, data: { status: 'RECONCILIATION_REQUIRED', error: error?.message } });
     }
   }
 }

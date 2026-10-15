@@ -111,6 +111,7 @@ export interface PortfolioState {
   brokerMode?: 'paper' | 'live';
   buyingPower?: number;
   riskDataComplete?: boolean;
+  accountingComplete?: boolean;
   totalValue: number;
   cashBalance: number;
   invested: number;

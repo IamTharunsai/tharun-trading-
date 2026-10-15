@@ -13,19 +13,22 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const prices = getCurrentPrices();
   const rows = await prisma.position.findMany({ where: { ...where, status: 'OPEN' } });
   const positions = rows.map(position => ({ ...position, ledgerQuantity: position.quantity,
-    quantity: position.brokerObservedQuantity ?? position.quantity })).filter(position => position.quantity > 0);
+    quantity: position.brokerObservedQuantity ?? position.quantity }));
   let invested = 0;
   let unrealizedPnl = 0;
   for (const position of positions) {
+    if (position.quantity <= 0) continue; // Keep unresolved ledger rows visible.
     const price = Number(prices[position.asset] ?? position.currentPrice);
     if (!Number.isFinite(price) || price <= 0) throw new Error('POSITION_VALUE_UNAVAILABLE');
     invested += price * position.quantity;
     const pnl = (price - position.entryPrice) * position.quantity * (position.side === 'SELL' ? -1 : 1);
     const pnlPct = (price - position.entryPrice) / position.entryPrice * 100 * (position.side === 'SELL' ? -1 : 1);
     unrealizedPnl += pnl;
+    Object.assign(position, { currentPrice: price, unrealizedPnl: pnl, unrealizedPnlPct: pnlPct });
     await prisma.position.update({ where: { id: position.id }, data: { currentPrice: price, unrealizedPnl: pnl, unrealizedPnlPct: pnlPct } });
   }
   const trades = await prisma.trade.findMany({ where: { ...where, status: { in: ['OPEN', 'CLOSED'] } } });
+  const hiddenDiscrepancies = await prisma.position.count({ where: { ...where, status: 'CLOSED', accountingStatus: 'RECONCILIATION_REQUIRED' } });
   const realizedPnl = trades.reduce((sum, trade) => sum + (trade.status === 'CLOSED' ? trade.pnl ?? 0 : trade.realizedPnl ?? 0), 0);
   const totalValue = summary.portfolio_value;
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
@@ -42,8 +45,11 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   return {
     accountId: scope.accountId, brokerMode: scope.mode, buyingPower: summary.buying_power,
     riskDataComplete: dayKnown && weekKnown,
+    accountingComplete: hiddenDiscrepancies === 0 && positions.every(position => position.accountingStatus === 'RECONCILED'),
     totalValue, cashBalance: summary.cash, invested, pnlDay, pnlDayPct, pnlWeekPct,
-    pnlTotal: realizedPnl + unrealizedPnl, positions,
+    pnlTotal: realizedPnl + unrealizedPnl,
+    positions: positions.map(position => position.accountingStatus === 'RECONCILED' ? position
+      : { ...position, unrealizedPnl: null, unrealizedPnlPct: null }),
     tradesExecutedToday: await prisma.trade.count({ where: { ...where, openedAt: { gte: today }, status: { in: ['OPEN', 'CLOSED'] } } }),
     dailyLossToday: Math.max(0, -pnlDay), drawdownFromPeak: (peakValue - totalValue) / peakValue * 100,
   };
