@@ -105,6 +105,8 @@ jobs:
 
       - name: TypeScript check
         run: npx tsc --noEmit -p .
+      - name: Verify owner-only private chat and activity feed isolation with mocked providers
+        run: npx jest --runInBand --runTestsByPath tests/chat.privateAccess.test.ts
       - name: Verify provider completion, structured acceptance and cancellation contracts
         run: npx jest --runInBand --runTestsByPath tests/llmCompletion.test.ts tests/llmCancellation.test.ts tests/platformUpgrade.test.ts
       - name: Verify prediction execution and account contracts with mocked providers
@@ -117,6 +119,8 @@ jobs:
         run: npx jest --runInBand --runTestsByPath tests/committee.behavior.test.ts tests/decisionAuthority.test.ts tests/scheduler.tradeExecuted.test.ts
       - name: Verify owner-only socket admission, expiry and revocation with mocked transports
         run: npx jest --runInBand --runTestsByPath tests/ownerSocketSession.test.ts
+      - name: Verify market panels cannot invent financial observations
+        run: npx jest --runInBand --runTestsByPath tests/dashboardMarketEvidence.test.ts
       - name: Verify authenticated research service contracts with mocked services
         run: npx jest --runInBand --runTestsByPath tests/researchServices.test.ts
 
@@ -156,4 +160,7 @@ jobs:
       - name: Build (TypeScript + Vite)
         run: npm run build
       - name: Verify real freshness markup, chart links and interleaved debate evidence
-        run: node --test tests/experienceContracts.cjs
+        run: node --test tests/experienceContracts.cjs tests/marketPanels.cjs
+      - name: Verify authentication session query isolation and late response cancellation
+        timeout-minutes: 2
+        run: node --test tests/sessionQueryIsolation.cjs
