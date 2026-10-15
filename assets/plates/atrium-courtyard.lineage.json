@@ -1,0 +1,38 @@
+{
+  "region": "atrium-courtyard",
+  "operation": "lossless rectangular crop; no resampling, repainting, or upscaling",
+  "authorization": "User explicitly authorized: Yes, crop the generated architecture to fit",
+  "source_path": "C:\\Users\\mrtha\\.codex\\generated_images\\01a13fd7-a5d4-7853-a9a1-b2d30f37e7fd\\exec-8837eb78-c6ec-4032-8632-82de1832427d.png",
+  "source_sha256": "b265aee30b5699628a70bdeafa9e6c4d6b6fafac83081ae8fde809cf4653c424",
+  "preserved_original_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-courtyard-correction-native-original.png",
+  "source_dimensions": [
+    1536,
+    1024
+  ],
+  "crop_xywh": [
+    0,
+    0,
+    1536,
+    826
+  ],
+  "crop_box_exclusive": [
+    0,
+    0,
+    1536,
+    826
+  ],
+  "output_dimensions": [
+    1536,
+    826
+  ],
+  "generation_prompt_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-courtyard-correction-prompt.txt",
+  "generation_prompt_sha256": "cd60faf19988d6a9e1943f9d29e7f851aa362b48d2e3032114f6f8a80c7c80c5",
+  "cropped_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-courtyard-correction-cropped.png",
+  "cropped_sha256": "66441267901c1911b1b1cb8194b44b1d4464a90bcaf7c59136a048ab826e5c50",
+  "cropped_sha256_before_prompt_embedding": "fca85b2d8117edde5a9f84e80eda6df7f89257b8b26b4f89f98b71890fab29cc",
+  "selected_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\assets\\plates\\atrium-courtyard.png",
+  "selected_sha256": "66441267901c1911b1b1cb8194b44b1d4464a90bcaf7c59136a048ab826e5c50",
+  "selected_proof_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-courtyard-correction-cropped-check.json",
+  "selected_score": 0.5855,
+  "human_approval": "pending; no asset acceptance recorded"
+}

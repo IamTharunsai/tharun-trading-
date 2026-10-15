@@ -1,0 +1,1380 @@
+{
+  "schemaVersion": 3,
+  "stage": "components",
+  "id": "components",
+  "title": "Plan and asset review · frontend/src/pages/TeamWorkspace.tsx",
+  "comp": {
+    "path": ".impeccable/mocks/commons-first.png",
+    "width": 1536,
+    "height": 1024
+  },
+  "specSha256": "01b021441f088b4cb177b5aff819c80909ac9f864311e12ef55bd6d5208cf7f2",
+  "components": [
+    {
+      "id": "session-background",
+      "name": "Session background",
+      "kind": "chrome",
+      "role": "plan",
+      "box": {
+        "x": 0.1367,
+        "y": 0.1621,
+        "w": 0.8633,
+        "h": 0.0439
+      },
+      "note": "Flat pale toolbar backdrop; text and controls are independent semantic children.",
+      "medium": "code",
+      "preview": {
+        "kind": "comp-crop"
+      },
+      "codeDrawn": true,
+      "dependencies": []
+    },
+    {
+      "id": "inspector-background",
+      "name": "Inspector background",
+      "kind": "chrome",
+      "role": "plan",
+      "box": {
+        "x": 0.7493,
+        "y": 0.2148,
+        "w": 0.2422,
+        "h": 0.707
+      },
+      "note": "Flat pale translucent reading-field backdrop; its text and controls are mapped separately.",
+      "medium": "code",
+      "preview": {
+        "kind": "comp-crop"
+      },
+      "codeDrawn": true,
+      "dependencies": []
+    },
+    {
+      "id": "roster-background",
+      "name": "Roster background",
+      "kind": "chrome",
+      "role": "plan",
+      "box": {
+        "x": 0.1458,
+        "y": 0.7002,
+        "w": 0.5964,
+        "h": 0.2217
+      },
+      "note": "Flat pale table backdrop; individual roster entries are mapped separately.",
+      "medium": "code",
+      "preview": {
+        "kind": "comp-crop"
+      },
+      "codeDrawn": true,
+      "dependencies": []
+    },
+    {
+      "id": "footer-background",
+      "name": "Footer background",
+      "kind": "chrome",
+      "role": "plan",
+      "box": {
+        "x": 0.1458,
+        "y": 0.9316,
+        "w": 0.8457,
+        "h": 0.0527
+      },
+      "note": "Flat pale account strip backdrop; labels and values are mapped separately.",
+      "medium": "code",
+      "preview": {
+        "kind": "comp-crop"
+      },
+      "codeDrawn": true,
+      "dependencies": []
+    },
+    {
+      "id": "atrium-navigation",
+      "name": "Atrium navigation",
+      "kind": "plate",
+      "role": "asset",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 0.1367,
+        "h": 1
+      },
+      "note": "Architectural photograph behind the jade navigation: shaded civic atrium glazing, structural columns and vegetation. Regenerate without interface text, controls, symbols or financial content. This is the left vertical part of the same continuous atrium world.",
+      "medium": "raster",
+      "preview": {
+        "kind": "image",
+        "path": "assets/plates/atrium-navigation.png"
+      },
+      "dependencies": []
+    },
+    {
+      "id": "atrium-header-west",
+      "name": "Atrium header west",
+      "kind": "plate",
+      "role": "asset",
+      "box": {
+        "x": 0.1367,
+        "y": 0,
+        "w": 0.4316,
+        "h": 0.1621
+      },
+      "note": "Architectural photograph of the upper west atrium canopy and glass roof in daylight, continuing from the navigation into the story header. Regenerate without interface text, controls, labels or financial content.",
+      "medium": "raster",
+      "preview": {
+        "kind": "image",
+        "path": "assets/plates/atrium-header-west.png"
+      },
+      "dependencies": []
+    },
+    {
+      "id": "atrium-header-east",
+      "name": "Atrium header east",
+      "kind": "plate",
+      "role": "asset",
+      "box": {
+        "x": 0.5684,
+        "y": 0,
+        "w": 0.4316,
+        "h": 0.1621
+      },
+      "note": "Architectural photograph of the upper east atrium canopy and glass roof in daylight, continuing the same civic atrium across the story header. Regenerate without interface text, controls, labels or financial content.",
+      "medium": "raster",
+      "preview": {
+        "kind": "image",
+        "path": "assets/plates/atrium-header-east.png"
+      },
+      "dependencies": []
+    },
+    {
+      "id": "atrium-courtyard",
+      "name": "Atrium courtyard",
+      "kind": "plate",
+      "role": "asset",
+      "box": {
+        "x": 0.1367,
+        "y": 0.2061,
+        "w": 0.6126,
+        "h": 0.4941
+      },
+      "note": "Architectural photograph of the daylight civic atrium courtyard: glass roof, warm stone, trees, circular planted court and small real people. Regenerate without any interface text, station labels, arrows, diagram lines or financial content; foreground team controls remain semantic HTML.",
+      "medium": "raster",
+      "preview": {
+        "kind": "image",
+        "path": "assets/plates/atrium-courtyard.png"
+      },
+      "dependencies": []
+    }
+  ],
+  "codeRegions": [
+    {
+      "id": "navigation",
+      "name": "Navigation",
+      "kind": "chrome",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 0.1367,
+        "h": 1
+      },
+      "note": "Translucent dark jade navigation column with branding, menu links and a small concept caption."
+    },
+    {
+      "id": "brand",
+      "name": "Brand",
+      "kind": "text",
+      "box": {
+        "x": 0.0202,
+        "y": 0.0244,
+        "w": 0.0859,
+        "h": 0.0342
+      },
+      "note": "Bhishma wordmark in a light serif face."
+    },
+    {
+      "id": "brand-description",
+      "name": "Brand description",
+      "kind": "text",
+      "box": {
+        "x": 0.0202,
+        "y": 0.0664,
+        "w": 0.099,
+        "h": 0.0313
+      },
+      "note": "Two lines describing a personal trading supervision workspace."
+    },
+    {
+      "id": "nav-workspace",
+      "name": "Nav workspace",
+      "kind": "control",
+      "box": {
+        "x": 0.0078,
+        "y": 0.1221,
+        "w": 0.1211,
+        "h": 0.0479
+      },
+      "note": "Navigation link with a small line icon: Workspace selected."
+    },
+    {
+      "id": "nav-markets",
+      "name": "Nav markets",
+      "kind": "control",
+      "box": {
+        "x": 0.0156,
+        "y": 0.1768,
+        "w": 0.112,
+        "h": 0.0469
+      },
+      "note": "Navigation link with a small line icon: Markets."
+    },
+    {
+      "id": "nav-portfolio",
+      "name": "Nav portfolio",
+      "kind": "control",
+      "box": {
+        "x": 0.0156,
+        "y": 0.2256,
+        "w": 0.112,
+        "h": 0.0469
+      },
+      "note": "Navigation link with a small line icon: Portfolio."
+    },
+    {
+      "id": "nav-research",
+      "name": "Nav research",
+      "kind": "control",
+      "box": {
+        "x": 0.0156,
+        "y": 0.2734,
+        "w": 0.112,
+        "h": 0.0469
+      },
+      "note": "Navigation link with a small line icon: Research."
+    },
+    {
+      "id": "nav-journal",
+      "name": "Nav journal",
+      "kind": "control",
+      "box": {
+        "x": 0.0156,
+        "y": 0.3223,
+        "w": 0.112,
+        "h": 0.0469
+      },
+      "note": "Navigation link with a small line icon: Journal."
+    },
+    {
+      "id": "nav-settings",
+      "name": "Nav settings",
+      "kind": "control",
+      "box": {
+        "x": 0.0156,
+        "y": 0.3701,
+        "w": 0.112,
+        "h": 0.0469
+      },
+      "note": "Navigation link with a small line icon: Settings."
+    },
+    {
+      "id": "concept-caption",
+      "name": "Concept caption",
+      "kind": "text",
+      "box": {
+        "x": 0.013,
+        "y": 0.958,
+        "w": 0.1133,
+        "h": 0.0146
+      },
+      "note": "Small sample-state caption at the bottom of the navigation."
+    },
+    {
+      "id": "story-header",
+      "name": "Story header",
+      "kind": "chrome",
+      "box": {
+        "x": 0.1367,
+        "y": 0,
+        "w": 0.8633,
+        "h": 0.1621
+      },
+      "note": "Transparent header field containing greeting, primary heading, description and status controls."
+    },
+    {
+      "id": "welcome",
+      "name": "Welcome",
+      "kind": "text",
+      "box": {
+        "x": 0.1667,
+        "y": 0.0645,
+        "w": 0.0729,
+        "h": 0.0176
+      },
+      "note": "Welcome back greeting above the main heading."
+    },
+    {
+      "id": "main-heading",
+      "name": "Main heading",
+      "kind": "text",
+      "box": {
+        "x": 0.1667,
+        "y": 0.0879,
+        "w": 0.3372,
+        "h": 0.0332
+      },
+      "note": "Fourteen specialists. A clearer view. in a light serif heading."
+    },
+    {
+      "id": "main-description",
+      "name": "Main description",
+      "kind": "text",
+      "box": {
+        "x": 0.1667,
+        "y": 0.1289,
+        "w": 0.651,
+        "h": 0.0195
+      },
+      "note": "Sentence explaining specialist work, evidence, handoffs, positions and faults."
+    },
+    {
+      "id": "mode-select",
+      "name": "Mode select",
+      "kind": "control",
+      "box": {
+        "x": 0.5521,
+        "y": 0.0557,
+        "w": 0.0911,
+        "h": 0.0391
+      },
+      "note": "Paper mode dropdown with a database icon."
+    },
+    {
+      "id": "session-status",
+      "name": "Session status",
+      "kind": "control",
+      "box": {
+        "x": 0.6471,
+        "y": 0.0557,
+        "w": 0.1042,
+        "h": 0.0391
+      },
+      "note": "Observed-session status with calendar icon and state indicator."
+    },
+    {
+      "id": "fault-status",
+      "name": "Fault status",
+      "kind": "control",
+      "box": {
+        "x": 0.7539,
+        "y": 0.0557,
+        "w": 0.071,
+        "h": 0.0391
+      },
+      "note": "Data-fault count button with warning icon."
+    },
+    {
+      "id": "account-menu",
+      "name": "Account menu",
+      "kind": "control",
+      "box": {
+        "x": 0.8522,
+        "y": 0.0469,
+        "w": 0.14,
+        "h": 0.0527
+      },
+      "note": "Account initials and Rainlight Commons dropdown control."
+    },
+    {
+      "id": "session-bar",
+      "name": "Session bar",
+      "kind": "chrome",
+      "box": {
+        "x": 0.1367,
+        "y": 0.1621,
+        "w": 0.8633,
+        "h": 0.0439
+      },
+      "note": "Pale toolbar containing the selected review and receipt information."
+    },
+    {
+      "id": "session-label",
+      "name": "Session label",
+      "kind": "text",
+      "box": {
+        "x": 0.1497,
+        "y": 0.1826,
+        "w": 0.0358,
+        "h": 0.0146
+      },
+      "note": "Session label for the selected review."
+    },
+    {
+      "id": "session-select",
+      "name": "Session select",
+      "kind": "control",
+      "box": {
+        "x": 0.1914,
+        "y": 0.1719,
+        "w": 0.2155,
+        "h": 0.0322
+      },
+      "note": "Review selection dropdown showing sample asset NU, stocks and opening arguments."
+    },
+    {
+      "id": "observed-count",
+      "name": "Observed count",
+      "kind": "text",
+      "box": {
+        "x": 0.7344,
+        "y": 0.1836,
+        "w": 0.1198,
+        "h": 0.0127
+      },
+      "note": "Observed specialist and waiting counts."
+    },
+    {
+      "id": "session-receipt",
+      "name": "Session receipt",
+      "kind": "text",
+      "box": {
+        "x": 0.8678,
+        "y": 0.1836,
+        "w": 0.0762,
+        "h": 0.0127
+      },
+      "note": "Updated clock label for the sample event receipt."
+    },
+    {
+      "id": "session-refresh",
+      "name": "Session refresh",
+      "kind": "control",
+      "box": {
+        "x": 0.9479,
+        "y": 0.1748,
+        "w": 0.0169,
+        "h": 0.0283
+      },
+      "note": "Refresh or reconnect icon control."
+    },
+    {
+      "id": "session-menu",
+      "name": "Session menu",
+      "kind": "control",
+      "box": {
+        "x": 0.9707,
+        "y": 0.1748,
+        "w": 0.0176,
+        "h": 0.0283
+      },
+      "note": "Additional session options icon control."
+    },
+    {
+      "id": "commons",
+      "name": "Commons",
+      "kind": "chrome",
+      "box": {
+        "x": 0.1458,
+        "y": 0.2148,
+        "w": 0.5964,
+        "h": 0.4775
+      },
+      "note": "Bounded specialist workspace with selectable responsibility stations around the selected review."
+    },
+    {
+      "id": "commons-title",
+      "name": "Commons title",
+      "kind": "text",
+      "box": {
+        "x": 0.1556,
+        "y": 0.2256,
+        "w": 0.2813,
+        "h": 0.0215
+      },
+      "note": "Specialist handoff path current-review heading; sample serial topology is a factual defect to replace with actual stage evidence."
+    },
+    {
+      "id": "station-1",
+      "name": "Station 1",
+      "kind": "control",
+      "box": {
+        "x": 0.2012,
+        "y": 0.2734,
+        "w": 0.0762,
+        "h": 0.0586
+      },
+      "note": "Labeled Technician specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-2",
+      "name": "Station 2",
+      "kind": "control",
+      "box": {
+        "x": 0.2995,
+        "y": 0.2734,
+        "w": 0.0775,
+        "h": 0.0586
+      },
+      "note": "Labeled Newshound specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-3",
+      "name": "Station 3",
+      "kind": "control",
+      "box": {
+        "x": 0.4004,
+        "y": 0.2734,
+        "w": 0.0762,
+        "h": 0.0586
+      },
+      "note": "Labeled Sentiment specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-4",
+      "name": "Station 4",
+      "kind": "control",
+      "box": {
+        "x": 0.5013,
+        "y": 0.2734,
+        "w": 0.0775,
+        "h": 0.0586
+      },
+      "note": "Labeled Fundamental specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-5",
+      "name": "Station 5",
+      "kind": "control",
+      "box": {
+        "x": 0.6022,
+        "y": 0.2734,
+        "w": 0.0775,
+        "h": 0.0586
+      },
+      "note": "Labeled Risk Manager specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-6",
+      "name": "Station 6",
+      "kind": "control",
+      "box": {
+        "x": 0.6341,
+        "y": 0.3545,
+        "w": 0.0833,
+        "h": 0.0586
+      },
+      "note": "Labeled Trend Prophet specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-7",
+      "name": "Station 7",
+      "kind": "control",
+      "box": {
+        "x": 0.6341,
+        "y": 0.4463,
+        "w": 0.0833,
+        "h": 0.0586
+      },
+      "note": "Labeled Volume specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-8",
+      "name": "Station 8",
+      "kind": "control",
+      "box": {
+        "x": 0.6348,
+        "y": 0.5313,
+        "w": 0.0853,
+        "h": 0.0586
+      },
+      "note": "Labeled Whale Watcher specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-9",
+      "name": "Station 9",
+      "kind": "control",
+      "box": {
+        "x": 0.5,
+        "y": 0.5791,
+        "w": 0.0827,
+        "h": 0.0576
+      },
+      "note": "Labeled Macro specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-10",
+      "name": "Station 10",
+      "kind": "control",
+      "box": {
+        "x": 0.3991,
+        "y": 0.5791,
+        "w": 0.0833,
+        "h": 0.0576
+      },
+      "note": "Labeled Devil's Advocate specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-11",
+      "name": "Station 11",
+      "kind": "control",
+      "box": {
+        "x": 0.2988,
+        "y": 0.5791,
+        "w": 0.0833,
+        "h": 0.0576
+      },
+      "note": "Labeled Elliott Wave specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-12",
+      "name": "Station 12",
+      "kind": "control",
+      "box": {
+        "x": 0.1758,
+        "y": 0.5303,
+        "w": 0.0892,
+        "h": 0.0586
+      },
+      "note": "Labeled Options Flow specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-13",
+      "name": "Station 13",
+      "kind": "control",
+      "box": {
+        "x": 0.1758,
+        "y": 0.4443,
+        "w": 0.0892,
+        "h": 0.0586
+      },
+      "note": "Labeled Arbitrageur specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "station-14",
+      "name": "Station 14",
+      "kind": "control",
+      "box": {
+        "x": 0.1758,
+        "y": 0.3535,
+        "w": 0.0892,
+        "h": 0.0586
+      },
+      "note": "Labeled Quant Forecaster specialist button with a text state and small indicator; state is supplied by actual session events."
+    },
+    {
+      "id": "review-summary",
+      "name": "Review summary",
+      "kind": "chrome",
+      "box": {
+        "x": 0.3991,
+        "y": 0.3975,
+        "w": 0.112,
+        "h": 0.1416
+      },
+      "note": "Round jade summary field for the selected review."
+    },
+    {
+      "id": "review-asset",
+      "name": "Review asset",
+      "kind": "text",
+      "box": {
+        "x": 0.4427,
+        "y": 0.415,
+        "w": 0.0286,
+        "h": 0.0234
+      },
+      "note": "Sample review instrument NU."
+    },
+    {
+      "id": "review-market",
+      "name": "Review market",
+      "kind": "text",
+      "box": {
+        "x": 0.4382,
+        "y": 0.4414,
+        "w": 0.0358,
+        "h": 0.0166
+      },
+      "note": "Selected market label Stocks."
+    },
+    {
+      "id": "review-stage",
+      "name": "Review stage",
+      "kind": "text",
+      "box": {
+        "x": 0.4225,
+        "y": 0.457,
+        "w": 0.0716,
+        "h": 0.0186
+      },
+      "note": "Observed review stage, opening arguments in the sample."
+    },
+    {
+      "id": "review-caption",
+      "name": "Review caption",
+      "kind": "text",
+      "box": {
+        "x": 0.4134,
+        "y": 0.4883,
+        "w": 0.0866,
+        "h": 0.0313
+      },
+      "note": "Two-line summary explaining fourteen perspectives and one decision."
+    },
+    {
+      "id": "specialist-inspector",
+      "name": "Specialist inspector",
+      "kind": "chrome",
+      "box": {
+        "x": 0.7493,
+        "y": 0.2148,
+        "w": 0.2422,
+        "h": 0.707
+      },
+      "note": "Pale specialist details panel with role identity, evidence tabs, facts, issue and research action."
+    },
+    {
+      "id": "inspector-heading",
+      "name": "Inspector heading",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.2246,
+        "w": 0.0911,
+        "h": 0.0176
+      },
+      "note": "Specialist details heading."
+    },
+    {
+      "id": "previous-specialist",
+      "name": "Previous specialist",
+      "kind": "control",
+      "box": {
+        "x": 0.9434,
+        "y": 0.2188,
+        "w": 0.0182,
+        "h": 0.0273
+      },
+      "note": "Previous specialist chevron."
+    },
+    {
+      "id": "next-specialist",
+      "name": "Next specialist",
+      "kind": "control",
+      "box": {
+        "x": 0.9661,
+        "y": 0.2188,
+        "w": 0.0182,
+        "h": 0.0273
+      },
+      "note": "Next specialist chevron."
+    },
+    {
+      "id": "specialist-name",
+      "name": "Specialist name",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.2617,
+        "w": 0.0866,
+        "h": 0.0205
+      },
+      "note": "Selected Newshound specialist heading with roster number."
+    },
+    {
+      "id": "specialist-state",
+      "name": "Specialist state",
+      "kind": "control",
+      "box": {
+        "x": 0.8424,
+        "y": 0.2559,
+        "w": 0.0566,
+        "h": 0.0254
+      },
+      "note": "Running state badge in the sample, replaced by observed state."
+    },
+    {
+      "id": "specialist-index",
+      "name": "Specialist index",
+      "kind": "text",
+      "box": {
+        "x": 0.931,
+        "y": 0.2637,
+        "w": 0.0482,
+        "h": 0.0166
+      },
+      "note": "Selected specialist position within the fourteen-role roster."
+    },
+    {
+      "id": "specialist-description",
+      "name": "Specialist description",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.2881,
+        "w": 0.2174,
+        "h": 0.0449
+      },
+      "note": "Three-line selected specialist responsibility description."
+    },
+    {
+      "id": "tab-evidence",
+      "name": "Tab evidence",
+      "kind": "control",
+      "box": {
+        "x": 0.7604,
+        "y": 0.3428,
+        "w": 0.0462,
+        "h": 0.0332
+      },
+      "note": "Selected-specialist Evidence tab."
+    },
+    {
+      "id": "tab-notes",
+      "name": "Tab notes",
+      "kind": "control",
+      "box": {
+        "x": 0.8132,
+        "y": 0.3428,
+        "w": 0.0384,
+        "h": 0.0332
+      },
+      "note": "Selected-specialist Notes tab."
+    },
+    {
+      "id": "tab-handoffs",
+      "name": "Tab handoffs",
+      "kind": "control",
+      "box": {
+        "x": 0.8535,
+        "y": 0.3428,
+        "w": 0.0501,
+        "h": 0.0332
+      },
+      "note": "Selected-specialist Handoffs tab."
+    },
+    {
+      "id": "tab-history",
+      "name": "Tab history",
+      "kind": "control",
+      "box": {
+        "x": 0.9063,
+        "y": 0.3428,
+        "w": 0.0456,
+        "h": 0.0332
+      },
+      "note": "Selected-specialist History tab."
+    },
+    {
+      "id": "instrument-label",
+      "name": "Instrument label",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.3955,
+        "w": 0.0475,
+        "h": 0.0146
+      },
+      "note": "Instrument label."
+    },
+    {
+      "id": "instrument-value",
+      "name": "Instrument value",
+      "kind": "text",
+      "box": {
+        "x": 0.8418,
+        "y": 0.3955,
+        "w": 0.097,
+        "h": 0.0303
+      },
+      "note": "Sample instrument name, listing venue and market."
+    },
+    {
+      "id": "price-label",
+      "name": "Price label",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.4463,
+        "w": 0.054,
+        "h": 0.0156
+      },
+      "note": "Price last label."
+    },
+    {
+      "id": "price-value",
+      "name": "Price value",
+      "kind": "text",
+      "box": {
+        "x": 0.8418,
+        "y": 0.4414,
+        "w": 0.0677,
+        "h": 0.0225
+      },
+      "note": "Sample observed price, not a production value."
+    },
+    {
+      "id": "price-time",
+      "name": "Price time",
+      "kind": "text",
+      "box": {
+        "x": 0.875,
+        "y": 0.4658,
+        "w": 0.1029,
+        "h": 0.0146
+      },
+      "note": "Sample provider observation timestamp."
+    },
+    {
+      "id": "forecast-label",
+      "name": "Forecast label",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.5029,
+        "w": 0.0697,
+        "h": 0.0156
+      },
+      "note": "Forecast return label."
+    },
+    {
+      "id": "forecast-value",
+      "name": "Forecast value",
+      "kind": "text",
+      "box": {
+        "x": 0.8424,
+        "y": 0.499,
+        "w": 0.1335,
+        "h": 0.0215
+      },
+      "note": "Sample negative forecast return and uncalibrated qualifier."
+    },
+    {
+      "id": "fundamental-label",
+      "name": "Fundamental label",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.5361,
+        "w": 0.0638,
+        "h": 0.0156
+      },
+      "note": "Fundamentals label."
+    },
+    {
+      "id": "fundamental-value",
+      "name": "Fundamental value",
+      "kind": "text",
+      "box": {
+        "x": 0.8418,
+        "y": 0.5361,
+        "w": 0.1367,
+        "h": 0.0166
+      },
+      "note": "Fundamentals unavailable state."
+    },
+    {
+      "id": "decision-label",
+      "name": "Decision label",
+      "kind": "text",
+      "box": {
+        "x": 0.7604,
+        "y": 0.6602,
+        "w": 0.0736,
+        "h": 0.0166
+      },
+      "note": "Decision state label."
+    },
+    {
+      "id": "execution-note",
+      "name": "Execution note",
+      "kind": "text",
+      "box": {
+        "x": 0.8529,
+        "y": 0.6875,
+        "w": 0.127,
+        "h": 0.0146
+      },
+      "note": "Recommendation is not a fill explanatory line."
+    },
+    {
+      "id": "instrument-link",
+      "name": "Instrument link",
+      "kind": "control",
+      "box": {
+        "x": 0.9466,
+        "y": 0.3877,
+        "w": 0.0371,
+        "h": 0.0332
+      },
+      "note": "View instrument link with external-link icon."
+    },
+    {
+      "id": "provider-issue",
+      "name": "Provider issue",
+      "kind": "chrome",
+      "box": {
+        "x": 0.7604,
+        "y": 0.5605,
+        "w": 0.2227,
+        "h": 0.0713
+      },
+      "note": "Pale error field containing provider failure and missing-vote evidence."
+    },
+    {
+      "id": "provider-issue-heading",
+      "name": "Provider issue heading",
+      "kind": "text",
+      "box": {
+        "x": 0.7747,
+        "y": 0.5713,
+        "w": 0.2038,
+        "h": 0.0176
+      },
+      "note": "Provider response invalid and no-vote-recorded warning."
+    },
+    {
+      "id": "provider-issue-detail",
+      "name": "Provider issue detail",
+      "kind": "text",
+      "box": {
+        "x": 0.7669,
+        "y": 0.5938,
+        "w": 0.2103,
+        "h": 0.0283
+      },
+      "note": "Two-line explanation of invalid provider response for the sample request."
+    },
+    {
+      "id": "decision-state",
+      "name": "Decision state",
+      "kind": "control",
+      "box": {
+        "x": 0.8424,
+        "y": 0.6504,
+        "w": 0.0951,
+        "h": 0.0273
+      },
+      "note": "Awaiting coordinator state badge in the sample."
+    },
+    {
+      "id": "request-research",
+      "name": "Request research",
+      "kind": "control",
+      "box": {
+        "x": 0.7604,
+        "y": 0.7129,
+        "w": 0.2227,
+        "h": 0.041
+      },
+      "note": "Request research only action with a small document icon."
+    },
+    {
+      "id": "roster",
+      "name": "Roster",
+      "kind": "chrome",
+      "box": {
+        "x": 0.1458,
+        "y": 0.7002,
+        "w": 0.5964,
+        "h": 0.2217
+      },
+      "note": "Two-column specialist roster, seven rows per column."
+    },
+    {
+      "id": "roster-heading",
+      "name": "Roster heading",
+      "kind": "text",
+      "box": {
+        "x": 0.1497,
+        "y": 0.707,
+        "w": 0.0859,
+        "h": 0.0166
+      },
+      "note": "Specialists fourteen heading."
+    },
+    {
+      "id": "roster-head-left",
+      "name": "Roster head left",
+      "kind": "text",
+      "box": {
+        "x": 0.1536,
+        "y": 0.7314,
+        "w": 0.3835,
+        "h": 0.0127
+      },
+      "note": "Left table column headings for specialist state, receipt time, evidence and handoff."
+    },
+    {
+      "id": "roster-head-right",
+      "name": "Roster head right",
+      "kind": "text",
+      "box": {
+        "x": 0.5443,
+        "y": 0.7314,
+        "w": 0.1888,
+        "h": 0.0127
+      },
+      "note": "Right table column headings for specialist state and receipt."
+    },
+    {
+      "id": "roster-left-1",
+      "name": "Roster left 1",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.748,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 1 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-8",
+      "name": "Roster right 8",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.748,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 8 row with actual state and receipt time."
+    },
+    {
+      "id": "roster-left-2",
+      "name": "Roster left 2",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.7725,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 2 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-9",
+      "name": "Roster right 9",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.7725,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 9 row with actual state and receipt time."
+    },
+    {
+      "id": "roster-left-3",
+      "name": "Roster left 3",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.7969,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 3 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-10",
+      "name": "Roster right 10",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.7969,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 10 row with actual state and receipt time."
+    },
+    {
+      "id": "roster-left-4",
+      "name": "Roster left 4",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.8213,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 4 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-11",
+      "name": "Roster right 11",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.8213,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 11 row with actual state and receipt time."
+    },
+    {
+      "id": "roster-left-5",
+      "name": "Roster left 5",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.8457,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 5 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-12",
+      "name": "Roster right 12",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.8457,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 12 row with actual state and receipt time."
+    },
+    {
+      "id": "roster-left-6",
+      "name": "Roster left 6",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.8701,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 6 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-13",
+      "name": "Roster right 13",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.8701,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 13 row with actual state and receipt time."
+    },
+    {
+      "id": "roster-left-7",
+      "name": "Roster left 7",
+      "kind": "control",
+      "box": {
+        "x": 0.1497,
+        "y": 0.8945,
+        "w": 0.388,
+        "h": 0.0244
+      },
+      "note": "Specialist 7 row with actual state, receipt and available evidence; sample handoff text is not execution topology."
+    },
+    {
+      "id": "roster-right-14",
+      "name": "Roster right 14",
+      "kind": "control",
+      "box": {
+        "x": 0.5423,
+        "y": 0.8945,
+        "w": 0.196,
+        "h": 0.0244
+      },
+      "note": "Specialist 14 row with actual state and receipt time."
+    },
+    {
+      "id": "account-footer",
+      "name": "Account footer",
+      "kind": "chrome",
+      "box": {
+        "x": 0.1458,
+        "y": 0.9316,
+        "w": 0.8457,
+        "h": 0.0527
+      },
+      "note": "Persistent account, positions and data-fault context strip."
+    },
+    {
+      "id": "account-label",
+      "name": "Account label",
+      "kind": "text",
+      "box": {
+        "x": 0.1725,
+        "y": 0.9404,
+        "w": 0.0677,
+        "h": 0.0137
+      },
+      "note": "Account paper label."
+    },
+    {
+      "id": "account-value",
+      "name": "Account value",
+      "kind": "text",
+      "box": {
+        "x": 0.1725,
+        "y": 0.9609,
+        "w": 0.2155,
+        "h": 0.0146
+      },
+      "note": "Sample equity and open-position context; no sample financial value ships as live data."
+    },
+    {
+      "id": "positions-label",
+      "name": "Positions label",
+      "kind": "text",
+      "box": {
+        "x": 0.3971,
+        "y": 0.9395,
+        "w": 0.0664,
+        "h": 0.0146
+      },
+      "note": "Open-position count label."
+    },
+    {
+      "id": "positions-value",
+      "name": "Positions value",
+      "kind": "text",
+      "box": {
+        "x": 0.3971,
+        "y": 0.9609,
+        "w": 0.0807,
+        "h": 0.0146
+      },
+      "note": "No open positions sample state."
+    },
+    {
+      "id": "fault-label",
+      "name": "Fault label",
+      "kind": "text",
+      "box": {
+        "x": 0.7077,
+        "y": 0.9395,
+        "w": 0.0729,
+        "h": 0.0146
+      },
+      "note": "Data-fault count label."
+    },
+    {
+      "id": "fault-detail",
+      "name": "Fault detail",
+      "kind": "text",
+      "box": {
+        "x": 0.6934,
+        "y": 0.9609,
+        "w": 0.2682,
+        "h": 0.0146
+      },
+      "note": "Sample fault receipt, specialist and provider issue summary."
+    },
+    {
+      "id": "fault-link",
+      "name": "Fault link",
+      "kind": "control",
+      "box": {
+        "x": 0.9635,
+        "y": 0.9521,
+        "w": 0.026,
+        "h": 0.0264
+      },
+      "note": "View the reported data-fault detail."
+    }
+  ]
+}

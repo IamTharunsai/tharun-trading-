@@ -1,0 +1,608 @@
+{
+  "tool": "build-phase",
+  "version": 2,
+  "startedAt": "2026-10-15T06:30:48.801Z",
+  "comp": ".impeccable/mocks/commons-first.png",
+  "direction": "aa70654c",
+  "breakpoint": "1536x1024",
+  "artifact": "frontend/src/pages/TeamWorkspace.tsx",
+  "phase": "hero",
+  "phases": {
+    "comps": {
+      "status": "closed",
+      "openedAt": "2026-10-15T06:30:48.799Z",
+      "closedAt": "2026-10-15T13:36:31.795Z",
+      "attempts": 2,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "3 comps, 1 approved",
+        "approved": ".impeccable/mocks/commons-first.png",
+        "at": "2026-10-15T13:36:31.794Z"
+      },
+      "forced": null
+    },
+    "spec": {
+      "status": "closed",
+      "openedAt": "2026-10-15T13:36:31.842Z",
+      "closedAt": "2026-10-15T13:53:33.379Z",
+      "attempts": 2,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "106 regions, 1 plates, 40 text regions measured",
+        "at": "2026-10-15T13:53:33.379Z"
+      },
+      "forced": null
+    },
+    "plates": {
+      "status": "closed",
+      "openedAt": "2026-10-15T13:53:33.379Z",
+      "closedAt": "2026-10-15T18:19:28.696Z",
+      "attempts": 3,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "4/4 plates",
+        "at": "2026-10-15T18:19:28.644Z"
+      },
+      "forced": null
+    },
+    "hero": {
+      "status": "open",
+      "openedAt": "2026-10-15T18:19:28.696Z",
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "sections": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "motion": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "responsive": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "review": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    }
+  },
+  "finish": null,
+  "sessionId": "01a116de-e051-7e22-8b08-0c332a210e88",
+  "plates": {
+    "atrium-navigation": {
+      "id": "atrium-navigation",
+      "file": "assets/plates/atrium-navigation.png",
+      "status": "ok",
+      "assetHash": "30a194662bac15127521b8b09795360a3ea7a738280c09c2a008759b6b8db520",
+      "regionHash": "372e8c43619ab4c2f1552f5e7a9985d88b4f97866064ba15c9cb2d7113692560",
+      "referenceHash": "e230e026db6b4e9e7df881c29f8e123ae52ff700501caa68d40b617a7e545ca6",
+      "reference": {
+        "policy": "plate-reference-v2",
+        "excludedPixels": 62488,
+        "totalPixels": 215040,
+        "remainingPixels": 152552,
+        "excludedFraction": 0.2905877976190476,
+        "fullyExcluded": false,
+        "regions": [
+          {
+            "id": "brand",
+            "kind": "text",
+            "cropPx": {
+              "x": 31,
+              "y": 25,
+              "w": 132,
+              "h": 35
+            },
+            "pixels": 4620
+          },
+          {
+            "id": "brand-description",
+            "kind": "text",
+            "cropPx": {
+              "x": 31,
+              "y": 68,
+              "w": 152,
+              "h": 32
+            },
+            "pixels": 4864
+          },
+          {
+            "id": "nav-workspace",
+            "kind": "control",
+            "cropPx": {
+              "x": 12,
+              "y": 125,
+              "w": 186,
+              "h": 49
+            },
+            "pixels": 9114
+          },
+          {
+            "id": "nav-markets",
+            "kind": "control",
+            "cropPx": {
+              "x": 24,
+              "y": 181,
+              "w": 172,
+              "h": 48
+            },
+            "pixels": 8256
+          },
+          {
+            "id": "nav-portfolio",
+            "kind": "control",
+            "cropPx": {
+              "x": 24,
+              "y": 231,
+              "w": 172,
+              "h": 48
+            },
+            "pixels": 8256
+          },
+          {
+            "id": "nav-research",
+            "kind": "control",
+            "cropPx": {
+              "x": 24,
+              "y": 280,
+              "w": 172,
+              "h": 48
+            },
+            "pixels": 8256
+          },
+          {
+            "id": "nav-journal",
+            "kind": "control",
+            "cropPx": {
+              "x": 24,
+              "y": 330,
+              "w": 172,
+              "h": 48
+            },
+            "pixels": 8256
+          },
+          {
+            "id": "nav-settings",
+            "kind": "control",
+            "cropPx": {
+              "x": 24,
+              "y": 379,
+              "w": 172,
+              "h": 48
+            },
+            "pixels": 8256
+          },
+          {
+            "id": "concept-caption",
+            "kind": "text",
+            "cropPx": {
+              "x": 20,
+              "y": 981,
+              "w": 174,
+              "h": 15
+            },
+            "pixels": 2610
+          }
+        ],
+        "ignoredContainers": [
+          "navigation"
+        ]
+      },
+      "compHash": "c98ec378776ae96b5b94a7665494c0e0d0ffa784d922603317537fbcc1a8dac6",
+      "size": "1024x1536",
+      "score": 0.6193
+    },
+    "atrium-header-west": {
+      "id": "atrium-header-west",
+      "file": "assets/plates/atrium-header-west.png",
+      "status": "ok",
+      "assetHash": "42038a1e1b3948363830d2ec4487bb21b41998110be9b64cdeee68024bd04e79",
+      "regionHash": "1ae4f367e3515cd113f6af0f3c1aca1dc68ed9e86dff62860232df09d0ba77af",
+      "referenceHash": "e230e026db6b4e9e7df881c29f8e123ae52ff700501caa68d40b617a7e545ca6",
+      "reference": {
+        "policy": "plate-reference-v2",
+        "excludedPixels": 32968,
+        "totalPixels": 110058,
+        "remainingPixels": 77090,
+        "excludedFraction": 0.29955114575950864,
+        "fullyExcluded": false,
+        "regions": [
+          {
+            "id": "welcome",
+            "kind": "text",
+            "cropPx": {
+              "x": 46,
+              "y": 66,
+              "w": 112,
+              "h": 18
+            },
+            "pixels": 2016
+          },
+          {
+            "id": "main-heading",
+            "kind": "text",
+            "cropPx": {
+              "x": 46,
+              "y": 90,
+              "w": 518,
+              "h": 34
+            },
+            "pixels": 17612
+          },
+          {
+            "id": "main-description",
+            "kind": "text",
+            "cropPx": {
+              "x": 46,
+              "y": 132,
+              "w": 617,
+              "h": 20
+            },
+            "pixels": 12340
+          },
+          {
+            "id": "mode-select",
+            "kind": "control",
+            "cropPx": {
+              "x": 638,
+              "y": 57,
+              "w": 25,
+              "h": 40
+            },
+            "pixels": 1000
+          }
+        ],
+        "ignoredContainers": [
+          "story-header"
+        ]
+      },
+      "compHash": "c98ec378776ae96b5b94a7665494c0e0d0ffa784d922603317537fbcc1a8dac6",
+      "size": "2172x544",
+      "score": 0.6112
+    },
+    "atrium-header-east": {
+      "id": "atrium-header-east",
+      "file": "assets/plates/atrium-header-east.png",
+      "status": "ok",
+      "assetHash": "ebed1066d4aa22475467003debb7ae04cf1637ab00a119d0cd383e5725714d72",
+      "regionHash": "eb944c917418246c685537a2c2ba2e59ac0072147de75764d274070e3032be44",
+      "referenceHash": "e230e026db6b4e9e7df881c29f8e123ae52ff700501caa68d40b617a7e545ca6",
+      "reference": {
+        "policy": "plate-reference-v2",
+        "excludedPixels": 34630,
+        "totalPixels": 110058,
+        "remainingPixels": 75428,
+        "excludedFraction": 0.3146522742553926,
+        "fullyExcluded": false,
+        "regions": [
+          {
+            "id": "main-description",
+            "kind": "text",
+            "cropPx": {
+              "x": 0,
+              "y": 132,
+              "w": 383,
+              "h": 20
+            },
+            "pixels": 7660
+          },
+          {
+            "id": "mode-select",
+            "kind": "control",
+            "cropPx": {
+              "x": 0,
+              "y": 57,
+              "w": 115,
+              "h": 40
+            },
+            "pixels": 4600
+          },
+          {
+            "id": "session-status",
+            "kind": "control",
+            "cropPx": {
+              "x": 121,
+              "y": 57,
+              "w": 160,
+              "h": 40
+            },
+            "pixels": 6400
+          },
+          {
+            "id": "fault-status",
+            "kind": "control",
+            "cropPx": {
+              "x": 285,
+              "y": 57,
+              "w": 109,
+              "h": 40
+            },
+            "pixels": 4360
+          },
+          {
+            "id": "account-menu",
+            "kind": "control",
+            "cropPx": {
+              "x": 436,
+              "y": 48,
+              "w": 215,
+              "h": 54
+            },
+            "pixels": 11610
+          }
+        ],
+        "ignoredContainers": [
+          "story-header"
+        ]
+      },
+      "compHash": "c98ec378776ae96b5b94a7665494c0e0d0ffa784d922603317537fbcc1a8dac6",
+      "size": "1536x384",
+      "score": 0.4239
+    },
+    "atrium-courtyard": {
+      "id": "atrium-courtyard",
+      "file": "assets/plates/atrium-courtyard.png",
+      "status": "ok",
+      "assetHash": "66441267901c1911b1b1cb8194b44b1d4464a90bcaf7c59136a048ab826e5c50",
+      "regionHash": "10e802ee89ded59c520472cda2b318760d627c22e77a3f35bf532b73d21ce8af",
+      "referenceHash": "e230e026db6b4e9e7df881c29f8e123ae52ff700501caa68d40b617a7e545ca6",
+      "reference": {
+        "policy": "plate-reference-v2",
+        "excludedPixels": 123723,
+        "totalPixels": 476146,
+        "remainingPixels": 352423,
+        "excludedFraction": 0.25984256929597227,
+        "fullyExcluded": false,
+        "regions": [
+          {
+            "id": "commons-title",
+            "kind": "text",
+            "cropPx": {
+              "x": 29,
+              "y": 20,
+              "w": 432,
+              "h": 22
+            },
+            "pixels": 9504
+          },
+          {
+            "id": "station-1",
+            "kind": "control",
+            "cropPx": {
+              "x": 99,
+              "y": 69,
+              "w": 117,
+              "h": 60
+            },
+            "pixels": 7020
+          },
+          {
+            "id": "station-2",
+            "kind": "control",
+            "cropPx": {
+              "x": 250,
+              "y": 69,
+              "w": 119,
+              "h": 60
+            },
+            "pixels": 7140
+          },
+          {
+            "id": "station-3",
+            "kind": "control",
+            "cropPx": {
+              "x": 405,
+              "y": 69,
+              "w": 117,
+              "h": 60
+            },
+            "pixels": 7020
+          },
+          {
+            "id": "station-4",
+            "kind": "control",
+            "cropPx": {
+              "x": 560,
+              "y": 69,
+              "w": 119,
+              "h": 60
+            },
+            "pixels": 7140
+          },
+          {
+            "id": "station-5",
+            "kind": "control",
+            "cropPx": {
+              "x": 715,
+              "y": 69,
+              "w": 119,
+              "h": 60
+            },
+            "pixels": 7140
+          },
+          {
+            "id": "station-6",
+            "kind": "control",
+            "cropPx": {
+              "x": 764,
+              "y": 152,
+              "w": 128,
+              "h": 60
+            },
+            "pixels": 7680
+          },
+          {
+            "id": "station-7",
+            "kind": "control",
+            "cropPx": {
+              "x": 764,
+              "y": 246,
+              "w": 128,
+              "h": 60
+            },
+            "pixels": 7680
+          },
+          {
+            "id": "station-8",
+            "kind": "control",
+            "cropPx": {
+              "x": 765,
+              "y": 333,
+              "w": 131,
+              "h": 60
+            },
+            "pixels": 7860
+          },
+          {
+            "id": "station-9",
+            "kind": "control",
+            "cropPx": {
+              "x": 558,
+              "y": 382,
+              "w": 127,
+              "h": 59
+            },
+            "pixels": 7493
+          },
+          {
+            "id": "station-10",
+            "kind": "control",
+            "cropPx": {
+              "x": 403,
+              "y": 382,
+              "w": 128,
+              "h": 59
+            },
+            "pixels": 7552
+          },
+          {
+            "id": "station-11",
+            "kind": "control",
+            "cropPx": {
+              "x": 249,
+              "y": 382,
+              "w": 128,
+              "h": 59
+            },
+            "pixels": 7552
+          },
+          {
+            "id": "station-12",
+            "kind": "control",
+            "cropPx": {
+              "x": 60,
+              "y": 332,
+              "w": 137,
+              "h": 60
+            },
+            "pixels": 8220
+          },
+          {
+            "id": "station-13",
+            "kind": "control",
+            "cropPx": {
+              "x": 60,
+              "y": 244,
+              "w": 137,
+              "h": 60
+            },
+            "pixels": 8220
+          },
+          {
+            "id": "station-14",
+            "kind": "control",
+            "cropPx": {
+              "x": 60,
+              "y": 151,
+              "w": 137,
+              "h": 60
+            },
+            "pixels": 8220
+          },
+          {
+            "id": "review-asset",
+            "kind": "text",
+            "cropPx": {
+              "x": 470,
+              "y": 214,
+              "w": 44,
+              "h": 24
+            },
+            "pixels": 1056
+          },
+          {
+            "id": "review-market",
+            "kind": "text",
+            "cropPx": {
+              "x": 463,
+              "y": 241,
+              "w": 55,
+              "h": 17
+            },
+            "pixels": 935
+          },
+          {
+            "id": "review-stage",
+            "kind": "text",
+            "cropPx": {
+              "x": 439,
+              "y": 257,
+              "w": 110,
+              "h": 19
+            },
+            "pixels": 2090
+          },
+          {
+            "id": "review-caption",
+            "kind": "text",
+            "cropPx": {
+              "x": 425,
+              "y": 289,
+              "w": 133,
+              "h": 32
+            },
+            "pixels": 4256
+          }
+        ],
+        "ignoredContainers": [
+          "commons",
+          "review-summary"
+        ]
+      },
+      "compHash": "c98ec378776ae96b5b94a7665494c0e0d0ffa784d922603317537fbcc1a8dac6",
+      "size": "1536x826",
+      "score": 0.5855
+    }
+  }
+}

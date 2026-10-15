@@ -1,0 +1,22 @@
+{
+  "region": "atrium-navigation",
+  "operation": "native image generation; no crop, resampling, repainting, or upscaling; exact prompt embedded as PNG metadata",
+  "source_path": "C:\\Users\\mrtha\\.codex\\generated_images\\01a13fd7-a5d4-7853-a9a1-b2d30f37e7fd\\exec-83a14eb3-8f5d-4de8-af31-89b85b9cdc6e.png",
+  "source_sha256": "ba9b39071a9acfda3d0003cd9d5589d018db8f0e432829dec4c85b34f064d18a",
+  "preserved_original_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-navigation-native-original.png",
+  "source_dimensions": [
+    1024,
+    1536
+  ],
+  "output_dimensions": [
+    1024,
+    1536
+  ],
+  "crop_xywh": null,
+  "selected_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\assets\\plates\\atrium-navigation.png",
+  "selected_sha256": "30a194662bac15127521b8b09795360a3ea7a738280c09c2a008759b6b8db520",
+  "generation_prompt_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\assets\\plates\\atrium-navigation.prompt.txt",
+  "generation_prompt_sha256": "80713cdc031e3193c969859540f60031a609477e039fe1c337fda25af502d0fc",
+  "selected_proof_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-navigation-check.json",
+  "human_approval": "pending; no asset acceptance recorded"
+}

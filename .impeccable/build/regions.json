@@ -1,0 +1,1356 @@
+{
+  "regions": [
+    {
+      "kind": "plate",
+      "note": "Architectural photograph behind the jade navigation: shaded civic atrium glazing, structural columns and vegetation. Regenerate without interface text, controls, symbols or financial content. This is the left vertical part of the same continuous atrium world.",
+      "pixelBox": {
+        "x": 0,
+        "h": 1024,
+        "w": 210,
+        "y": 0
+      },
+      "id": "atrium-navigation",
+      "bleed": true
+    },
+    {
+      "kind": "plate",
+      "note": "Architectural photograph of the upper west atrium canopy and glass roof in daylight, continuing from the navigation into the story header. Regenerate without interface text, controls, labels or financial content.",
+      "pixelBox": {
+        "x": 210,
+        "h": 166,
+        "w": 663,
+        "y": 0
+      },
+      "id": "atrium-header-west",
+      "bleed": true
+    },
+    {
+      "kind": "plate",
+      "note": "Architectural photograph of the upper east atrium canopy and glass roof in daylight, continuing the same civic atrium across the story header. Regenerate without interface text, controls, labels or financial content.",
+      "pixelBox": {
+        "x": 873,
+        "h": 166,
+        "w": 663,
+        "y": 0
+      },
+      "id": "atrium-header-east",
+      "bleed": true
+    },
+    {
+      "kind": "plate",
+      "note": "Architectural photograph of the daylight civic atrium courtyard: glass roof, warm stone, trees, circular planted court and small real people. Regenerate without any interface text, station labels, arrows, diagram lines or financial content; foreground team controls remain semantic HTML.",
+      "pixelBox": {
+        "x": 210,
+        "h": 506,
+        "w": 941,
+        "y": 211
+      },
+      "id": "atrium-courtyard",
+      "bleed": true
+    },
+    {
+      "id": "navigation",
+      "kind": "chrome",
+      "note": "Translucent dark jade navigation column with branding, menu links and a small concept caption.",
+      "pixelBox": {
+        "x": 0,
+        "y": 0,
+        "w": 210,
+        "h": 1024
+      },
+      "container": true
+    },
+    {
+      "id": "brand",
+      "kind": "text",
+      "note": "Bhishma wordmark in a light serif face.",
+      "pixelBox": {
+        "x": 31,
+        "y": 25,
+        "w": 132,
+        "h": 35
+      },
+      "parentId": "navigation"
+    },
+    {
+      "id": "brand-description",
+      "kind": "text",
+      "note": "Two lines describing a personal trading supervision workspace.",
+      "pixelBox": {
+        "x": 31,
+        "y": 68,
+        "w": 152,
+        "h": 32
+      },
+      "parentId": "navigation"
+    },
+    {
+      "id": "nav-workspace",
+      "kind": "control",
+      "note": "Navigation link with a small line icon: Workspace selected.",
+      "pixelBox": {
+        "x": 12,
+        "y": 125,
+        "w": 186,
+        "h": 49
+      },
+      "parentId": "navigation",
+      "reviewGroup": "navigation-links"
+    },
+    {
+      "id": "nav-markets",
+      "kind": "control",
+      "note": "Navigation link with a small line icon: Markets.",
+      "pixelBox": {
+        "x": 24,
+        "y": 181,
+        "w": 172,
+        "h": 48
+      },
+      "parentId": "navigation",
+      "reviewGroup": "navigation-links"
+    },
+    {
+      "id": "nav-portfolio",
+      "kind": "control",
+      "note": "Navigation link with a small line icon: Portfolio.",
+      "pixelBox": {
+        "x": 24,
+        "y": 231,
+        "w": 172,
+        "h": 48
+      },
+      "parentId": "navigation",
+      "reviewGroup": "navigation-links"
+    },
+    {
+      "id": "nav-research",
+      "kind": "control",
+      "note": "Navigation link with a small line icon: Research.",
+      "pixelBox": {
+        "x": 24,
+        "y": 280,
+        "w": 172,
+        "h": 48
+      },
+      "parentId": "navigation",
+      "reviewGroup": "navigation-links"
+    },
+    {
+      "id": "nav-journal",
+      "kind": "control",
+      "note": "Navigation link with a small line icon: Journal.",
+      "pixelBox": {
+        "x": 24,
+        "y": 330,
+        "w": 172,
+        "h": 48
+      },
+      "parentId": "navigation",
+      "reviewGroup": "navigation-links"
+    },
+    {
+      "id": "nav-settings",
+      "kind": "control",
+      "note": "Navigation link with a small line icon: Settings.",
+      "pixelBox": {
+        "x": 24,
+        "y": 379,
+        "w": 172,
+        "h": 48
+      },
+      "parentId": "navigation",
+      "reviewGroup": "navigation-links"
+    },
+    {
+      "id": "concept-caption",
+      "kind": "text",
+      "note": "Small sample-state caption at the bottom of the navigation.",
+      "pixelBox": {
+        "x": 20,
+        "y": 981,
+        "w": 174,
+        "h": 15
+      },
+      "parentId": "navigation"
+    },
+    {
+      "id": "story-header",
+      "kind": "chrome",
+      "note": "Transparent header field containing greeting, primary heading, description and status controls.",
+      "pixelBox": {
+        "x": 210,
+        "y": 0,
+        "w": 1326,
+        "h": 166
+      },
+      "container": true
+    },
+    {
+      "id": "welcome",
+      "kind": "text",
+      "note": "Welcome back greeting above the main heading.",
+      "pixelBox": {
+        "x": 256,
+        "y": 66,
+        "w": 112,
+        "h": 18
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "main-heading",
+      "kind": "text",
+      "note": "Fourteen specialists. A clearer view. in a light serif heading.",
+      "pixelBox": {
+        "x": 256,
+        "y": 90,
+        "w": 518,
+        "h": 34
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "main-description",
+      "kind": "text",
+      "note": "Sentence explaining specialist work, evidence, handoffs, positions and faults.",
+      "pixelBox": {
+        "x": 256,
+        "y": 132,
+        "w": 1000,
+        "h": 20
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "mode-select",
+      "kind": "control",
+      "note": "Paper mode dropdown with a database icon.",
+      "pixelBox": {
+        "x": 848,
+        "y": 57,
+        "w": 140,
+        "h": 40
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "session-status",
+      "kind": "control",
+      "note": "Observed-session status with calendar icon and state indicator.",
+      "pixelBox": {
+        "x": 994,
+        "y": 57,
+        "w": 160,
+        "h": 40
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "fault-status",
+      "kind": "control",
+      "note": "Data-fault count button with warning icon.",
+      "pixelBox": {
+        "x": 1158,
+        "y": 57,
+        "w": 109,
+        "h": 40
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "account-menu",
+      "kind": "control",
+      "note": "Account initials and Rainlight Commons dropdown control.",
+      "pixelBox": {
+        "x": 1309,
+        "y": 48,
+        "w": 215,
+        "h": 54
+      },
+      "parentId": "story-header"
+    },
+    {
+      "id": "session-bar",
+      "kind": "chrome",
+      "note": "Pale toolbar containing the selected review and receipt information.",
+      "pixelBox": {
+        "x": 210,
+        "y": 166,
+        "w": 1326,
+        "h": 45
+      },
+      "container": true
+    },
+    {
+      "id": "session-label",
+      "kind": "text",
+      "note": "Session label for the selected review.",
+      "pixelBox": {
+        "x": 230,
+        "y": 187,
+        "w": 55,
+        "h": 15
+      },
+      "parentId": "session-bar"
+    },
+    {
+      "id": "session-select",
+      "kind": "control",
+      "note": "Review selection dropdown showing sample asset NU, stocks and opening arguments.",
+      "pixelBox": {
+        "x": 294,
+        "y": 176,
+        "w": 331,
+        "h": 33
+      },
+      "parentId": "session-bar"
+    },
+    {
+      "id": "observed-count",
+      "kind": "text",
+      "note": "Observed specialist and waiting counts.",
+      "pixelBox": {
+        "x": 1128,
+        "y": 188,
+        "w": 184,
+        "h": 13
+      },
+      "parentId": "session-bar"
+    },
+    {
+      "id": "session-receipt",
+      "kind": "text",
+      "note": "Updated clock label for the sample event receipt.",
+      "pixelBox": {
+        "x": 1333,
+        "y": 188,
+        "w": 117,
+        "h": 13
+      },
+      "parentId": "session-bar"
+    },
+    {
+      "id": "session-refresh",
+      "kind": "control",
+      "note": "Refresh or reconnect icon control.",
+      "pixelBox": {
+        "x": 1456,
+        "y": 179,
+        "w": 26,
+        "h": 29
+      },
+      "parentId": "session-bar"
+    },
+    {
+      "id": "session-menu",
+      "kind": "control",
+      "note": "Additional session options icon control.",
+      "pixelBox": {
+        "x": 1491,
+        "y": 179,
+        "w": 27,
+        "h": 29
+      },
+      "parentId": "session-bar"
+    },
+    {
+      "id": "commons",
+      "kind": "chrome",
+      "note": "Bounded specialist workspace with selectable responsibility stations around the selected review.",
+      "pixelBox": {
+        "x": 224,
+        "y": 220,
+        "w": 916,
+        "h": 489
+      },
+      "container": true
+    },
+    {
+      "id": "commons-title",
+      "kind": "text",
+      "note": "Specialist handoff path current-review heading; sample serial topology is a factual defect to replace with actual stage evidence.",
+      "pixelBox": {
+        "x": 239,
+        "y": 231,
+        "w": 432,
+        "h": 22
+      },
+      "parentId": "commons"
+    },
+    {
+      "id": "station-1",
+      "kind": "control",
+      "note": "Labeled Technician specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 309,
+        "y": 280,
+        "w": 117,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-2",
+      "kind": "control",
+      "note": "Labeled Newshound specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 460,
+        "y": 280,
+        "w": 119,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-3",
+      "kind": "control",
+      "note": "Labeled Sentiment specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 615,
+        "y": 280,
+        "w": 117,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-4",
+      "kind": "control",
+      "note": "Labeled Fundamental specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 770,
+        "y": 280,
+        "w": 119,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-5",
+      "kind": "control",
+      "note": "Labeled Risk Manager specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 925,
+        "y": 280,
+        "w": 119,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-6",
+      "kind": "control",
+      "note": "Labeled Trend Prophet specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 974,
+        "y": 363,
+        "w": 128,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-7",
+      "kind": "control",
+      "note": "Labeled Volume specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 974,
+        "y": 457,
+        "w": 128,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-8",
+      "kind": "control",
+      "note": "Labeled Whale Watcher specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 975,
+        "y": 544,
+        "w": 131,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-9",
+      "kind": "control",
+      "note": "Labeled Macro specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 768,
+        "y": 593,
+        "w": 127,
+        "h": 59
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-10",
+      "kind": "control",
+      "note": "Labeled Devil's Advocate specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 613,
+        "y": 593,
+        "w": 128,
+        "h": 59
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-11",
+      "kind": "control",
+      "note": "Labeled Elliott Wave specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 459,
+        "y": 593,
+        "w": 128,
+        "h": 59
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-12",
+      "kind": "control",
+      "note": "Labeled Options Flow specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 270,
+        "y": 543,
+        "w": 137,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-13",
+      "kind": "control",
+      "note": "Labeled Arbitrageur specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 270,
+        "y": 455,
+        "w": 137,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "station-14",
+      "kind": "control",
+      "note": "Labeled Quant Forecaster specialist button with a text state and small indicator; state is supplied by actual session events.",
+      "pixelBox": {
+        "x": 270,
+        "y": 362,
+        "w": 137,
+        "h": 60
+      },
+      "parentId": "commons",
+      "reviewGroup": "specialist-stations"
+    },
+    {
+      "id": "review-summary",
+      "kind": "chrome",
+      "note": "Round jade summary field for the selected review.",
+      "pixelBox": {
+        "x": 613,
+        "y": 407,
+        "w": 172,
+        "h": 145
+      },
+      "container": true,
+      "parentId": "commons"
+    },
+    {
+      "id": "review-asset",
+      "kind": "text",
+      "note": "Sample review instrument NU.",
+      "pixelBox": {
+        "x": 680,
+        "y": 425,
+        "w": 44,
+        "h": 24
+      },
+      "parentId": "review-summary"
+    },
+    {
+      "id": "review-market",
+      "kind": "text",
+      "note": "Selected market label Stocks.",
+      "pixelBox": {
+        "x": 673,
+        "y": 452,
+        "w": 55,
+        "h": 17
+      },
+      "parentId": "review-summary"
+    },
+    {
+      "id": "review-stage",
+      "kind": "text",
+      "note": "Observed review stage, opening arguments in the sample.",
+      "pixelBox": {
+        "x": 649,
+        "y": 468,
+        "w": 110,
+        "h": 19
+      },
+      "parentId": "review-summary"
+    },
+    {
+      "id": "review-caption",
+      "kind": "text",
+      "note": "Two-line summary explaining fourteen perspectives and one decision.",
+      "pixelBox": {
+        "x": 635,
+        "y": 500,
+        "w": 133,
+        "h": 32
+      },
+      "parentId": "review-summary"
+    },
+    {
+      "id": "specialist-inspector",
+      "kind": "chrome",
+      "note": "Pale specialist details panel with role identity, evidence tabs, facts, issue and research action.",
+      "pixelBox": {
+        "x": 1151,
+        "y": 220,
+        "w": 372,
+        "h": 724
+      },
+      "container": true
+    },
+    {
+      "id": "inspector-heading",
+      "kind": "text",
+      "note": "Specialist details heading.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 230,
+        "w": 140,
+        "h": 18
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "previous-specialist",
+      "kind": "control",
+      "note": "Previous specialist chevron.",
+      "pixelBox": {
+        "x": 1449,
+        "y": 224,
+        "w": 28,
+        "h": 28
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "next-specialist",
+      "kind": "control",
+      "note": "Next specialist chevron.",
+      "pixelBox": {
+        "x": 1484,
+        "y": 224,
+        "w": 28,
+        "h": 28
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "specialist-name",
+      "kind": "text",
+      "note": "Selected Newshound specialist heading with roster number.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 268,
+        "w": 133,
+        "h": 21
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "specialist-state",
+      "kind": "control",
+      "note": "Running state badge in the sample, replaced by observed state.",
+      "pixelBox": {
+        "x": 1294,
+        "y": 262,
+        "w": 87,
+        "h": 26
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "specialist-index",
+      "kind": "text",
+      "note": "Selected specialist position within the fourteen-role roster.",
+      "pixelBox": {
+        "x": 1430,
+        "y": 270,
+        "w": 74,
+        "h": 17
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "specialist-description",
+      "kind": "text",
+      "note": "Three-line selected specialist responsibility description.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 295,
+        "w": 334,
+        "h": 46
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "tab-evidence",
+      "kind": "control",
+      "note": "Selected-specialist Evidence tab.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 351,
+        "w": 71,
+        "h": 34
+      },
+      "parentId": "specialist-inspector",
+      "reviewGroup": "specialist-tabs"
+    },
+    {
+      "id": "tab-notes",
+      "kind": "control",
+      "note": "Selected-specialist Notes tab.",
+      "pixelBox": {
+        "x": 1249,
+        "y": 351,
+        "w": 59,
+        "h": 34
+      },
+      "parentId": "specialist-inspector",
+      "reviewGroup": "specialist-tabs"
+    },
+    {
+      "id": "tab-handoffs",
+      "kind": "control",
+      "note": "Selected-specialist Handoffs tab.",
+      "pixelBox": {
+        "x": 1311,
+        "y": 351,
+        "w": 77,
+        "h": 34
+      },
+      "parentId": "specialist-inspector",
+      "reviewGroup": "specialist-tabs"
+    },
+    {
+      "id": "tab-history",
+      "kind": "control",
+      "note": "Selected-specialist History tab.",
+      "pixelBox": {
+        "x": 1392,
+        "y": 351,
+        "w": 70,
+        "h": 34
+      },
+      "parentId": "specialist-inspector",
+      "reviewGroup": "specialist-tabs"
+    },
+    {
+      "id": "instrument-label",
+      "kind": "text",
+      "note": "Instrument label.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 405,
+        "w": 73,
+        "h": 15
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "instrument-value",
+      "kind": "text",
+      "note": "Sample instrument name, listing venue and market.",
+      "pixelBox": {
+        "x": 1293,
+        "y": 405,
+        "w": 149,
+        "h": 31
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "price-label",
+      "kind": "text",
+      "note": "Price last label.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 457,
+        "w": 83,
+        "h": 16
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "price-value",
+      "kind": "text",
+      "note": "Sample observed price, not a production value.",
+      "pixelBox": {
+        "x": 1293,
+        "y": 452,
+        "w": 104,
+        "h": 23
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "price-time",
+      "kind": "text",
+      "note": "Sample provider observation timestamp.",
+      "pixelBox": {
+        "x": 1344,
+        "y": 477,
+        "w": 158,
+        "h": 15
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "forecast-label",
+      "kind": "text",
+      "note": "Forecast return label.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 515,
+        "w": 107,
+        "h": 16
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "forecast-value",
+      "kind": "text",
+      "note": "Sample negative forecast return and uncalibrated qualifier.",
+      "pixelBox": {
+        "x": 1294,
+        "y": 511,
+        "w": 205,
+        "h": 22
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "fundamental-label",
+      "kind": "text",
+      "note": "Fundamentals label.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 549,
+        "w": 98,
+        "h": 16
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "fundamental-value",
+      "kind": "text",
+      "note": "Fundamentals unavailable state.",
+      "pixelBox": {
+        "x": 1293,
+        "y": 549,
+        "w": 210,
+        "h": 17
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "decision-label",
+      "kind": "text",
+      "note": "Decision state label.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 676,
+        "w": 113,
+        "h": 17
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "execution-note",
+      "kind": "text",
+      "note": "Recommendation is not a fill explanatory line.",
+      "pixelBox": {
+        "x": 1310,
+        "y": 704,
+        "w": 195,
+        "h": 15
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "instrument-link",
+      "kind": "control",
+      "note": "View instrument link with external-link icon.",
+      "pixelBox": {
+        "x": 1454,
+        "y": 397,
+        "w": 57,
+        "h": 34
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "provider-issue",
+      "kind": "chrome",
+      "note": "Pale error field containing provider failure and missing-vote evidence.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 574,
+        "w": 342,
+        "h": 73
+      },
+      "container": true,
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "provider-issue-heading",
+      "kind": "text",
+      "note": "Provider response invalid and no-vote-recorded warning.",
+      "pixelBox": {
+        "x": 1190,
+        "y": 585,
+        "w": 313,
+        "h": 18
+      },
+      "parentId": "provider-issue"
+    },
+    {
+      "id": "provider-issue-detail",
+      "kind": "text",
+      "note": "Two-line explanation of invalid provider response for the sample request.",
+      "pixelBox": {
+        "x": 1178,
+        "y": 608,
+        "w": 323,
+        "h": 29
+      },
+      "parentId": "provider-issue"
+    },
+    {
+      "id": "decision-state",
+      "kind": "control",
+      "note": "Awaiting coordinator state badge in the sample.",
+      "pixelBox": {
+        "x": 1294,
+        "y": 666,
+        "w": 146,
+        "h": 28
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "request-research",
+      "kind": "control",
+      "note": "Request research only action with a small document icon.",
+      "pixelBox": {
+        "x": 1168,
+        "y": 730,
+        "w": 342,
+        "h": 42
+      },
+      "parentId": "specialist-inspector"
+    },
+    {
+      "id": "roster",
+      "kind": "chrome",
+      "note": "Two-column specialist roster, seven rows per column.",
+      "pixelBox": {
+        "x": 224,
+        "y": 717,
+        "w": 916,
+        "h": 227
+      },
+      "container": true
+    },
+    {
+      "id": "roster-heading",
+      "kind": "text",
+      "note": "Specialists fourteen heading.",
+      "pixelBox": {
+        "x": 230,
+        "y": 724,
+        "w": 132,
+        "h": 17
+      },
+      "parentId": "roster"
+    },
+    {
+      "id": "roster-head-left",
+      "kind": "text",
+      "note": "Left table column headings for specialist state, receipt time, evidence and handoff.",
+      "pixelBox": {
+        "x": 236,
+        "y": 749,
+        "w": 589,
+        "h": 13
+      },
+      "parentId": "roster"
+    },
+    {
+      "id": "roster-head-right",
+      "kind": "text",
+      "note": "Right table column headings for specialist state and receipt.",
+      "pixelBox": {
+        "x": 836,
+        "y": 749,
+        "w": 290,
+        "h": 13
+      },
+      "parentId": "roster"
+    },
+    {
+      "id": "roster-left-1",
+      "kind": "control",
+      "note": "Specialist 1 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 766,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-8",
+      "kind": "control",
+      "note": "Specialist 8 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 766,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "roster-left-2",
+      "kind": "control",
+      "note": "Specialist 2 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 791,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-9",
+      "kind": "control",
+      "note": "Specialist 9 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 791,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "roster-left-3",
+      "kind": "control",
+      "note": "Specialist 3 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 816,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-10",
+      "kind": "control",
+      "note": "Specialist 10 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 816,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "roster-left-4",
+      "kind": "control",
+      "note": "Specialist 4 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 841,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-11",
+      "kind": "control",
+      "note": "Specialist 11 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 841,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "roster-left-5",
+      "kind": "control",
+      "note": "Specialist 5 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 866,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-12",
+      "kind": "control",
+      "note": "Specialist 12 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 866,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "roster-left-6",
+      "kind": "control",
+      "note": "Specialist 6 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 891,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-13",
+      "kind": "control",
+      "note": "Specialist 13 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 891,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "roster-left-7",
+      "kind": "control",
+      "note": "Specialist 7 row with actual state, receipt and available evidence; sample handoff text is not execution topology.",
+      "pixelBox": {
+        "x": 230,
+        "y": 916,
+        "w": 596,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "left-roster-rows"
+    },
+    {
+      "id": "roster-right-14",
+      "kind": "control",
+      "note": "Specialist 14 row with actual state and receipt time.",
+      "pixelBox": {
+        "x": 833,
+        "y": 916,
+        "w": 301,
+        "h": 25
+      },
+      "parentId": "roster",
+      "reviewGroup": "right-roster-rows"
+    },
+    {
+      "id": "account-footer",
+      "kind": "chrome",
+      "note": "Persistent account, positions and data-fault context strip.",
+      "pixelBox": {
+        "x": 224,
+        "y": 954,
+        "w": 1299,
+        "h": 54
+      },
+      "container": true
+    },
+    {
+      "id": "account-label",
+      "kind": "text",
+      "note": "Account paper label.",
+      "pixelBox": {
+        "x": 265,
+        "y": 963,
+        "w": 104,
+        "h": 14
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "account-value",
+      "kind": "text",
+      "note": "Sample equity and open-position context; no sample financial value ships as live data.",
+      "pixelBox": {
+        "x": 265,
+        "y": 984,
+        "w": 331,
+        "h": 15
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "positions-label",
+      "kind": "text",
+      "note": "Open-position count label.",
+      "pixelBox": {
+        "x": 610,
+        "y": 962,
+        "w": 102,
+        "h": 15
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "positions-value",
+      "kind": "text",
+      "note": "No open positions sample state.",
+      "pixelBox": {
+        "x": 610,
+        "y": 984,
+        "w": 124,
+        "h": 15
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "fault-label",
+      "kind": "text",
+      "note": "Data-fault count label.",
+      "pixelBox": {
+        "x": 1087,
+        "y": 962,
+        "w": 112,
+        "h": 15
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "fault-detail",
+      "kind": "text",
+      "note": "Sample fault receipt, specialist and provider issue summary.",
+      "pixelBox": {
+        "x": 1065,
+        "y": 984,
+        "w": 412,
+        "h": 15
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "fault-link",
+      "kind": "control",
+      "note": "View the reported data-fault detail.",
+      "pixelBox": {
+        "x": 1480,
+        "y": 975,
+        "w": 40,
+        "h": 27
+      },
+      "parentId": "account-footer"
+    },
+    {
+      "id": "session-background",
+      "kind": "chrome",
+      "note": "Flat pale toolbar backdrop; text and controls are independent semantic children.",
+      "pixelBox": {
+        "x": 210,
+        "y": 166,
+        "w": 1326,
+        "h": 45
+      },
+      "parentId": "session-bar",
+      "codeDrawn": true
+    },
+    {
+      "id": "inspector-background",
+      "kind": "chrome",
+      "note": "Flat pale translucent reading-field backdrop; its text and controls are mapped separately.",
+      "pixelBox": {
+        "x": 1151,
+        "y": 220,
+        "w": 372,
+        "h": 724
+      },
+      "parentId": "specialist-inspector",
+      "codeDrawn": true
+    },
+    {
+      "id": "roster-background",
+      "kind": "chrome",
+      "note": "Flat pale table backdrop; individual roster entries are mapped separately.",
+      "pixelBox": {
+        "x": 224,
+        "y": 717,
+        "w": 916,
+        "h": 227
+      },
+      "parentId": "roster",
+      "codeDrawn": true
+    },
+    {
+      "id": "footer-background",
+      "kind": "chrome",
+      "note": "Flat pale account strip backdrop; labels and values are mapped separately.",
+      "pixelBox": {
+        "x": 224,
+        "y": 954,
+        "w": 1299,
+        "h": 54
+      },
+      "parentId": "account-footer",
+      "codeDrawn": true
+    }
+  ]
+}

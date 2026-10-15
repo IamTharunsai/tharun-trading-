@@ -1,0 +1,51 @@
+// CI-only isolated browser proof; never connect to a live account or broker.
+// https://playwright.dev/docs/docker
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
+const root = '/tmp/commons-dist';
+const output = '/output';
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.svg': 'image/svg+xml' };
+const server = http.createServer((req, res) => {
+  try {
+    const requested = decodeURIComponent(new URL(req.url, 'http://127.0.0.1:4173').pathname);
+    const target = path.resolve(root, `.${requested === '/' ? '/index.html' : requested}`);
+    if (!target.startsWith(`${root}/`) || !mime[path.extname(target)] || !fs.statSync(target).isFile()) throw new Error('not found');
+    res.setHeader('Content-Type', mime[path.extname(target)]);
+    fs.createReadStream(target).pipe(res);
+  } catch { res.statusCode = 404; res.end('not found'); }
+});
+(async () => {
+  let browser;
+  try {
+    await new Promise(resolve => server.listen(4173, '127.0.0.1', resolve));
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    const context = await browser.newContext({ viewport: { width: 1536, height: 1024 }, deviceScaleFactor: 1,
+      reducedMotion: 'reduce', serviceWorkers: 'block' });
+    const failures = [];
+    await context.route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:4173'
+      ? route.continue() : route.abort());
+    const page = await context.newPage();
+    page.on('pageerror', () => failures.push('page_error'));
+    page.on('requestfailed', request => failures.push(new URL(request.url()).origin === 'http://127.0.0.1:4173' ? 'local_asset_failed' : 'external_request_blocked'));
+    await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+    await page.locator('.rainlight-plate').first().waitFor();
+    await page.waitForFunction(() => [...document.images].length === 4 && [...document.images].every(image => image.complete && image.naturalWidth > 0));
+    await page.evaluate(() => document.fonts.ready);
+    const regions = await page.locator('.rainlight-plate').evaluateAll(images => images.map(image => {
+      const box = image.getBoundingClientRect();
+      return { className: image.className, x: box.x, y: box.y, width: box.width, height: box.height,
+        naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight };
+    }));
+    fs.writeFileSync(`${output}/plate-render.json`, JSON.stringify({ stage: 'architecture_only', viewport: { width: 1536, height: 1024 },
+      regions, pageErrors: failures, sourceCommit: process.env.SOURCE_COMMIT, scope: 'Rendered image placement, not live agent, financial or audio behavior.' }, null, 2));
+    assert.equal(regions.length, 4); assert.deepEqual(failures, []);
+    const expected = [{ x: 0, y: 0, width: 210, height: 1024 }, { x: 210, y: 0, width: 663, height: 166 },
+      { x: 873, y: 0, width: 663, height: 166 }, { x: 210, y: 211, width: 941, height: 506 }];
+    regions.forEach((region, index) => Object.keys(expected[index]).forEach(key => assert.ok(Math.abs(region[key] - expected[index][key]) < 0.2, `plate_geometry_${index}_${key}`)));
+    await page.screenshot({ path: `${output}/hero-repro.png`, fullPage: false });
+    await context.close();
+  } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
+})().catch(() => { process.stderr.write('commons_visual_proof_failed\n'); process.exitCode = 1; });

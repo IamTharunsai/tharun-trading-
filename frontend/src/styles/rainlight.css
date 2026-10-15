@@ -1,0 +1,28 @@
+.rainlight-world {
+  position: relative;
+  width: 100%;
+  min-height: 100svh;
+  aspect-ratio: 1536 / 1024;
+  overflow: hidden;
+  background: #f0f3f0;
+  color: #142c28;
+  isolation: isolate;
+}
+.rainlight-architecture { position: absolute; inset: 0; pointer-events: none; }
+.rainlight-plate { position: absolute; display: block; object-fit: cover; }
+.rainlight-plate--navigation {
+  left: var(--r-atrium-navigation-x); top: var(--r-atrium-navigation-y);
+  width: var(--r-atrium-navigation-w); height: var(--r-atrium-navigation-h);
+}
+.rainlight-plate--west {
+  left: var(--r-atrium-header-west-x); top: var(--r-atrium-header-west-y);
+  width: var(--r-atrium-header-west-w); height: var(--r-atrium-header-west-h);
+}
+.rainlight-plate--east {
+  left: var(--r-atrium-header-east-x); top: var(--r-atrium-header-east-y);
+  width: var(--r-atrium-header-east-w); height: var(--r-atrium-header-east-h);
+}
+.rainlight-plate--courtyard {
+  left: var(--r-atrium-courtyard-x); top: var(--r-atrium-courtyard-y);
+  width: var(--r-atrium-courtyard-w); height: var(--r-atrium-courtyard-h);
+}
