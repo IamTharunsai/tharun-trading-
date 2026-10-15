@@ -2,6 +2,7 @@ jest.mock('../src/utils/prisma', () => ({ prisma: {
   position: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   positionExit: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   executionIntent: { count: jest.fn() }, trade: { findMany: jest.fn() }, $transaction: jest.fn(), $executeRaw: jest.fn(),
+  brokerOrderEvidence: { count: jest.fn() },
 } }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn() } }));
 jest.mock('../src/trading/accountScope', () => ({
@@ -17,7 +18,7 @@ jest.mock('../src/trading/brokerEvidence', () => ({
 }));
 import { prisma } from '../src/utils/prisma';
 import { requestPositionExit, reconcilePositionExits } from '../src/trading/positionExits';
-import { applyBrokerExitEvidence, readOrderChain, reconcileProtectionEvidence } from '../src/trading/brokerEvidence';
+import { applyBrokerExitEvidence, markAccountingUnknown, readOrderChain, reconcileProtectionEvidence } from '../src/trading/brokerEvidence';
 import type { AccountScope } from '../src/trading/accountScope';
 const broker = { listOrdersVerified: jest.fn(), cancelOrder: jest.fn(), getPosition: jest.fn(), createOrder: jest.fn(),
   getOrderVerified: jest.fn(), getOrderByClientOrderId: jest.fn() };
@@ -41,6 +42,7 @@ beforeEach(() => {
   });
   (prisma.trade.findMany as jest.Mock).mockImplementation(async () => [lot]);
   (prisma.executionIntent.count as jest.Mock).mockResolvedValue(0);
+  (prisma.brokerOrderEvidence.count as jest.Mock).mockResolvedValue(0);
   (prisma.positionExit.count as jest.Mock).mockResolvedValue(0);
   (prisma.positionExit.findFirst as jest.Mock).mockImplementation(async () => intent);
   (prisma.positionExit.findUnique as jest.Mock).mockImplementation(async () => intent);
@@ -62,6 +64,7 @@ beforeEach(() => {
   broker.getOrderByClientOrderId.mockImplementation(async () => ({ ...order }));
   (readOrderChain as jest.Mock).mockImplementation(async () => [{ ...order }]);
   (reconcileProtectionEvidence as jest.Mock).mockResolvedValue(undefined);
+  (markAccountingUnknown as jest.Mock).mockResolvedValue(undefined);
   (applyBrokerExitEvidence as jest.Mock).mockResolvedValue({ applied: false, positionClosed: false, pnl: 0 });
 });
 afterEach(() => { delete process.env.DRY_RUN; });
@@ -103,6 +106,12 @@ test('a stopped order cannot release a claim for a new attempt', async () => {
   await requestPositionExit(position.id, 'manual', scope);
   await requestPositionExit(position.id, 'manual', scope);
   expect(broker.createOrder).toHaveBeenCalledTimes(1); expect(intent.status).toBe('PARTIAL');
+});
+test('flat inventory with a still-executable protection leg cannot close the lifecycle or release it for a new entry', async () => {
+  brokerQuantity = 0; position.quantity = 0; lot.closedQuantity = 10;
+  (prisma.brokerOrderEvidence.count as jest.Mock).mockResolvedValue(1);
+  expect(await requestPositionExit(position.id, 'manual', scope)).toMatchObject({ closed: false, pending: true });
+  expect(position.status).toBe('OPEN'); expect(broker.createOrder).not.toHaveBeenCalled();
 });
 test('refuses another account and keeps broker-flat unknown exits pending', async () => {
   position.accountId = 'other';

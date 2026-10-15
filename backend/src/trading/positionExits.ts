@@ -21,10 +21,13 @@ export async function verifyPositionInventory(positionId: string, scope: Account
   const outstanding = trades.reduce((sum, trade) => sum + remainingLotQuantity(trade), 0);
   const pending = await prisma.executionIntent.count({ where: { accountId: scope.accountId, mode: scope.mode, asset: position.asset,
     status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED'] } } });
-  const agrees = pending === 0 && Math.abs(quantity - outstanding) <= QUANTITY_EPS && Math.abs(position.quantity - outstanding) <= QUANTITY_EPS;
+  const executableOrders = quantity <= QUANTITY_EPS ? await prisma.brokerOrderEvidence.count({ where: { positionId,
+    positionCycleAt: position.openedAt, status: { notIn: [...FINAL_ORDER_STATES, 'replaced'] } } }) : 0;
+  const agrees = pending === 0 && executableOrders === 0 && Math.abs(quantity - outstanding) <= QUANTITY_EPS && Math.abs(position.quantity - outstanding) <= QUANTITY_EPS;
   const observed = await prisma.position.updateMany({ where: { id: positionId, evidenceVersion: position.evidenceVersion }, data: { brokerObservedQuantity: quantity,
     brokerObservedAt: new Date(), ...(holding ? { brokerObservedEntryPrice: Number(holding.avg_entry_price) } : {}),
     accountingStatus: agrees ? 'RECONCILED' : 'RECONCILIATION_REQUIRED',
+    ...(agrees && quantity <= QUANTITY_EPS ? { status: 'CLOSED' } : {}),
     accountingError: agrees ? null : 'BROKER_INVENTORY_AND_EXECUTION_LOTS_DISAGREE' } });
   if (observed.count !== 1) throw new Error('POSITION_EVIDENCE_CHANGED');
   if (!agrees) throw new Error('BROKER_INVENTORY_AND_EXECUTION_LOTS_DISAGREE');

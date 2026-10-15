@@ -33,7 +33,7 @@ suite('broker evidence concurrency on disposable PostgreSQL', () => {
     await Promise.all([applyBrokerExitEvidence(scope, positionId, order(id, 10, 90), 'APPLICATION_EXIT'),
       applyBrokerExitEvidence(scope, positionId, order(id, 10, 90), 'APPLICATION_EXIT')]);
     expect(await prisma.trade.findUniqueOrThrow({ where: { id: tradeId } })).toMatchObject({ quantity: 10, entryPrice: 100, closedQuantity: 10, pnl: -100 });
-    expect(await prisma.position.findUniqueOrThrow({ where: { id: positionId } })).toMatchObject({ quantity: 0, status: 'CLOSED' });
+    expect(await prisma.position.findUniqueOrThrow({ where: { id: positionId } })).toMatchObject({ quantity: 0, status: 'OPEN' });
   }, 15000);
   test('competing order evidence cannot allocate more inventory than exists; failed application is atomic', async () => {
     const results = await Promise.allSettled([applyBrokerExitEvidence(scope, positionId, order(`a-${positionId}`, 6, 90), 'APPLICATION_EXIT'),

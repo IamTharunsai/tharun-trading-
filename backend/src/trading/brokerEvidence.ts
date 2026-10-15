@@ -99,7 +99,9 @@ export async function applyBrokerExitEvidence(scope: AccountScope, positionId: s
     const remaining = Math.max(0, outstanding - fill.deltaQuantity);
     await tx.position.update({ where: { id: positionId }, data: { quantity: remaining,
       ...(remaining > QUANTITY_EPS ? { entryPrice: remainingBasis / remaining } : {}),
-      status: remaining <= QUANTITY_EPS ? 'CLOSED' : 'OPEN', evidenceVersion: { increment: fill.deltaQuantity > QUANTITY_EPS ? 1 : 0 },
+      // Flat inventory is not a confirmed closed lifecycle while another leg or
+      // replacement may still execute. verifyPositionInventory closes it later.
+      status: 'OPEN', evidenceVersion: { increment: fill.deltaQuantity > QUANTITY_EPS ? 1 : 0 },
       ...(remaining <= QUANTITY_EPS ? { unrealizedPnl: 0, unrealizedPnlPct: 0 } : {}),
     } });
     await tx.brokerOrderEvidence.update({ where: { id: cursor.id }, data: { status: order.status,
@@ -154,7 +156,7 @@ export async function reconcileProtectionEvidence(scope: AccountScope, positionI
   const position = await prisma.position.findUniqueOrThrow({ where: { id: positionId } });
   if (position.accountId !== scope.accountId || position.brokerMode !== scope.mode) throw new Error('POSITION_ACCOUNT_UNVERIFIED');
   const trades = await prisma.trade.findMany({ where: { positionId, accountId: scope.accountId, brokerMode: scope.mode,
-    status: 'OPEN', brokerOrderId: { not: null } } });
+    openedAt: { gte: position.openedAt }, brokerOrderId: { not: null } } });
   const seen = new Set<string>();
   for (const trade of trades) {
     const parents = await readOrderChain(scope, trade.brokerOrderId!);
@@ -165,7 +167,7 @@ export async function reconcileProtectionEvidence(scope: AccountScope, positionI
         if (seen.has(leg.id)) continue;
         seen.add(leg.id);
         for (const state of await readOrderChain(scope, leg.id)) {
-          if (Number(state.filled_qty) > 0) await applyBrokerExitEvidence(scope, positionId, state, 'PROTECTION_LEG', parent.id);
+          await applyBrokerExitEvidence(scope, positionId, state, 'PROTECTION_LEG', parent.id);
         }
       }
     }

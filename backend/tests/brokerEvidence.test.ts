@@ -72,7 +72,7 @@ test('a protection partial, replay and remaining application exit preserve the e
   expect(lot.realizedPnl).toBe(-40);
   await applyBrokerExitEvidence(scope, holding.id, order('manual', 6, 90, 'filled'), 'APPLICATION_EXIT');
   expect(lot).toMatchObject({ quantity: 10, entryPrice: 100, closedQuantity: 10, pnl: -100, status: 'CLOSED' });
-  expect(holding).toMatchObject({ quantity: 0, status: 'CLOSED' });
+  expect(holding).toMatchObject({ quantity: 0, status: 'OPEN' }); // broker/family flatness not yet verified
 });
 test('uses cumulative average differences rather than repricing previously applied executions', async () => {
   await applyBrokerExitEvidence(scope, holding.id, order('exit', 4, 102), 'APPLICATION_EXIT');
