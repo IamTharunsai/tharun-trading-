@@ -136,7 +136,7 @@ beforeEach(() => {
   jest.clearAllMocks(); ownerRole = 'OWNER';
   (jwt.verify as jest.Mock).mockImplementation((token: string) => {
     if (token === 'invalid' || token === 'expired') throw new Error('fixture invalid or expired');
-    return { userId: token, role: token === 'owner' ? 'MEMBER' : 'OWNER' };
+    return { userId: token, role: token === 'owner' ? 'MEMBER' : 'OWNER', exp: Math.floor(Date.now() / 1000) + 7200 };
   });
   (prisma.revokedToken.findUnique as jest.Mock).mockImplementation(({ where }) => Promise.resolve(where.token === 'revoked' ? { token: 'revoked' } : null));
   (prisma.user.findUnique as jest.Mock).mockImplementation(({ where }) => Promise.resolve(where.id === 'deleted' ? null : {
@@ -199,7 +199,7 @@ test('configured current owner email retains the existing owner policy', async (
 });
 test('database authentication outage never reaches a private handler', async () => {
   (prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('fixture offline'));
-  expect((await request(['GET', '/api/portfolio'], 'owner')).statusCode).toBe(401);
+  expect((await request(['GET', '/api/portfolio'], 'owner')).statusCode).toBe(503);
   protectedWork.forEach(work => expect(work).not.toHaveBeenCalled());
 });
 test.each(privateReads)('private %s %s accepts current owner without rewriting the payload', async (method, url) => {

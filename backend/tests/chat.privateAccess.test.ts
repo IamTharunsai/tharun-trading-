@@ -22,7 +22,7 @@ beforeEach(() => {
   jest.clearAllMocks(); delete process.env.GEMINI_API_KEY;
   (jwt.verify as jest.Mock).mockImplementation((token: string) => {
     if (token === 'invalid') throw new Error('fixture invalid');
-    return { userId: token, role: 'OWNER' }; // Actual database role must win.
+    return { userId: token, role: 'OWNER', exp: Math.floor(Date.now() / 1000) + 7200 }; // Actual database role must win.
   });
   (prisma.revokedToken.findUnique as jest.Mock).mockImplementation(({ where }) => Promise.resolve(where.token === 'revoked' ? { token: 'revoked' } : null));
   (prisma.user.findUnique as jest.Mock).mockImplementation(({ where }) => Promise.resolve(where.id === 'deleted' ? null : {

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
+  "include": ["src/**/*", "tests/restSessionIntegrity.test.ts", "tests/chat.privateAccess.test.ts", "tests/privateRuntimeRoutes.test.ts", "tests/ownerSocketSession.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

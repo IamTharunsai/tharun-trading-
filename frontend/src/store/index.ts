@@ -32,6 +32,7 @@ interface AppStore {
   setSocketStatus: (status: AppStore['socketStatus']) => void;
   // Auth
   token: string | null;
+  authEpoch: number;
   user: any | null;
   setAuth: (token: string, user: any) => void;
   logout: () => void;
@@ -85,14 +86,15 @@ export const useStore = create<AppStore>((set) => ({
     return { debateSessions, agentCouncil, currentAnalysis: active.length ? [...new Set(active.map(session => session.asset || 'Unknown asset'))].join(', ') : null };
   }),
   token: storedToken,
+  authEpoch: 0,
   user: null,
   setAuth: (token, user) => {
-    localStorage.setItem('apex_token', token);
-    set({ token, user, debateSessions: {}, agentCouncil: {}, currentAnalysis: null, portfolio: null, recentTrades: [] });
+    try { localStorage.setItem('apex_token', token); } catch { /* Memory still changes if storage is unavailable. */ }
+    set(state => ({ token, user, authEpoch: state.authEpoch + 1, debateSessions: {}, agentCouncil: {}, currentAnalysis: null, portfolio: null, recentTrades: [] }));
   },
   logout: () => {
-    localStorage.removeItem('apex_token');
-    set({ token: null, user: null, debateSessions: {}, agentCouncil: {}, currentAnalysis: null, portfolio: null, recentTrades: [] });
+    try { localStorage.removeItem('apex_token'); } catch { /* Clearing local memory must not wait for storage. */ }
+    set(state => ({ token: null, user: null, authEpoch: state.authEpoch + 1, debateSessions: {}, agentCouncil: {}, currentAnalysis: null, portfolio: null, recentTrades: [] }));
   },
 
   prices: {},

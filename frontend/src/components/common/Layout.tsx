@@ -1,7 +1,8 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import { activateKillSwitch, deactivateKillSwitch, getTrades, getPortfolio } from '../../services/api';
+import { activateKillSwitch, deactivateKillSwitch, getTrades, getPortfolio, logoutCurrentSession } from '../../services/api';
+import { logoutNoticeApplies } from '../../services/sessionLogout';
 import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Briefcase, ArrowLeftRight, Bot, BarChart2,
@@ -87,7 +88,7 @@ const NAV_GROUPS = [
 ];
 
 export default function Layout() {
-  const { killSwitchActive, setKillSwitch, logout } = useStore();
+  const { killSwitchActive, setKillSwitch } = useStore();
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -187,8 +188,13 @@ export default function Layout() {
     }
   };
   const handleLogout = () => {
-    logout();
+    const pending = logoutCurrentSession();
     navigate('/login');
+    void pending.then(result => {
+      if (result.revocation === 'unconfirmed' && logoutNoticeApplies(useStore, result)) {
+        toast.error('Signed out on this device. Server revocation could not be confirmed.', { duration: 10000 });
+      }
+    });
   };
 
   return (
