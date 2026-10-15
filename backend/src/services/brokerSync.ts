@@ -48,17 +48,17 @@ export async function syncBrokerPositions(suppliedScope?: AccountScope): Promise
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`;
     const pending = await tx.executionIntent.findFirst({ where: { asset, accountId: scope.accountId, mode: scope.mode,
       status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED'] } } });
-    const existing = await tx.position.findUnique({ where: { scopeKey } });
+    let existing = await tx.position.findUnique({ where: { scopeKey } });
     const plan = pending?.executionPlan as { stopLossPrice?: number; takeProfitPrice?: number } | undefined;
     const observed = { brokerObservedQuantity: observation.quantity, brokerObservedEntryPrice: observation.entryPrice,
       brokerObservedAt: new Date(), brokerPositionId: observation.brokerPositionId, currentPrice: observation.currentPrice };
-    if (existing?.status === 'CLOSED' && !pending) {
-      // A lagging holding observation cannot create a new lifecycle after a
-      // confirmed close. A new entry needs its own execution/opening evidence.
-      await tx.position.update({ where: { id: existing.id }, data: { ...observed,
-        accountingStatus: 'RECONCILIATION_REQUIRED', accountingError: 'CLOSED_POSITION_HAS_UNATTRIBUTED_BROKER_HOLDING' } });
-      result.unresolved!.push(asset);
-      return;
+    const precedingClosedPositionId = existing?.status === 'CLOSED' ? existing.id : null;
+    if (precedingClosedPositionId) {
+      // Preserve the closed historical row and its Trade relations. The scope
+      // key selects the current position; a fresh observed opening balance must
+      // be OPEN and visible to exposure/risk/research/exit consumers.
+      await tx.position.update({ where: { id: precedingClosedPositionId }, data: { scopeKey: null } });
+      existing = null;
     }
     const openingBalance = !existing || existing.status === 'CLOSED';
     const position = await tx.position.upsert({ where: { scopeKey }, create: { scopeKey,
@@ -77,7 +77,8 @@ export async function syncBrokerPositions(suppliedScope?: AccountScope): Promise
       await tx.trade.create({ data: { positionId: position.id, accountId: scope.accountId, brokerMode: scope.mode,
         asset, market: observation.market, type: observation.side as 'BUY' | 'SELL', entryPrice: observation.entryPrice,
         quantity: observation.quantity, status: 'OPEN', brokerConfirmed: false,
-        reconciliationStatus: 'IMPORTED_OPENING_BALANCE', metadata: { source: 'verifiedBrokerHolding', historyAvailable: false } } });
+        reconciliationStatus: 'IMPORTED_OPENING_BALANCE', metadata: { source: 'verifiedBrokerHolding', historyAvailable: false,
+          openingBalanceOnly: true, precedingClosedPositionId } } });
     }
     (openingBalance ? result.imported : result.updated).push(asset);
     });

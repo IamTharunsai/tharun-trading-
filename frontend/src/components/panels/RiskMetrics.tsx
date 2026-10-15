@@ -42,6 +42,7 @@ export const RiskMetrics = () => {
     ['Risk evidence complete', data ? complete ? 'Yes, reported by backend' : 'No — do not infer risk readiness' : 'Unknown'],
     ['Accounting evidence complete', data?.accountingComplete === true ? 'Current inventory reconciled' : 'Pending or unknown'],
     ['Fee history complete', data?.feeDataComplete === true ? 'Reported complete' : 'No'],
+    ['Recorded history', data?.historyDataComplete === true ? 'No imported history gaps reported' : 'Incomplete or unknown opening history'],
     ['Backend stale flag', data ? data.isStale === true ? 'Stale' : data.isStale === false ? 'Not marked stale' : 'Unknown' : 'Unknown'],
     ['Broker mode', typeof data?.brokerMode === 'string' ? data.brokerMode : 'Unknown'],
     ['Data source', typeof data?.dataSource === 'string' ? data.dataSource : 'Unknown'],

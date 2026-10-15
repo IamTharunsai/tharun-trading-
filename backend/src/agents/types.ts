@@ -112,6 +112,7 @@ export interface PortfolioState {
   buyingPower?: number;
   riskDataComplete?: boolean;
   accountingComplete?: boolean;
+  historyDataComplete?: boolean;
   totalValue: number;
   cashBalance: number;
   invested: number;

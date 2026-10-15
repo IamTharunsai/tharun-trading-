@@ -44,23 +44,27 @@ export async function applyBrokerExitEvidence(scope: AccountScope, positionId: s
       || order.side !== (position.side === 'SELL' ? 'buy' : 'sell') || !order.id
       || (source === 'PROTECTION_LEG' && !parentOrderId)) throw new Error('BROKER_EXIT_IDENTITY_MISMATCH');
     const key = { accountId: scope.accountId, brokerMode: scope.mode, brokerOrderId: order.id };
-    // Upgrade an existing application-owned partial without applying its old
-    // cumulative fill a second time. Require the original persisted broker proof.
-    const legacy = await tx.positionExit.findMany({ where: { positionId, accountId: scope.accountId, brokerMode: scope.mode,
-      brokerOrderId: order.id, appliedQuantity: { gt: 0 } } });
-    if (legacy.length > 1) throw new Error('LEGACY_EXIT_EVIDENCE_AMBIGUOUS');
-    const prior = legacy[0];
-    if (prior) {
-      const saved = prior.brokerEvidence as unknown as AlpacaOrder | null;
-      if (!saved || saved.id !== order.id || Number(saved.filled_qty) !== prior.appliedQuantity
-        || Math.abs(Number(saved.filled_qty) * Number(saved.filled_avg_price) - prior.appliedNotional) > 1e-7) throw new Error('LEGACY_EXIT_EVIDENCE_UNVERIFIED');
+    // Legacy proof is a one-time bootstrap. Once persisted, this cursor is the
+    // authority: observeExit subsequently stores a chain array on PositionExit.
+    const existingCursor = await tx.brokerOrderEvidence.findUnique({ where: { accountId_brokerMode_brokerOrderId: key } });
+    let seedQuantity = 0; let seedNotional = 0; let allocationComplete = true;
+    if (!existingCursor) {
+      const legacy = await tx.positionExit.findMany({ where: { positionId, accountId: scope.accountId, brokerMode: scope.mode,
+        brokerOrderId: order.id, appliedQuantity: { gt: 0 } } });
+      if (legacy.length > 1) throw new Error('LEGACY_EXIT_EVIDENCE_AMBIGUOUS');
+      const prior = legacy[0];
+      if (prior) {
+        const saved = prior.brokerEvidence as unknown as AlpacaOrder | null;
+        if (!saved || saved.id !== order.id || Number(saved.filled_qty) !== prior.appliedQuantity
+          || Math.abs(Number(saved.filled_qty) * Number(saved.filled_avg_price) - prior.appliedNotional) > 1e-7) throw new Error('LEGACY_EXIT_EVIDENCE_UNVERIFIED');
+        seedQuantity = prior.appliedQuantity; seedNotional = prior.appliedNotional; allocationComplete = false;
+      }
     }
-    const cursor = await tx.brokerOrderEvidence.upsert({ where: { accountId_brokerMode_brokerOrderId: key },
+    const cursor = existingCursor ?? await tx.brokerOrderEvidence.upsert({ where: { accountId_brokerMode_brokerOrderId: key },
       create: { ...key, positionId, positionCycleAt: position.openedAt, symbol: order.symbol, side: order.side,
         source, parentOrderId, status: order.status, evidence: jsonEvidence(order),
-        appliedQuantity: prior ? new Prisma.Decimal(String(prior.appliedQuantity)) : 0,
-        appliedNotional: prior ? new Prisma.Decimal(String(prior.appliedNotional)) : 0,
-        allocationComplete: !prior }, update: {} });
+        appliedQuantity: new Prisma.Decimal(String(seedQuantity)),
+        appliedNotional: new Prisma.Decimal(String(seedNotional)), allocationComplete }, update: {} });
     if (cursor.positionId !== positionId || cursor.positionCycleAt.getTime() !== position.openedAt.getTime()) throw new Error('BROKER_ORDER_POSITION_CYCLE_MISMATCH');
     const fill = incrementalFill(order, Number(cursor.appliedQuantity), Number(cursor.appliedNotional));
     if (!fill) return { applied: false, positionClosed: position.status === 'CLOSED', pnl: 0 };

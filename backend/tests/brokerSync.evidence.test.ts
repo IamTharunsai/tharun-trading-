@@ -14,20 +14,24 @@ import { markAccountingUnknown } from '../src/trading/brokerEvidence';
 import type { AccountScope } from '../src/trading/accountScope';
 const broker = { listPositionsVerified: jest.fn(), listActivitiesVerified: jest.fn(), createOrder: jest.fn() };
 const scope = { broker, accountId: 'fixture', mode: 'paper' } as unknown as AccountScope;
-let position: any;
+let position: any; let importedPosition: any;
 beforeEach(() => {
   jest.clearAllMocks();
   position = { id: 'position', accountId: 'fixture', brokerMode: 'paper', asset: 'AAPL', market: 'stocks',
-    quantity: 10, entryPrice: 100, status: 'OPEN', openedAt: new Date() };
+    quantity: 10, entryPrice: 100, status: 'OPEN', openedAt: new Date(), scopeKey: 'fixture:paper:AAPL' };
   broker.listPositionsVerified.mockResolvedValue([{ asset_class: 'us_equity', asset_id: 'asset', symbol: 'AAPL', side: 'long',
     qty: '6', avg_entry_price: '101', current_price: '90' }]);
   broker.listActivitiesVerified.mockResolvedValue([]);
   (prisma.position.findMany as jest.Mock).mockResolvedValue([position]);
   (prisma.position.findUnique as jest.Mock).mockResolvedValue(position);
-  (prisma.position.findUniqueOrThrow as jest.Mock).mockResolvedValue(position);
+  (prisma.position.findUniqueOrThrow as jest.Mock).mockImplementation(async ({ where }) => where.id === 'observed-new' ? importedPosition : position);
+  (prisma.position.update as jest.Mock).mockImplementation(async ({ data }) => Object.assign(position, data));
   (prisma.executionIntent.findFirst as jest.Mock).mockResolvedValue(null);
   (prisma.$transaction as jest.Mock).mockImplementation(async work => work(prisma));
-  (prisma.position.upsert as jest.Mock).mockImplementation(async ({ update }) => ({ ...position, ...update }));
+  (prisma.position.upsert as jest.Mock).mockImplementation(async ({ create, update }) => {
+    if (position.scopeKey === null) { importedPosition = { ...create, id: 'observed-new', openedAt: new Date() }; return importedPosition; }
+    return { ...position, ...update };
+  });
   (verifyPositionInventory as jest.Mock).mockRejectedValue(new Error('BROKER_INVENTORY_AND_EXECUTION_LOTS_DISAGREE'));
 });
 test('a reduced broker holding remains a distinct observation and cannot rewrite known inventory/basis', async () => {
@@ -45,10 +49,15 @@ test('broker-flat without known execution evidence retains unknown attribution a
   expect(result.unresolved).toContain('AAPL'); expect(broker.createOrder).not.toHaveBeenCalled();
   expect(prisma.position.upsert).not.toHaveBeenCalled();
 });
-test('a later holding observation cannot silently reopen a confirmed closed lifecycle', async () => {
+test('an unmatched holding gets a visible OPEN opening balance while its closed historical cycle stays preserved', async () => {
   position.status = 'CLOSED';
   (prisma.position.findMany as jest.Mock).mockResolvedValue([]);
   const result = await syncBrokerPositions(scope);
-  expect(result.unresolved).toContain('AAPL'); expect(prisma.position.upsert).not.toHaveBeenCalled();
-  expect(prisma.trade.create).not.toHaveBeenCalled();
+  expect(result.imported).toContain('AAPL');
+  expect(position).toMatchObject({ id: 'position', status: 'CLOSED', quantity: 10, entryPrice: 100, scopeKey: null });
+  expect(importedPosition).toMatchObject({ id: 'observed-new', status: 'OPEN', quantity: 6, brokerObservedQuantity: 6 });
+  expect(prisma.trade.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    positionId: 'observed-new', brokerConfirmed: false, metadata: expect.objectContaining({ historyAvailable: false, precedingClosedPositionId: 'position' }),
+  }) }));
+  expect(broker.createOrder).not.toHaveBeenCalled();
 });

@@ -8,6 +8,7 @@ export interface PerformanceMetrics {
   riskDataComplete?: boolean;
   feeDataComplete?: boolean;
   accountingComplete?: boolean;
+  historyDataComplete?: boolean;
   knownRealizedPnl: number;
   knownUnrealizedPnl: number;
   totalEquity: number;
@@ -148,6 +149,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
     accountId: currentPortfolio.accountId, brokerMode: currentPortfolio.brokerMode,
     riskDataComplete: currentPortfolio.riskDataComplete, feeDataComplete: false,
     accountingComplete, knownRealizedPnl: round2(realizedPnl), knownUnrealizedPnl: round2(unrealizedPnl),
+    historyDataComplete: currentPortfolio.historyDataComplete,
     totalEquity: round2(totalEquity),
     cashBalance: round2(cashBalance),
     buyingPower: round2(buyingPower),

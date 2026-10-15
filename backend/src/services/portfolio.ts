@@ -28,6 +28,8 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     await prisma.position.update({ where: { id: position.id }, data: { currentPrice: price, unrealizedPnl: pnl, unrealizedPnlPct: pnlPct } });
   }
   const trades = await prisma.trade.findMany({ where: { ...where, status: { in: ['OPEN', 'CLOSED'] } } });
+  const historyDataComplete = trades.every(trade => !(trade.metadata && typeof trade.metadata === 'object'
+    && !Array.isArray(trade.metadata) && trade.metadata.historyAvailable === false));
   const hiddenDiscrepancies = await prisma.position.count({ where: { ...where, status: 'CLOSED', accountingStatus: 'RECONCILIATION_REQUIRED' } });
   const realizedPnl = trades.reduce((sum, trade) => sum + (trade.status === 'CLOSED' ? trade.pnl ?? 0 : trade.realizedPnl ?? 0), 0);
   const totalValue = summary.portfolio_value;
@@ -45,12 +47,13 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   return {
     accountId: scope.accountId, brokerMode: scope.mode, buyingPower: summary.buying_power,
     riskDataComplete: dayKnown && weekKnown,
-    accountingComplete: hiddenDiscrepancies === 0 && positions.every(position => position.accountingStatus === 'RECONCILED'),
+    historyDataComplete,
+    accountingComplete: historyDataComplete && hiddenDiscrepancies === 0 && positions.every(position => position.accountingStatus === 'RECONCILED'),
     totalValue, cashBalance: summary.cash, invested, pnlDay, pnlDayPct, pnlWeekPct,
     pnlTotal: realizedPnl + unrealizedPnl,
     positions: positions.map(position => position.accountingStatus === 'RECONCILED' ? position
       : { ...position, unrealizedPnl: null, unrealizedPnlPct: null }),
-    tradesExecutedToday: await prisma.trade.count({ where: { ...where, openedAt: { gte: today }, status: { in: ['OPEN', 'CLOSED'] } } }),
+    tradesExecutedToday: await prisma.trade.count({ where: { ...where, brokerConfirmed: true, openedAt: { gte: today }, status: { in: ['OPEN', 'CLOSED'] } } }),
     dailyLossToday: Math.max(0, -pnlDay), drawdownFromPeak: (peakValue - totalValue) / peakValue * 100,
   };
 }
