@@ -164,7 +164,7 @@ export default function DashboardPage() {
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
           >
             <Play size={13} />
-            <span>{debateMutation.isPending ? 'STARTING COUNCIL...' : selectedAsset ? `TRIGGER COUNCIL ON ${selectedAsset}` : 'PICK A SYMBOL'}</span>
+            <span>{debateMutation.isPending ? 'STARTING COUNCIL...' : selectedAsset ? `RESEARCH ONLY: ${selectedAsset}` : 'PICK A SYMBOL'}</span>
           </button>
 
           <button
@@ -249,13 +249,13 @@ export default function DashboardPage() {
       {/* Per-asset agent reasoning, win rate, trade frequency, strategy adaptation */}
       <AgentActivityTable />
 
-      {/* ── Market Intelligence Suite (OpenTerminal 5-panel + Polymarket Greed) */}
+      {/* ── Market observations (OpenTerminal 5-panel + Polymarket Greed) */}
       <div>
         <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
           <BarChart2 size={20} className="text-blue-600" />
-          Market Intelligence Suite
+          Market observations
           <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-            LIVE
+            SOURCE STATUS BELOW
           </span>
         </h2>
 
@@ -282,13 +282,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Macro Intelligence Suite (FinceptTerminal + OpenTerminal panels) ─── */}
+      {/* ── Macro observations (FinceptTerminal + OpenTerminal panels) ─── */}
       <div>
         <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
           <Globe size={20} className="text-emerald-600" />
-          Macro Intelligence Suite
+          Macro observations
           <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-            FINCEPT + OPENTERMINAL
+            PROVIDER COVERAGE VARIES
           </span>
         </h2>
 
