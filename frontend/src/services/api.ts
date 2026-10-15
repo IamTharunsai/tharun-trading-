@@ -52,8 +52,8 @@ export const getPredictions = () => api.get('/market/predictions').then(r => r.d
 export const scanPredictions = () => api.post('/market/predictions/scan').then(r => r.data);
 export const wagerPrediction = (predictionId: string, outcome: 'YES' | 'NO', amount: number) =>
   api.post('/market/predictions/wager', { predictionId, outcome, amount }).then(r => r.data);
-export const runAiDeepDive = (symbol: string, assetClass = 'stock') =>
-  api.post('/market/ai-deep-dive', { symbol, assetClass }).then(r => r.data);
+export const runAiDeepDive = (symbol: string, assetClass = 'stock', signal?: AbortSignal) =>
+  api.post('/market/ai-deep-dive', { symbol, assetClass }, { timeout: 50_000, signal }).then(r => r.data);
 export const triggerDebate = (asset: string, market = 'stocks') =>
   api.post('/agents/trigger-debate', { asset, market }).then(r => r.data);
 export const runDebate = triggerDebate;
