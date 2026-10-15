@@ -1,6 +1,7 @@
+import { privateResponse } from '../middleware/privateResponse';
 import { entryDecisionWhere } from '../trading/decisionVisibility';
 import { Router, Request, Response } from 'express';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireOwner, AuthRequest } from '../middleware/auth';
 import { agentActivityMonitor } from '../services/agentActivityMonitor';
 import { geopoliticalDataService } from '../services/geopoliticalDataService';
 import { logger } from '../utils/logger';
@@ -13,7 +14,7 @@ agentMonitorRouter.use(requireAuth);
  * GET /api/monitor/activities
  * Get all agent activities (real-time)
  */
-agentMonitorRouter.get('/activities', async (req: AuthRequest, res: Response) => {
+agentMonitorRouter.get('/activities', privateResponse, requireOwner, async (req: AuthRequest, res: Response) => {
   try {
     const agentId = req.query.agentId ? parseInt(req.query.agentId as string) : undefined;
     const activityType = req.query.type as string;
@@ -40,7 +41,7 @@ agentMonitorRouter.get('/activities', async (req: AuthRequest, res: Response) =>
  * GET /api/monitor/activities/summary
  * Get agent activity summary
  */
-agentMonitorRouter.get('/activities/summary', async (req: AuthRequest, res: Response) => {
+agentMonitorRouter.get('/activities/summary', privateResponse, requireOwner, async (req: AuthRequest, res: Response) => {
   try {
     const summary = agentActivityMonitor.getActivitySummaryByAgent();
     return res.json(summary);
@@ -54,7 +55,7 @@ agentMonitorRouter.get('/activities/summary', async (req: AuthRequest, res: Resp
  * GET /api/monitor/learning
  * Get what agents have learned
  */
-agentMonitorRouter.get('/learning', async (req: AuthRequest, res: Response) => {
+agentMonitorRouter.get('/learning', privateResponse, requireOwner, async (req: AuthRequest, res: Response) => {
   try {
     const stats = agentActivityMonitor.getLearningStats();
     return res.json(stats);
@@ -157,7 +158,7 @@ agentMonitorRouter.get('/context', async (req: AuthRequest, res: Response) => {
  * GET /api/monitor/recent-decisions
  * Recent agent decisions from DB (works even after server restart)
  */
-agentMonitorRouter.get('/recent-decisions', async (req: AuthRequest, res: Response) => {
+agentMonitorRouter.get('/recent-decisions', privateResponse, requireOwner, async (req: AuthRequest, res: Response) => {
   try {
     const decisions = await prisma.agentDecision.findMany({
       where: entryDecisionWhere(),
@@ -192,7 +193,7 @@ agentMonitorRouter.get('/recent-decisions', async (req: AuthRequest, res: Respon
  * GET /api/monitor/status
  * Overall system status — what's running, how many positions open
  */
-agentMonitorRouter.get('/status', async (_req: AuthRequest, res: Response) => {
+agentMonitorRouter.get('/status', privateResponse, requireOwner, async (_req: AuthRequest, res: Response) => {
   try {
     const [openPositions, todayTrades, recentDecisions] = await Promise.all([
       prisma.position.count({ where: { status: 'OPEN' } }),
