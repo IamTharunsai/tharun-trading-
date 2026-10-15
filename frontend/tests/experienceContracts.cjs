@@ -107,6 +107,95 @@ test('unidentified events cannot contaminate sessions and the event cache is bou
   for (let i = 0; i < 40; i++) state = reduce(state, 'debate:start', { debateId: `id${i}`, asset: `S${i}` }, now + i);
   assert.equal(Object.keys(state).length, 32);
 });
+test('specialist receipt and round follow only that specialist event, never session progress', () => {
+  let state = reduce({}, 'debate:agent-speaking', { debateId: 'stages', agentId: 3, round: 1 }, now);
+  assert.equal(state.stages.agents[3].lastReceivedAt, now);
+  assert.equal(state.stages.agents[3].round, 1);
+  state = reduce(state, 'debate:agent-voted', {
+    debateId: 'stages', agentId: 3, agentName: 'The Sentiment Analyst', vote: 'HOLD', confidence: 70, openingArgument: 'Mixed source evidence',
+  }, now + 10);
+  const openingState = state.stages.agents[3];
+  state = reduce(state, 'debate:round', { debateId: 'stages', round: 3 }, now + 20);
+  assert.equal(state.stages.agents[3], openingState);
+  assert.equal(state.stages.agents[3].status, 'voted');
+  assert.equal(state.stages.agents[3].round, 1);
+  assert.equal(state.stages.agents[3].lastReceivedAt, now + 10);
+  assert.equal(state.stages.agents[2], undefined);
+  state = reduce(state, 'debate:final-vote', {
+    debateId: 'stages', agentId: 3, agentName: 'The Sentiment Analyst', finalVote: 'SELL', confidence: 75, finalReason: 'Negative evidence persisted',
+  }, now + 30);
+  assert.equal(state.stages.agents[3].round, 3);
+  assert.equal(state.stages.agents[3].lastReceivedAt, now + 30);
+  assert.equal(state.stages.entries[0].agentId, 3);
+  assert.equal(state.stages.entries[0].receivedAt, now + 10);
+  assert.equal(state.stages.entries[1].agentId, 3);
+  assert.equal(state.stages.entries[1].receivedAt, now + 30);
+  state = reduce(state, 'debate:agent-speaking', { debateId: 'unknown-round', agentId: 1 }, now + 40);
+  assert.equal(state['unknown-round'].agents[1].round, undefined);
+  assert.equal(state['unknown-round'].agents[1].lastReceivedAt, now + 40);
+});
+test('cross-examination attributes only explicit roster aliases and does not invent busy desks', () => {
+  const pairs = [
+    ['The Technician', 'Technician'], ['The Newshound', 'Newshound'],
+    ['The Sentiment Analyst', 'Sentiment Analyst'], ['The Fundamental Analyst', 'Fundamental Analyst'],
+    ['The Risk Manager', 'Risk Manager'], ['The Trend Prophet', 'Trend Prophet'],
+    ['The Volume Detective', 'Volume Detective'], ['The Whale Watcher', 'Whale Watcher'],
+    ['The Macro Economist', 'Macro Economist'], ["The Devil's Advocate", "Devil's Advocate"],
+    ['Elliott Wave', 'Elliott Wave'], ['Options Flow', 'Options Flow'],
+    ['Arbitrageur', 'Arbitrageur'], ['Quant Forecaster', 'Quant Forecaster'],
+  ];
+  let state = {};
+  for (const [index, [serverName, label]] of pairs.entries()) {
+    const id = `cross-${index}`;
+    state = reduce(state, 'debate:cross-examination', {
+      debateId: id, challenger: serverName, target: ` ${label.toUpperCase()} `,
+      challenge: 'Questioned the evidence', rebuttal: 'Supplied a response',
+    }, now + index);
+    assert.deepEqual(state[id].entries.map(entry => entry.agentId), [index + 1, index + 1]);
+    assert.deepEqual(state[id].entries.map(entry => entry.receivedAt), [now + index, now + index]);
+    assert.deepEqual(state[id].agents, {});
+  }
+  state = reduce(state, 'debate:cross-examination', {
+    debateId: 'unknown-alias', challenger: 'Sentiment Analyst backup', target: 'constructor',
+    challenge: 'Unattributed text', rebuttal: 'Unknown participant',
+  }, now + 20);
+  assert.equal(state['unknown-alias'].entries[0].agentId, undefined);
+  assert.equal(state['unknown-alias'].entries[1].agentId, undefined);
+});
+test('complete transcripts retain stable specialist IDs and record receipt rather than historical event time', () => {
+  const state = reduce({}, 'debate:complete', { debateId: 'restored-evidence', transcript: {
+    asset: 'ABC', finalDecision: 'HOLD', executionApproved: false,
+    round1: [
+      { agentId: 3, agentName: 'The Sentiment Analyst', argument: 'Opening evidence', vote: 'HOLD', receivedAt: 1 },
+      { agentId: '3', agentName: 'The Sentiment Analyst', argument: 'No numeric identity supplied', vote: 'HOLD' },
+    ],
+    round2: [{ challenger: 'Sentiment Analyst', target: 'The Risk Manager', challenge: 'Risk question', rebuttal: 'Risk answer' }],
+    round3: [{ agentId: 3, agentName: 'The Sentiment Analyst', finalVote: 'HOLD', confidence: 75, reason: 'Mixed evidence', timestamp: 1 }],
+  } }, now);
+  const session = state['restored-evidence'];
+  assert.deepEqual(session.entries.map(entry => entry.agentId), [3, undefined, 3, 5, 3]);
+  assert.ok(session.entries.every(entry => entry.receivedAt === now));
+  assert.equal(session.agents[3].lastReceivedAt, now);
+  assert.equal(session.agents[3].round, 3);
+  assert.equal(session.agents[5], undefined);
+  assert.equal(session.result.tradeExecuted, undefined);
+});
+test('attributed evidence remains bounded and isolated between concurrent sessions', () => {
+  let state = reduce({}, 'debate:final-vote', {
+    debateId: 'other-session', agentId: 4, finalVote: 'SELL', confidence: 80, finalReason: 'Weak fundamentals',
+  }, now);
+  const other = state['other-session'];
+  for (let i = 0; i < 305; i++) {
+    state = reduce(state, 'debate:agent-voted', {
+      debateId: 'busy-session', agentId: 1, vote: 'BUY', confidence: 65, openingArgument: `Evidence ${i}`,
+    }, now + i + 1);
+  }
+  assert.equal(state['other-session'], other);
+  assert.equal(state['busy-session'].entries.length, 300);
+  assert.equal(state['busy-session'].entries[0].content, 'Evidence 5');
+  assert.equal(state['busy-session'].entries[0].receivedAt, now + 6);
+  assert.ok(state['busy-session'].entries.every(entry => entry.agentId === 1));
+});
 test('CSV exports distinguish real losses from untrusted formulas and preserve missing values', () => {
   assert.equal(csvCell(-12.5), '"-12.5"');
   for (const value of ['=HYPERLINK("https://example.invalid")', ' +1', '@SUM(1,2)', '\t=1', '-12.5']) {
