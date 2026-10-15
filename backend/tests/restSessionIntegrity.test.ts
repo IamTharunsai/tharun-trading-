@@ -16,6 +16,7 @@ jest.mock('../src/services/portfolio', () => ({ getPortfolioState: jest.fn() }))
 jest.mock('../src/agents/orchestrator', () => ({ activateKillSwitch: jest.fn(), deactivateKillSwitch: jest.fn(), isKillSwitchActive: jest.fn() }));
 jest.mock('../src/trading/riskManager', () => ({ closePosition: jest.fn() }));
 jest.mock('../src/services/marketData', () => ({ getCurrentPrices: jest.fn() }));
+jest.mock('../src/services/groundedDeepDive', () => ({ parseDeepDiveInput: jest.fn(), runGroundedDeepDive: jest.fn(), DeepDiveUnavailable: class extends Error {} }));
 jest.mock('../src/routes/backtest', () => ({ __esModule: true, default: require('express').Router() }));
 jest.mock('../src/routes/chat', () => ({ chatRouter: require('express').Router() }));
 jest.mock('../src/routes/intelligence', () => ({ __esModule: true, default: require('express').Router() }));
