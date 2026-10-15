@@ -23,7 +23,7 @@ jest.mock('../src/routes/agentMonitor', () => ({ __esModule: true, default: requ
 
 import { prisma } from '../src/utils/prisma';
 import { logger } from '../src/utils/logger';
-import { requireAuth, requireOwner, revokeToken, isTokenRevoked, AUTH_STORE_DEADLINE_MS, MAX_PENDING_AUTH_STORE_OPERATIONS } from '../src/middleware/auth';
+import { requireAuth, requireOwner, revokeToken, isTokenRevoked, isTokenLocallyRevoked, AUTH_STORE_DEADLINE_MS, MAX_PENDING_AUTH_STORE_OPERATIONS } from '../src/middleware/auth';
 import { onSessionRevoked } from '../src/utils/sessionRevocation';
 import authRouter from '../src/routes/auth';
 
@@ -66,6 +66,10 @@ test('accepts an actual HS256 expiring token and only current database authority
   expect(response.statusCode).toBe(200); expect(privateWork).toHaveBeenCalledTimes(1);
   expect(userLookup).toHaveBeenCalledWith(expect.objectContaining({ where: { id: owner.id } }));
   expect(response.headers['cache-control']).toBe('no-store');
+});
+test('preserves valid legacy tokens without a jti', async () => {
+  const legacy = jwt.sign({ userId: owner.id, exp: NOW / 1000 + 7200 }, SECRET, { algorithm: 'HS256' });
+  expect((await request('/private', `Bearer ${legacy}`)).statusCode).toBe(200);
 });
 test.each(['MEMBER', 'ADMIN', '', null, undefined])('never promotes current database role %p from an OWNER token', async role => {
   userLookup.mockResolvedValue({ ...owner, role });
@@ -156,6 +160,25 @@ test('logout confirms only durable revocation and immediately notifies local tra
     expect(revokedCreate).toHaveBeenCalledWith({ data: { token: raw } }); expect(invalidated).toHaveBeenCalledTimes(1);
     expect((await request('/private', `Bearer ${raw}`)).statusCode).toBe(401);
   } finally { stop(); }
+});
+test('same-clock logins have fresh cryptographic session IDs and revoking one cannot conflate the other', async () => {
+  const first = await request('/api/auth/login', undefined, 'POST', { email: owner.email, password: 'fixture-password' });
+  const second = await request('/api/auth/login', undefined, 'POST', { email: owner.email, password: 'fixture-password' });
+  expect(first.statusCode).toBe(200); expect(second.statusCode).toBe(200);
+  const oldToken = first.payload.token; const freshToken = second.payload.token;
+  const oldClaims = jwt.verify(oldToken, SECRET) as jwt.JwtPayload;
+  const freshClaims = jwt.verify(freshToken, SECRET) as jwt.JwtPayload;
+  expect(oldClaims.iat).toBe(freshClaims.iat); expect(oldToken).not.toBe(freshToken);
+  expect(oldClaims.jti).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  expect(freshClaims.jti).not.toBe(oldClaims.jti);
+  const persisted = new Set<string>();
+  revokedCreate.mockImplementation(({ data }) => { persisted.add(data.token); return Promise.resolve({}); });
+  revokedLookup.mockImplementation(({ where }) => Promise.resolve(persisted.has(where.token) ? { token: where.token } : null));
+  expect((await request('/api/auth/logout', `Bearer ${oldToken}`, 'POST')).payload.revocationConfirmed).toBe(true);
+  expect(isTokenLocallyRevoked(oldToken)).toBe(true); expect(isTokenLocallyRevoked(freshToken)).toBe(false);
+  expect(await isTokenRevoked(freshToken)).toBe(false);
+  expect((await request('/private', `Bearer ${oldToken}`)).statusCode).toBe(401);
+  expect((await request('/private', `Bearer ${freshToken}`)).statusCode).toBe(200);
 });
 test('failed persistent logout stays locally revoked but never claims global invalidation or leaks raw errors/tokens', async () => {
   const raw = token(); revokedCreate.mockRejectedValue(new Error(`PRIVATE_DATABASE_DETAIL ${raw}`));

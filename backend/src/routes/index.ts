@@ -5,6 +5,7 @@ import { respondWithDashboardEvidence } from './dashboardMarketResponse';
 // ── AUTH ROUTES ───────────────────────────────────────────────────────────────
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { prisma } from '../utils/prisma';
@@ -77,7 +78,7 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       appConfig.JWT_SECRET,
-      { algorithm: 'HS256', expiresIn: '2h' }
+      { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
     );
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
@@ -165,7 +166,7 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
   const token = jwt.sign(
     { userId: user.id, email: user.email, role: 'OWNER' },
     appConfig.JWT_SECRET,
-    { algorithm: 'HS256', expiresIn: '2h' }
+    { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
   );
 
   res.status(201).json({

@@ -5,7 +5,12 @@ mandatory finite future `exp`, and a nonempty `userId` of at most 128 characters
 Bearer tokens are bounded to 8192 characters. Signature, allowed algorithm and
 `nbf`/expiry checks use the installed jsonwebtoken implementation; required claim
 shape is then checked explicitly. Issuer and audience requirements were not added,
-so current two-hour login/setup tokens remain compatible.
+so current two-hour login/setup tokens remain compatible. Newly issued tokens
+also have a cryptographically fresh UUID `jti`, so two logins at the same clock
+second are distinct server sessions. Verification does not require `jti` on old
+tokens. Already-issued identical legacy token strings remain the same credential;
+revocation necessarily affects every copy of that credential. A browser epoch
+alone cannot separate such credentials on the server.
 
 Current database identity is authoritative. A token's role/email cannot override
 the database. A missing/unknown role is never promoted to OWNER. The existing
