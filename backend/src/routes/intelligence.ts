@@ -1,3 +1,4 @@
+import { privateResponse } from '../middleware/privateResponse';
 /**
  * INTELLIGENCE & ACTIVITY API ROUTES
  * Exposes agent learning, geopolitical intelligence, and real-time activity feeds
@@ -5,7 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireOwner } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import agentActivityLogger from '../services/agentActivityLogger';
 import agentResourceLearning from '../services/agentResourceLearning';
@@ -41,7 +42,7 @@ export function buildMacroData(analysis: IntermarketData, fred?: MacroSnapshot |
  * GET /api/intelligence/activity/feed
  * Real-time activity feed of all agents
  */
-router.get('/activity/feed', requireAuth, async (req: Request, res: Response) => {
+router.get('/activity/feed', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const feed = await agentActivityLogger.getActivityFeed();
     res.json({
@@ -62,7 +63,7 @@ router.get('/activity/feed', requireAuth, async (req: Request, res: Response) =>
  * GET /api/intelligence/activity/agent/:agentId
  * Detailed activity trace for specific agent (last 24 hours)
  */
-router.get('/activity/agent/:agentId', requireAuth, async (req: Request, res: Response) => {
+router.get('/activity/agent/:agentId', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const agentId = parseInt(req.params.agentId);
     const hours = req.query.hours ? parseInt(req.query.hours as string) : 24;
@@ -94,7 +95,7 @@ router.get('/activity/agent/:agentId', requireAuth, async (req: Request, res: Re
  * GET /api/intelligence/activity/agent/:agentId/summary
  * Generate activity summary for agent
  */
-router.get('/activity/agent/:agentId/summary', requireAuth, async (req: Request, res: Response) => {
+router.get('/activity/agent/:agentId/summary', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const agentId = parseInt(req.params.agentId);
     const hours = req.query.hours ? parseInt(req.query.hours as string) : 24;
@@ -126,7 +127,7 @@ router.get('/activity/agent/:agentId/summary', requireAuth, async (req: Request,
  * GET /api/intelligence/activity/agent/:agentId/export
  * Export agent activity as JSON or CSV
  */
-router.get('/activity/agent/:agentId/export', requireAuth, async (req: Request, res: Response) => {
+router.get('/activity/agent/:agentId/export', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const agentId = parseInt(req.params.agentId);
     const format = (req.query.format as string) === 'csv' ? 'csv' : 'json';
@@ -316,7 +317,7 @@ router.get('/risk/macro', requireAuth, async (req: Request, res: Response) => {
  * GET /api/intelligence/dashboard
  * Unified dashboard data combining all intelligence
  */
-router.get('/dashboard', requireAuth, async (req: Request, res: Response) => {
+router.get('/dashboard', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const [feed, riskAssessment] = await Promise.all([
       agentActivityLogger.getActivityFeed(),
@@ -368,7 +369,7 @@ router.get('/dashboard', requireAuth, async (req: Request, res: Response) => {
  * POST /api/intelligence/learning/log-activity
  * POST an agent activity to the logger (called by agents during execution)
  */
-router.post('/learning/log-activity', requireAuth, async (req: Request, res: Response) => {
+router.post('/learning/log-activity', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const { agentId, agentName, activityType, asset, decision, confidence, reasoning, dataPoints, status } = req.body;
 

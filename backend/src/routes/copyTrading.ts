@@ -1,6 +1,7 @@
+import { privateResponse } from '../middleware/privateResponse';
 import { Router, Request, Response } from 'express';
 import { copyTradingEngine } from '../services/copyTradingEngine';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireOwner } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -26,7 +27,7 @@ router.get('/strategies', (_req: Request, res: Response) => {
  * GET /api/copy-trading/followers
  * Returns registered follower accounts & paper mirroring configurations
  */
-router.get('/followers', (_req: Request, res: Response) => {
+router.get('/followers', privateResponse, requireOwner, (_req: Request, res: Response) => {
   try {
     const followers = copyTradingEngine.getFollowers();
     res.json({ success: true, followers });
@@ -40,7 +41,7 @@ router.get('/followers', (_req: Request, res: Response) => {
  * POST /api/copy-trading/followers
  * Register new follower account with independent risk limits
  */
-router.post('/followers', (req: Request, res: Response) => {
+router.post('/followers', privateResponse, requireOwner, (req: Request, res: Response) => {
   try {
     const {
       name,
@@ -81,7 +82,7 @@ router.post('/followers', (req: Request, res: Response) => {
  * PATCH /api/copy-trading/followers/:id
  * Update risk settings or strategy subscriptions
  */
-router.patch('/followers/:id', (req: Request, res: Response) => {
+router.patch('/followers/:id', privateResponse, requireOwner, (req: Request, res: Response) => {
   try {
     const updated = copyTradingEngine.updateFollower(req.params.id, req.body);
     if (!updated) {
@@ -98,7 +99,7 @@ router.patch('/followers/:id', (req: Request, res: Response) => {
  * POST /api/copy-trading/followers/:id/toggle
  * Toggle active copying state (Pause / Resume)
  */
-router.post('/followers/:id/toggle', (req: Request, res: Response) => {
+router.post('/followers/:id/toggle', privateResponse, requireOwner, (req: Request, res: Response) => {
   try {
     const updated = copyTradingEngine.toggleFollowerStatus(req.params.id);
     if (!updated) {
@@ -115,7 +116,7 @@ router.post('/followers/:id/toggle', (req: Request, res: Response) => {
  * DELETE /api/copy-trading/followers/:id
  * Remove follower configuration
  */
-router.delete('/followers/:id', (req: Request, res: Response) => {
+router.delete('/followers/:id', privateResponse, requireOwner, (req: Request, res: Response) => {
   try {
     const success = copyTradingEngine.deleteFollower(req.params.id);
     if (!success) {
@@ -132,7 +133,7 @@ router.delete('/followers/:id', (req: Request, res: Response) => {
  * GET /api/copy-trading/audit-log
  * Returns immutable audit log of mirrored executions & slippage checks
  */
-router.get('/audit-log', (req: Request, res: Response) => {
+router.get('/audit-log', privateResponse, requireOwner, (req: Request, res: Response) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
     const logs = copyTradingEngine.getAuditLogs(limit);

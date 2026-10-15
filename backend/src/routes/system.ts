@@ -1,3 +1,4 @@
+import { privateResponse } from '../middleware/privateResponse';
 // ── SYSTEM STATUS ─────────────────────────────────────────────────────────────
 // One honest status endpoint for the top bar and Settings page: which services
 // are actually connected and healthy right now. Replaces hardcoded
@@ -15,7 +16,7 @@ router.use(requireAuth);
 
 const configured = (v?: string) => !isPlaceholderKey(v);
 
-router.get('/status', async (_req: Request, res: Response) => {
+router.get('/status', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   const [{ getLlmSpendToday }, { universe }, { getIntradayStatus }, { getLastBrokerSync }, { isKillSwitchActive }, pmUs] = await Promise.all([
     import('../agents/debateEngine'),
     import('../services/universeService'),

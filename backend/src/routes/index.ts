@@ -1,3 +1,4 @@
+import { privateResponse } from '../middleware/privateResponse';
 import { recordPredictionSimulation, listPredictionSimulations } from './predictionSimulation';
 import { entryDecisionWhere } from '../trading/decisionVisibility';
 import { respondWithDashboardEvidence } from './dashboardMarketResponse';
@@ -183,7 +184,7 @@ authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
 
 // ── /api/trades ───────────────────────────────────────────────────────────────
 export const tradesRouter = Router();
-tradesRouter.use(requireAuth);
+tradesRouter.use(privateResponse, requireOwner);
 
 tradesRouter.get('/', async (req: Request, res: Response) => {
   const { page = '1', limit = '50', asset, status, market } = req.query;
@@ -263,7 +264,7 @@ tradesRouter.post('/:id/close', requireOwner, async (req: Request, res: Response
 
 // ── /api/portfolio ────────────────────────────────────────────────────────────
 export const portfolioRouter = Router();
-portfolioRouter.use(requireAuth);
+portfolioRouter.use(privateResponse, requireOwner);
 
 portfolioRouter.get('/', async (_req: Request, res: Response) => {
   try {
@@ -356,7 +357,7 @@ portfolioRouter.get('/live-accounts', async (_req: Request, res: Response) => {
 export const agentsRouter = Router();
 agentsRouter.use(requireAuth);
 
-agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
+agentsRouter.post('/trigger-debate', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const { asset = 'BTC', market = 'crypto' } = req.body;
     const { runDebateForAsset } = await import('../jobs/scheduler');
@@ -444,14 +445,14 @@ agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Resp
   }
 });
 
-agentsRouter.get('/decisions', async (req: Request, res: Response) => {
+agentsRouter.get('/decisions', privateResponse, requireOwner, async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query;
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
   const decisions = await prisma.agentDecision.findMany({ where: entryDecisionWhere(), skip, take: parseInt(limit as string), orderBy: { timestamp: 'desc' } });
   res.json(decisions);
 });
 
-agentsRouter.get('/decisions/:id', async (req: Request, res: Response) => {
+agentsRouter.get('/decisions/:id', privateResponse, requireOwner, async (req: Request, res: Response) => {
   const decision = await prisma.agentDecision.findFirst({ where: entryDecisionWhere({ id: req.params.id }) });
   if (!decision) return res.status(404).json({ error: 'Not found' });
   res.json(decision);
@@ -589,7 +590,7 @@ marketRouter.get('/news', async (req: Request, res: Response) => {
   }
 });
 
-marketRouter.get('/predictions', async (req: Request, res: Response) => {
+marketRouter.get('/predictions', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null }, orderBy: { createdAt: 'desc' } });
     const enriched = predictions.map((p: any) => ({
@@ -603,7 +604,7 @@ marketRouter.get('/predictions', async (req: Request, res: Response) => {
   }
 });
 
-marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
+marketRouter.post('/predictions/scan', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   try {
     const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null } });
     res.json({
@@ -618,7 +619,7 @@ marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
 });
 
 // Polymarket US (regulated exchange) — account + market data. Owner-only.
-marketRouter.get('/polymarket-us/account', requireOwner, async (_req: Request, res: Response) => {
+marketRouter.get('/polymarket-us/account', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   try {
     const svc = await import('../services/polymarketUS');
     if (!svc.isPolymarketUSConfigured()) return res.json({ connected: false, reason: 'POLYMARKET_KEY_ID / POLYMARKET_SECRET_KEY not set' });
@@ -641,7 +642,7 @@ marketRouter.get('/polymarket-us/events', async (req: Request, res: Response) =>
 // (Brier / log loss vs. the market price, calibration buckets, paper P&L
 // after fees, expected vs. realized edge). Use it to prove an edge on paper
 // before considering live trading.
-marketRouter.get('/polymarket/scorecard', async (req: Request, res: Response) => {
+marketRouter.get('/polymarket/scorecard', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const days = Math.max(0, Math.min(3650, parseInt(String(req.query.days || '0')) || 0));
     const { computeScorecard } = await import('../services/polymarketEdge');
@@ -651,7 +652,7 @@ marketRouter.get('/polymarket/scorecard', async (req: Request, res: Response) =>
   }
 });
 
-marketRouter.get('/polymarket/edge/predictions', async (req: Request, res: Response) => {
+marketRouter.get('/polymarket/edge/predictions', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const take = Math.max(1, Math.min(500, parseInt(String(req.query.limit || '50')) || 50));
     const rows = await (prisma as any).polymarketPrediction.findMany({ orderBy: { createdAt: 'desc' }, take });
@@ -661,8 +662,8 @@ marketRouter.get('/polymarket/edge/predictions', async (req: Request, res: Respo
   }
 });
 
-marketRouter.post('/predictions/wager', requireOwner, recordPredictionSimulation);
-marketRouter.get('/predictions/simulations', requireOwner, listPredictionSimulations);
+marketRouter.post('/predictions/wager', privateResponse, requireOwner, recordPredictionSimulation);
+marketRouter.get('/predictions/simulations', privateResponse, requireOwner, listPredictionSimulations);
 
 marketRouter.post('/ai-deep-dive', async (req: Request, res: Response) => {
   try {
@@ -790,7 +791,7 @@ marketRouter.get('/all-stocks', async (req: Request, res: Response) => {
 });
 
 // ── Stock Universe — every asset agents have analyzed ─────────────────────────
-marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
+marketRouter.get('/stocks-universe', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   try {
     const [rawDecisions, allFundamentals, allTrades, openPositions, memories] = await Promise.all([
       (prisma.agentDecision?.groupBy ? prisma.agentDecision.groupBy({
@@ -919,7 +920,7 @@ marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
 });
 
 // ── Single stock detail — trades + decisions + candles ────────────────────────
-marketRouter.get('/stock/:symbol', async (req: Request, res: Response) => {
+marketRouter.get('/stock/:symbol', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
     const market = (req.query.market as string) || 'stocks';
@@ -967,7 +968,7 @@ marketRouter.get('/stock/:symbol/candles', async (req: Request, res: Response) =
 
 // ── /api/journal ──────────────────────────────────────────────────────────────
 export const journalRouter = Router();
-journalRouter.use(requireAuth);
+journalRouter.use(privateResponse, requireOwner);
 
 journalRouter.get('/', async (req: Request, res: Response) => {
   const { limit = '30' } = req.query;
@@ -981,7 +982,7 @@ journalRouter.get('/:date', async (req: Request, res: Response) => {
   res.json(journal);
 });
 
-journalRouter.post('/generate', requireAuth, async (_req: Request, res: Response) => {
+journalRouter.post('/generate', async (_req: Request, res: Response) => {
   const { generateDailyJournal } = await import('../services/journalGenerator');
   await generateDailyJournal();
   res.json({ message: 'Journal generated' });
@@ -989,7 +990,7 @@ journalRouter.post('/generate', requireAuth, async (_req: Request, res: Response
 
 // ── /api/settings ─────────────────────────────────────────────────────────────
 export const settingsRouter = Router();
-settingsRouter.use(requireAuth);
+settingsRouter.use(privateResponse, requireOwner);
 
 settingsRouter.get('/', async (_req: Request, res: Response) => {
   const { accountManager } = await import('../services/accountManager');
@@ -1065,7 +1066,7 @@ settingsRouter.post('/disconnect', requireOwner, async (req: Request, res: Respo
 export const killSwitchRouter = Router();
 killSwitchRouter.use(requireAuth);
 
-killSwitchRouter.post('/activate', async (_req: Request, res: Response) => {
+killSwitchRouter.post('/activate', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   activateKillSwitch();
   const { liquidateCurrentAccount } = await import('../trading/killLiquidation');
   const result = await liquidateCurrentAccount();
