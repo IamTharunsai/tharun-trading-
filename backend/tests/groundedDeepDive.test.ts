@@ -55,6 +55,11 @@ test('untimed data and provider errors produce unavailable, never a canned recom
   await expect(runGroundedDeepDive({ symbol: 'FIX', assetClass: 'stock' })).rejects.toThrow('evidence_unavailable');
   expect(llm).not.toHaveBeenCalled();
 });
+test('a dated daily bar cannot supply the missing timestamp of a different latest trade', async () => {
+  (getResearchStockQuote as jest.Mock).mockResolvedValue({ ...quote(), observedAt: null });
+  await expect(runGroundedDeepDive({ symbol: 'FIX', assetClass: 'stock' })).rejects.toThrow('evidence_unavailable');
+  expect(llm).not.toHaveBeenCalled();
+});
 test('crypto uses asset identity and refuses ambiguous symbols', async () => {
   expect((await loadResearchFacts({ symbol: 'BTC/USD', assetClass: 'crypto' }))[0].source).toBe('CoinGecko:bitcoin');
   (getDashboardCryptoAssets as jest.Mock).mockResolvedValue([{ id: 'one', symbol: 'BTC' }, { id: 'two', symbol: 'BTC' }]);

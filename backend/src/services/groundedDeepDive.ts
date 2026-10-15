@@ -33,8 +33,10 @@ export async function loadResearchFacts(input: DeepDiveInput): Promise<ResearchF
     if (!finite(quote.price) || quote.price <= 0 || !knownTime(quote.receivedAt)) throw new DeepDiveUnavailable('evidence_unavailable');
     const observedAt = knownTime(quote.observedAt) ? quote.observedAt : null;
     const periodStart = knownTime(quote.barPeriodStart) ? quote.barPeriodStart : null;
-    // An untimed cache value is insufficient grounding even when it has a price.
-    if (!observedAt && !periodStart) throw new DeepDiveUnavailable('evidence_unavailable');
+    // A different bar's time cannot supply provenance for an untimed trade.
+    if ((quote.priceKind === 'latest_trade' && !observedAt)
+      || (quote.priceKind === 'daily_bar_close' && !periodStart)
+      || !['latest_trade', 'daily_bar_close'].includes(quote.priceKind ?? '')) throw new DeepDiveUnavailable('evidence_unavailable');
     const base = { source: quote.source, receivedAt: quote.receivedAt };
     facts.push({ id: 'price', label: quote.priceKind === 'latest_trade' ? 'Latest trade price' : 'Daily bar close',
       value: quote.price, unit: 'USD', ...base, observedAt, periodStart: quote.priceKind === 'daily_bar_close' ? periodStart : null });
