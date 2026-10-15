@@ -44,9 +44,15 @@ test.each(['paper', 'live'])('status reports the connected paper runtime under g
   Object.assign(process.env, {
     TRADING_MODE: mode, LIVE_TRADING_CONFIRMED: 'I_ACCEPT_REAL_MONEY_RISK', POLYMARKET_US_LIVE: 'true',
   });
-  const route = (router as any).stack.find((layer: any) => layer.route?.path === '/status').route;
-  const response: any = { json: jest.fn().mockReturnThis() };
-  await route.stack[0].handle({}, response);
+  const response: any = { setHeader: jest.fn() };
+  await new Promise<void>((resolve, reject) => {
+    response.json = jest.fn(() => { resolve(); return response; });
+    // Traverse the registered guards as well as the status handler. Middleware
+    // additions must not turn this into a test of an assumed stack index.
+    (router as any).handle({ method: 'GET', url: '/status', headers: {}, query: {} }, response,
+      (error: unknown) => reject(error || new Error('Fixture status route did not respond')));
+  });
+  expect(response.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   expect(response.json).toHaveBeenCalledWith(expect.objectContaining({
     polymarket: expect.objectContaining({
       mode: 'paper', usConnected: true,

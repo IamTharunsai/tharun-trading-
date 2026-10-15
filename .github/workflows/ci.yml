@@ -155,7 +155,7 @@ jobs:
           --workdir /source --entrypoint /usr/bin/env node:22-bookworm-slim
           -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp TMPDIR=/tmp NODE_ENV=test
           DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:5432/fixture
-          /usr/bin/timeout --signal=KILL 240s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.private-runtime-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/privateRuntimeRoutes.test.ts'
+          /usr/bin/timeout --signal=KILL 240s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.private-runtime-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/privateRuntimeRoutes.test.ts tests/polymarketRuntime.test.ts'
 
   research-boundary:
     runs-on: ubuntu-latest
