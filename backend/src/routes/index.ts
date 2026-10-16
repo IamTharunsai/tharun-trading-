@@ -1,3 +1,4 @@
+import { deepDiveRouter } from './deepDive';
 import { privateResponse } from '../middleware/privateResponse';
 import { recordPredictionSimulation, listPredictionSimulations } from './predictionSimulation';
 import { entryDecisionWhere } from '../trading/decisionVisibility';
@@ -5,6 +6,7 @@ import { respondWithDashboardEvidence } from './dashboardMarketResponse';
 // ── AUTH ROUTES ───────────────────────────────────────────────────────────────
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { prisma } from '../utils/prisma';
@@ -21,10 +23,11 @@ import axios from 'axios';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 import rateLimit from 'express-rate-limit';
-import { revokeToken } from '../middleware/auth';
+import { revokeToken, boundedAuthStore } from '../middleware/auth';
 import { appConfig } from '../utils/config';
 
 export const authRouter = Router();
+authRouter.use(privateResponse);
 
 // Dedicated rate limiter for authentication attempts (10 attempts per 15 min per IP)
 const authLimiter = rateLimit({
@@ -74,9 +77,9 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 
     // Short-lived 2-hour access token
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role || 'OWNER' },
+      { userId: user.id, email: user.email, role: user.role },
       appConfig.JWT_SECRET,
-      { expiresIn: '2h' }
+      { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
     );
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
@@ -90,7 +93,7 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
       user: {
         id: user.id,
         email: user.email,
-        role: user.role || 'OWNER',
+        role: user.role,
         totpEnabled: user.totpEnabled
       }
     });
@@ -101,17 +104,21 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 
 // Secure logout with token revocation
 authRouter.post('/logout', requireAuth, async (req: AuthRequest, res: Response) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (token) {
-    await revokeToken(token);
+  const token = req.headers.authorization!.slice('Bearer '.length);
+  const result = await revokeToken(token);
+  if (!result.persisted) {
+    res.setHeader('Retry-After', '1');
+    return res.status(503).json({ success: false, revocationConfirmed: false, code: 'LOGOUT_UNCONFIRMED',
+      error: 'Session blocked on this server; persistent revocation is not confirmed.' });
   }
   const ipAddress = req.ip || 'unknown';
-  if (req.user?.email) {
-    await prisma.authAuditLog.create({
-      data: { email: req.user.email, ipAddress, action: 'LOGOUT', success: 1 }
-    }).catch(() => {});
+  const logoutEmail = req.user?.email;
+  if (logoutEmail) {
+    void boundedAuthStore(() => prisma.authAuditLog.create({
+      data: { email: logoutEmail, ipAddress, action: 'LOGOUT', success: 1 }
+    })).catch(() => {});
   }
-  res.json({ success: true, message: 'Logged out successfully. Session invalidated.' });
+  res.json({ success: true, revocationConfirmed: true, message: 'Persistent session revocation confirmed.' });
 });
 
 // Secure first-run Owner account setup (Only permitted when zero OWNER accounts exist in database)
@@ -160,7 +167,7 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
   const token = jwt.sign(
     { userId: user.id, email: user.email, role: 'OWNER' },
     appConfig.JWT_SECRET,
-    { expiresIn: '2h' }
+    { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
   );
 
   res.status(201).json({
@@ -171,12 +178,11 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
 });
 
 authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
-  const user = await prisma.user.findUnique({ where: { id: req.userId } });
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  const user = req.user!;
   res.json({
     id: user.id,
     email: user.email,
-    role: user.role || 'OWNER',
+    role: user.role,
     totpEnabled: user.totpEnabled,
     lastLogin: user.lastLogin
   });
@@ -665,66 +671,7 @@ marketRouter.get('/polymarket/edge/predictions', privateResponse, requireOwner, 
 marketRouter.post('/predictions/wager', privateResponse, requireOwner, recordPredictionSimulation);
 marketRouter.get('/predictions/simulations', privateResponse, requireOwner, listPredictionSimulations);
 
-marketRouter.post('/ai-deep-dive', async (req: Request, res: Response) => {
-  try {
-    const { symbol, assetClass = 'stock' } = req.body || {};
-    if (!symbol) return res.status(400).json({ error: 'symbol is required' });
-    let analysis = '';
-
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const { GoogleGenAI } = await import('@google/genai');
-        const ai = new GoogleGenAI();
-        const prompt = `You are the Lead Quantitative Researcher and Chief Risk Officer at an elite autonomous quantitative hedge fund (Bloomberg Terminal / Institutional tier).
-Conduct a comprehensive, surgical, deep-dive analysis on ${symbol} (${assetClass}).
-Provide:
-1. Executive Verdict (STRONG BUY, BUY, NEUTRAL, TRIM, SHORT) with Conviction Score (0-100%)
-2. Multi-Timeframe Technical Microstructure (Order flow, Key Liquidity Pools, Wyckoff Accumulation/Distribution Phase, Support/Resistance)
-3. Fundamental & Macro Catalyst Analysis (DCF Multiple, Margin of Safety, Earnings Catalysts, Fed Rate Sensitivity)
-4. Polymarket / Sentiment Alignment (Smart money positioning, Put/Call Skew, Retail Sentiment Divergence)
-5. Institutional Execution Parameters: Exact Entry Price, Trailing Stop-Loss (in $ and %), Take-Profit Target 1, Target 2, Recommended Kelly Criterion Position Size (0-15% of portfolio).
-Keep it dense, quantitative, institutional, and structured with clear headings.`;
-
-        const resAi = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt
-        });
-        analysis = resAi.text || '';
-      } catch (e: any) {
-        console.warn('Gemini deep dive fallback:', e.message);
-      }
-    }
-
-    if (!analysis) {
-      analysis = `### 1. Executive Verdict: STRONG ACCUMULATION (86% Conviction)
-${symbol} presents an institutional asymmetric risk/reward opportunity. Multi-timeframe trend structure exhibits pristine higher-low compression with institutional absorption at key volume shelf nodes.
-
-### 2. Microstructure & Technical Alignment
-- **Market Structure**: Wyckoff Phase D (Sign of Strength) confirmation.
-- **Liquidity Pools**: Resting sell-side liquidity at +4.8% and +9.2% above current price.
-- **Momentum & Volatility**: RSI (14) sitting at 58.4 in healthy expansion corridor; Bollinger Band contraction suggests impending volatility breakout.
-
-### 3. Macro & Quantitative Catalysts
-- Zero debt refinancing drag over next 24 months; operating leverage accelerating.
-- Correlation to broader indices remains contained (Beta: 1.18), providing idiosyncratic alpha.
-
-### 4. Risk-Weighted Execution Parameters
-- **Recommended Entry**: Market / Limit at current bid-ask midpoint.
-- **Dynamic Hard Stop-Loss**: -3.4% below swing liquidity sweep.
-- **Take-Profit Targets**: TP1 @ +6.2% (scale 50%), TP2 @ +12.8% (runner).
-- **Kelly Sizing**: 8.5% of total portfolio equity.`;
-    }
-
-    res.json({
-      symbol,
-      assetClass,
-      analysis,
-      timestamp: new Date().toISOString()
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'AI Deep Dive failed' });
-  }
-});
+marketRouter.use('/ai-deep-dive', deepDiveRouter);
 
 // ── Upcoming IPOs (Finnhub, cached 6h) ─────────────────────────────────────────
 marketRouter.get('/ipo-calendar', async (_req: Request, res: Response) => {

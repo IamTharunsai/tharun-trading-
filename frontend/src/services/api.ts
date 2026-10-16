@@ -1,23 +1,13 @@
 import axios from 'axios';
 import { useStore } from '../store';
-import { belongsToCurrentSession } from '../utils/sessionResponse';
+import { createSessionApi } from './sessionApi';
+import { logoutSession } from './sessionLogout';
 
-const api = axios.create({ baseURL: `${import.meta.env.VITE_API_URL || ''}/api`, timeout: 15000 });
-
-api.interceptors.request.use((config) => {
-  const token = useStore.getState().token;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    const authorization = err.config?.headers?.get?.('Authorization') ?? err.config?.headers?.Authorization;
-    if (err.response?.status === 401 && belongsToCurrentSession(authorization, useStore.getState().token)) useStore.getState().logout();
-    return Promise.reject(err);
-  }
-);
+const baseURL = `${import.meta.env.VITE_API_URL || ''}/api`;
+const api = createSessionApi(useStore, baseURL);
+// Captured-token revocation must bypass the interceptor that attaches the latest token.
+const revocationClient = axios.create({ baseURL, timeout: 5000 });
+export const logoutCurrentSession = () => logoutSession(useStore, revocationClient);
 
 // ── AUTH ─────────────────────────────────────────────────────────────────────
 export const login = (email: string, password: string, totpCode?: string) =>
@@ -52,8 +42,8 @@ export const getPredictions = () => api.get('/market/predictions').then(r => r.d
 export const scanPredictions = () => api.post('/market/predictions/scan').then(r => r.data);
 export const wagerPrediction = (predictionId: string, outcome: 'YES' | 'NO', amount: number) =>
   api.post('/market/predictions/wager', { predictionId, outcome, amount }).then(r => r.data);
-export const runAiDeepDive = (symbol: string, assetClass = 'stock') =>
-  api.post('/market/ai-deep-dive', { symbol, assetClass }).then(r => r.data);
+export const runAiDeepDive = (symbol: string, assetClass = 'stock', signal?: AbortSignal) =>
+  api.post('/market/ai-deep-dive', { symbol, assetClass }, { timeout: 50_000, signal }).then(r => r.data);
 export const triggerDebate = (asset: string, market = 'stocks') =>
   api.post('/agents/trigger-debate', { asset, market }).then(r => r.data);
 export const runDebate = triggerDebate;
