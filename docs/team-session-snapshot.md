@@ -1,0 +1,36 @@
+# Observed committee session readback
+
+`GET /api/agents/sessions` is a read-only current-owner endpoint with `Cache-Control: no-store`. Current database identity/revocation and configured-owner-email semantics use the existing guards. Ordinary authenticated members cannot read it. It shares the owner's committee research scope; it does not create tenant-scoped committees or change trading permission.
+
+The questions this instrumentation answers are: Which committee sessions did this process actually observe? Which specialist/coordinator receipts and safe failures arrived for each explicit debate ID? Which observations can a reconnecting client recover, and which gaps remain because of process, time, or memory limits?
+
+## Contract, version 1
+
+The TypeScript exports `TeamSession`, `TeamReceipt`, `SessionObservation`, and `TeamSessionContext` in `backend/src/services/teamSessions.ts` define the projection. The response contains:
+
+- `schemaVersion: 1`, `capturedAt` (server readback time, milliseconds since epoch).
+- `process: { id, coverageStartedAt, scope: 'current-process-only', durable: false }`. The opaque random UUID contains no host or OS identity. A restarted process has a new ID and an empty registry. Other replicas have independent coverage.
+- `limits: { maxSessions: 32, maxEntriesPerSession: 96, retentionMs: 3600000, maxTextChars: 2048 }`; `counters` reports accepted/ignored events and expired sessions, evicted sessions and evicted entries. Sessions expire after an hour without an observed event, on the next read or observation. At most 32 remain; least recently observed sessions are evicted first. Eviction is a coverage gap, never a failure outcome.
+- `semantics` explicitly marks execution liveness unknown, heartbeat absent, socket subscriber delivery untracked, and includes `ENTRY` and `RESEARCH` while excluding `POSITION_REVIEW`. The latest transport-availability flag only means the source had a transport object, not that any client received an event.
+- `roster.specialists` has the actual 14 canonical source IDs/names; `roster.coordinator` is separate.
+- `sessions`, most recently observed first. Each session has the explicit debate `id`, literal `asset`, `market`, `purpose`, `firstObservedAt`, `lastObservedAt`, `lastSequence`, last observed `stage`, and `status: incomplete | complete | failed`. These are observations, not a promise work is still running.
+
+Each session records `marketSnapshotAt` from the literal input snapshot assembly timestamp, and `exchangeObservedAt: null`: no verified exchange timestamp is available here. Each receipt has `receivedAt` from the server capture clock and optional explicit source-event `sourceEventAt` (otherwise null). These clocks must not be presented as exchange freshness. `resumedFromCheckpoint` and optional `checkpointStage` describe the real start. Checkpoint contents are not replayed as new specialist receipts or current execution.
+
+`entries` is an ordered bounded list of allowlisted actual observations. Receipts carry `processId`, process-wide `sequence`, `receivedAt`, original `event`, normalized `kind`, source `investment-committee-event`, and optional round/canonical agent ID/name, content/vote/confidence, or fixed `errorCode`. Content exposes `contentTruncated` and `originalCharacters`. A challenge and response produce two entries with the same event sequence, distinct kinds/agent IDs. `observedEventCount` counts source events, while `droppedEntryCount` and `entriesTruncated` describe discarded timeline entries. `agents[id].lastObservation` and the separate coordinator receipt retain the latest observed receipt even when early timeline entries are dropped.
+
+Only the real opening `debate:agent-speaking` event creates an analyzing receipt. The engine has a global final-voting stage and individual final-vote receipts, but no per-specialist final-start event. A global stage must never make every agent appear busy. Generic monitor activity has no debate ID and is not captured, inferred, or joined by asset. Concurrent same-asset sessions remain separate UUIDs.
+
+Successful committee completion includes a small allowlisted `result`: direction/confidence, committee approval flag, synthesis/block reason with explicit text truncation/original-length fields, actual `decisionId` only if storage returned one, transcript assembly time, and `tradeExecution: 'not-observed'`. The engine completion precedes scheduler/broker execution. No order success is inferred from committee approval. No decision URL or durable transcript identity is manufactured; a client may link an actually available persisted decision using its actual ID and existing visibility rules. Full transcript inputs, account/portfolio context, prompts, credentials, private chats and raw provider/DB errors are not part of the projection. Research text is untrusted display content and should be rendered as plain text.
+
+Safe observed failures have fixed codes: `opening_unavailable`, `final_unavailable`, `cross_examination_unavailable`, `coordinator_unavailable`, `decision_persistence_failed`, and fatal `session_failed`. Engine catches emit diagnostics without including raw errors. A fatal rejection sets failed; a handled source failure can still lead to committee completion. Mere silence, age, disconnect, or retention never creates a failed event.
+
+## Socket and REST reconciliation
+
+`createDebateEventEmitter` is the single explicit source emit path for this committee. Existing debate events gain additive `sessionObservation: { processId, sequence, receivedAt }`. Start also carries literal purpose/market/snapshot timestamp, null exchange timestamp and checkpoint metadata. Cross-examination adds actual numeric challenger/target IDs; new safe failure events are `debate:agent-error` and `debate:error`. No Socket.IO monkeypatch or global monitor capture is used. Held-position review returns before both registry capture and socket delivery.
+
+A client can merge observations by process ID, debate ID, event sequence, and receipt kind/agent ID (a cross-examination has two receipts). Prefer the higher observed sequence, not guessed stage ranks or arrival clock ordering. Missing agents are unknown; no receipt is evidence of current execution. A REST session absent after retention may remain in a client's old cache but must not be represented as retained server coverage. Persisted decision history is separate and is not restored into this process registry. Existing socket clients without observation metadata continue receiving the original event fields.
+
+## Validation boundary
+
+Dedicated CI prepares dependencies/generated types, then runs TypeScript and actual-source/mock-provider tests inside an offline, read-only, nonroot Docker container with dummy environment and bounded CPU, memory, PIDs, temp space, file size and wall time. Tests exercise actual engine emits, explicit session concurrency, checkpoint non-replay, source catches, private held-review exclusion, bounded text/session/timeline retention, independent timestamps, real signed JWT/current-owner route authorization, and actual application route registration with business dependencies replaced before import. They do not call providers, a live database, brokers, or orders, and they do not certify broader backend or financial readiness.

@@ -19,6 +19,7 @@ jest.mock('../src/routes/backtest', () => ({ __esModule: true, default: require(
 jest.mock('../src/routes/chat', () => ({ chatRouter: require('express').Router() }));
 jest.mock('../src/services/groundedDeepDive', () => ({ parseDeepDiveInput: jest.fn(), runGroundedDeepDive: jest.fn(), DeepDiveUnavailable: class extends Error {} }));
 jest.mock('../src/services/portfolio', () => ({ getPortfolioState: jest.fn().mockResolvedValue({ positions: [{ id: 'PRIVATE_POSITION' }] }) }));
+jest.mock('../src/services/teamSessions', () => ({ teamSessionRegistry: { snapshot: jest.fn().mockReturnValue({ sessions: [{ id: 'PRIVATE_SESSION' }] }) } }));
 jest.mock('../src/services/portfolioAccounting', () => ({ calculateAuthenticatedPortfolio: jest.fn().mockResolvedValue({ totalValue: 123, dataSource: 'PRIVATE_ACCOUNT', timestamp: 'fixture' }) }));
 jest.mock('../src/services/positionResearch', () => ({ getPositionResearchStatus: jest.fn().mockResolvedValue([]), getPositionResearchDecision: jest.fn().mockResolvedValue(null) }));
 jest.mock('../src/agents/orchestrator', () => ({ activateKillSwitch: jest.fn(), deactivateKillSwitch: jest.fn(), isKillSwitchActive: jest.fn().mockReturnValue(false) }));
@@ -96,6 +97,7 @@ const privateReads: Endpoint[] = [
   ...['', '/breakdown', '/db-health', '/snapshots?days=1', '/positions', '/live-accounts', '/position-research', '/position-research/fixture'].map(path => ['GET', `/api/portfolio${path}`] as Endpoint),
   ['GET', '/api/journal'], ['GET', '/api/journal/2026-01-01'], ['GET', '/api/settings'],
   ['GET', '/api/agents/decisions?page=2'], ['GET', '/api/agents/decisions/fixture'],
+  ['GET', '/api/agents/sessions'],
   ...['/activities?recent=10', '/activities/summary', '/learning', '/recent-decisions', '/status'].map(path => ['GET', `/api/monitor${path}`] as Endpoint),
   ...['/stocks-universe', '/stock/AAPL', '/polymarket/scorecard', '/polymarket/edge/predictions', '/predictions'].map(path => ['GET', `/api/market${path}`] as Endpoint),
   ['POST', '/api/market/predictions/scan'],
@@ -117,6 +119,7 @@ const ownerMutations: Endpoint[] = [
 // Prewarm every mock at module scope; cold compilation/initialization is outside
 // individual five-second tests, and cannot lazily import a real financial module.
 const businessModules = [
+  '../src/services/teamSessions',
   '../src/services/portfolio', '../src/services/portfolioAccounting', '../src/services/positionResearch', '../src/services/groundedDeepDive', '../src/agents/orchestrator',
   '../src/trading/riskManager', '../src/trading/killLiquidation', '../src/jobs/scheduler', '../src/services/journalGenerator',
   '../src/services/marketData', '../src/services/accountManager', '../src/trading/brokerRouter', '../src/services/sentimentService',
@@ -172,6 +175,7 @@ describe.each([undefined, 'invalid', 'expired', 'revoked', 'deleted', 'member', 
 });
 
 const ownerPayloads: Array<[Endpoint, string]> = [
+  [['GET', '/api/agents/sessions'], 'PRIVATE_SESSION'],
   [['GET', '/api/portfolio'], 'PRIVATE_ACCOUNT'], [['GET', '/api/portfolio/positions'], 'PRIVATE_POSITION'],
   [['GET', '/api/settings'], 'PRIVATE_ACCOUNT'], [['GET', '/api/monitor/activities'], 'PRIVATE_ACTIVITY'],
   [['GET', '/api/monitor/learning'], 'PRIVATE_LEARNING'], [['GET', '/api/market/polymarket/scorecard'], 'PRIVATE_SCORECARD'],
