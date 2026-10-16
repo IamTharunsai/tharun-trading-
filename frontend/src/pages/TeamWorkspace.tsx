@@ -1,6 +1,6 @@
 import { CSSProperties, KeyboardEvent, ReactNode, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, CalendarDays, BarChart3, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign,
+import { BookOpen, CalendarDays, BarChart3, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Database,
   ExternalLink, FileText, LayoutGrid, MoreVertical, RefreshCw, Settings, AlertTriangle } from 'lucide-react';
 import { AGENTS, AGENTS_BY_ID } from '../constants/agents';
 import { EMPTY_WORKSPACE, SpecialistObservation, WorkspaceModel } from '../components/workspace/workspaceModel';
@@ -79,9 +79,9 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="welcome" className="rainlight-on-jade rainlight-welcome">Welcome back</Region>
         <Region id="main-heading" className="rainlight-on-jade rainlight-main-heading"><h1>Fourteen specialists. A clearer view.</h1></Region>
         <Region id="main-description" className="rainlight-on-jade rainlight-description">Understand what each specialist is doing, their evidence and handoffs, while positions and faults remain visible.</Region>
-        <Region id="mode-select" className="rainlight-header-control"><Link to="/settings">{model.modeLabel}<ChevronDown size={14} /></Link></Region>
+        <Region id="mode-select" className="rainlight-header-control"><Link to="/settings"><Database size={16} />{model.modeLabel}<ChevronDown size={14} /></Link></Region>
         <Region id="session-status" className="rainlight-header-control"><span><CalendarDays size={15} />{model.reviews.length} observed sessions<span className="rainlight-connection-dot" data-connection={model.connectionState} aria-label={model.connectionLabel} /></span></Region>
-        <Region id="fault-status" className="rainlight-header-control"><button onClick={() => { if (firstIssueReview?.issue) { setSelectedReviewId(firstIssueReview.id); selectSpecialist(firstIssueReview.issue.specialistId); } }} disabled={!firstIssueReview}><AlertTriangle size={15} />{model.observedFaultCount === null ? 'Unverified' : `${model.observedFaultCount} data fault${model.observedFaultCount === 1 ? '' : 's'}`}</button></Region>
+        <Region id="fault-status" className="rainlight-header-control"><button onClick={() => { if (firstIssueReview?.issue) { setSelectedReviewId(firstIssueReview.id); selectSpecialist(firstIssueReview.issue.specialistId); } }} disabled={!firstIssueReview}><AlertTriangle size={15} color={model.observedFaultCount !== null && model.observedFaultCount > 0 ? '#d83731' : undefined} />{model.observedFaultCount === null ? 'Unverified' : `${model.observedFaultCount} data fault${model.observedFaultCount === 1 ? '' : 's'}`}</button></Region>
         <Region id="account-menu" className="rainlight-header-control rainlight-account-menu"><Link to="/settings"><span className="rainlight-initials" aria-hidden="true">RC</span><span>Rainlight Commons<small>A more considered market.</small></span><ChevronDown size={13} /></Link></Region>
       </header>
       <nav className="rainlight-contents" aria-label="Main navigation">

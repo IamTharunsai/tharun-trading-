@@ -20,6 +20,8 @@
 .rainlight-contents { display: contents; }
 .rainlight-navigation-wash { position: absolute; inset: 0 auto 0 0; width: var(--r-navigation-w); background: rgba(5, 31, 29, .54); z-index: 1; }
 .rainlight-header-wash { position: absolute; left: var(--r-story-header-x); top: 0; width: var(--r-story-header-w); height: var(--r-story-header-h); z-index: 1; pointer-events: none; background: linear-gradient(to bottom, rgba(7, 34, 28, .08) 24%, rgba(7, 34, 28, .57) 35%, rgba(7, 34, 28, .66) 88%, #18352e); }
+/* Preserve the whole eastern plate inside the comp's quiet right margin. */
+.rainlight-plate--east { object-fit: contain; object-position: left top; padding-right: 2.54%; background: #18352e; }
 .rainlight-on-jade, .rainlight-brand { color: #f3f7f2; }
 .rainlight-brand { font-family: 'Alike', serif; font-size: 33px; line-height: 35px; }
 .rainlight-brand-description { font-size: 13px; line-height: 16px; }
@@ -64,10 +66,11 @@
 .rainlight-state--observed > span { background: #597c8d; }
 .rainlight-review-disc { background: rgba(7, 40, 31, .93); border-radius: 50%; z-index: 2; box-shadow: 0 1px 6px #0b251d33; }
 .rainlight-review-asset, .rainlight-review-text { text-align: center; color: #f1f5e8; z-index: 3; }
-.rainlight-review-asset { font-family: 'Alike', serif; font-size: 24px; line-height: 20px; transform: translateY(-2px); color: #f8f8ec; }
+.rainlight-review-asset { font-family: 'Alike', serif; font-size: 23px; line-height: 22px; transform: translateY(-1px); color: #f8f8ec; text-align: left; }
 .rainlight-review-text { font-size: 12px; line-height: 14px; font-stretch: 90%; white-space: nowrap; }
-.rainlight-review-text[data-region='review-market'] { font-size: 14px; transform: translateY(-2px); }
-.rainlight-review-caption { font-size: 12px; line-height: 16px; }
+.rainlight-review-text[data-region='review-market'] { font-size: 14px; font-stretch: 100%; transform: translateY(-2px); text-align: left; }
+.rainlight-review-text[data-region='review-stage'] { transform: translateY(-2px); }
+.rainlight-review-caption { font-size: 12px; line-height: 16px; font-stretch: 81%; }
 .rainlight-inspector-heading { font-size: 14px; line-height: 18px; }
 .rainlight-specialist-name { font-weight: 600; font-size: 17px; line-height: 21px; }
 .rainlight-specialist-state { display: flex; align-items: center; justify-content: center; background: #e5f1e4; border-radius: 3px; }
@@ -91,7 +94,7 @@
 .rainlight-decision-state { display: flex; align-items: center; justify-content: center; background: #f4e6b8; border-radius: 3px; color: #68501d; font-size: 12px; }
 .rainlight-execution-note { font-size: 11px; line-height: 15px; color: #4b655a; text-align: right; }
 .rainlight-request-research button { width: 100%; height: 100%; border: 1px solid #b5cbc1; border-radius: 3px; background: #f8faf4; color: #194c3b; display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 14px; }
-.rainlight-roster-heading { font-size: 13px; line-height: 17px; }
+.rainlight-roster-heading { font-size: 13px; line-height: 17px; transform: translateY(-3px); }
 .rainlight-roster-grid, .rainlight-roster-grid-right { display: grid; align-items: center; gap: 5px; }
 .rainlight-roster-grid { grid-template-columns: 100px 73px 93px minmax(0, 1fr) 76px; }
 .rainlight-roster-grid-right { grid-template-columns: minmax(0, 1fr) 90px 80px; }
