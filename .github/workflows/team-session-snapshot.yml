@@ -4,6 +4,26 @@ on:
   push:
     branches: [main]
 jobs:
+  deployment-workflow-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare pinned workflow validator
+        run: docker pull rhysd/actionlint:1.7.12
+      - name: Validate deployment expressions without network or deployment credentials
+        run: >-
+          timeout --signal=KILL 60s docker run --rm --pull=never
+          --network none --read-only --cap-drop ALL --security-opt no-new-privileges
+          --pids-limit 32 --memory 256m --cpus 1 --ulimit fsize=1048576:1048576
+          --user 65534:65534 --tmpfs /tmp:rw,nosuid,nodev,size=16m,mode=1777
+          --env HOME=/tmp --env TMPDIR=/tmp
+          --mount type=bind,src=${{ github.workspace }}/.github/workflows,dst=/workflows,readonly
+          rhysd/actionlint:1.7.12 -shellcheck= -pyflakes= /workflows/deploy.yml
   team-session-snapshot:
     runs-on: ubuntu-latest
     timeout-minutes: 10
