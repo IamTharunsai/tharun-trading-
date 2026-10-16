@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/prisma';
 import type { AccountScope } from '../trading/accountScope';
 import type { AlpacaActivity, AlpacaPortfolioHistory } from './alpacaBroker';
+import type { PortfolioState } from '../agents/types';
 
 export const RISK_STEP_MS = 300_000;
 const DAY = 86_400_000;
@@ -144,13 +145,17 @@ export function computeCashFlowRisk(points: RiskPoint[], now: Date, referenceAt:
  * A missing/mismatched or boundary-ambiguous transfer remains unverified. */
 export function capitalCoverage(points: RiskPoint[], activities: AlpacaActivity[], referenceAt: Date): string | null {
   const last = points[points.length - 1]?.endAt.getTime() ?? referenceAt.getTime();
+  const first = (points[0]?.endAt.getTime() ?? referenceAt.getTime()) - RISK_STEP_MS;
   for (const type of externalTypes) {
     const intervals: { from: number; to: number; amount: Prisma.Decimal }[] = [];
     for (const activity of activities.filter(a => a.activity_type === type)) {
       const evidence = activityEvidence(activity);
       if (!evidence.effectiveFrom || !evidence.effectiveTo || !evidence.amount) return 'CAPITAL_EFFECTIVE_DATE_UNAVAILABLE';
       if (evidence.effectiveTo.getTime() <= referenceAt.getTime() || evidence.effectiveFrom.getTime() >= last) continue;
-      intervals.push({ from: Math.max(referenceAt.getTime(), Math.floor(evidence.effectiveFrom.getTime() / RISK_STEP_MS) * RISK_STEP_MS),
+      // Retained pre-reference bins can prove that a date-only transfer near
+      // the boundary was already included in opening equity. Do not subtract it
+      // again or permanently strand an otherwise complete funded account.
+      intervals.push({ from: Math.max(first, Math.floor(evidence.effectiveFrom.getTime() / RISK_STEP_MS) * RISK_STEP_MS),
         to: Math.min(last, evidence.effectiveTo.getTime()), amount: evidence.amount });
     }
     intervals.sort((a, b) => a.from - b.from);
@@ -179,7 +184,10 @@ export async function readCashFlowRisk(scope: Scope, now: Date): Promise<CashFlo
   // State/status and its point projection must come from ONE database snapshot.
   // A concurrent unknown-journal revision (or failed scan changing only status)
   // must never combine its points with a previously VERIFIED state.
-  return prisma.$transaction(async tx => {
+  return prisma.$transaction(tx => readRiskProjection(tx, scope, now), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000 });
+}
+
+async function readRiskProjection(tx: Prisma.TransactionClient, scope: Scope, now: Date): Promise<CashFlowRiskMetrics> {
   const state = await tx.capitalRiskState.findUnique({ where: { scopeKey: keyFor(scope) } });
   if (!state) return empty('RISK_HISTORY_UNAVAILABLE');
   const rows = await tx.capitalRiskPoint.findMany({ where: { ...whereScope(scope), endAt: { gte: state.referenceAt } }, orderBy: { endAt: 'asc' } });
@@ -189,7 +197,65 @@ export async function readCashFlowRisk(scope: Scope, now: Date): Promise<CashFlo
   // returns after a failed scan. Raw NAV/position/recorded losses stay available.
   return state.status === 'VERIFIED' ? metrics : { ...metrics, complete: false, reason: state.error ?? 'CAPITAL_COVERAGE_UNAVAILABLE',
     dailyPnl: null, dailyPnlPct: null, weeklyPnl: null, weeklyPnlPct: null, weeklyDrawdownPct: null, drawdownPct: null };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000 });
+}
+
+/** Capture current NAV and the latest stored risk revision atomically relative
+ * to corrections. A portfolio read made before a late-flow commit cannot insert
+ * an obsolete adjusted snapshot after that commit's recomputation has finished. */
+export async function recordPortfolioObservation(portfolio: PortfolioState, now = new Date()) {
+  if (!portfolio.accountId || !portfolio.brokerMode) throw new Error('SCOPED_PORTFOLIO_REQUIRED');
+  const scope = { accountId: portfolio.accountId, mode: portfolio.brokerMode };
+  const scopeKey = keyFor(scope);
+  return prisma.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`;
+    const risk = await readRiskProjection(tx, scope, now);
+    return tx.portfolioSnapshot.create({ data: { ...whereScope(scope), timestamp: now,
+      totalValue: portfolio.totalValue, cashBalance: portfolio.cashBalance, invested: portfolio.invested,
+      pnlTotal: portfolio.pnlTotal, pnlTotalPct: portfolio.pnlTotal / Math.max(portfolio.totalValue, 1) * 100,
+      source: 'BROKER_ACCOUNT_OBSERVATION', riskDataComplete: risk.complete,
+      ...(risk.dailyPnl !== null ? { pnlDay: risk.dailyPnl } : {}),
+      ...(risk.dailyPnlPct !== null ? { pnlDayPct: risk.dailyPnlPct } : {}),
+      riskAsOf: risk.asOf ? new Date(risk.asOf) : null, riskReferenceAt: risk.referenceAt ? new Date(risk.referenceAt) : null,
+      riskRevision: risk.revision, riskRecomputedAt: now, adjustedDailyPnl: risk.dailyPnl,
+      adjustedDailyPnlPct: risk.dailyPnlPct, adjustedWeeklyPnlPct: risk.weeklyPnlPct, adjustedPeakLossPct: risk.drawdownPct,
+    } });
+  }, { timeout: 30_000 });
+}
+
+async function recomputeSnapshots(tx: Prisma.TransactionClient, scope: Scope, points: RiskPoint[],
+  referenceAt: Date, revision: number, now: Date, changedFrom: Date, coverageUnknown: boolean) {
+  const metrics = computeCashFlowRisk(points.filter(p => p.endAt >= referenceAt), now, referenceAt, revision);
+  const where = { ...whereScope(scope), riskAsOf: { gte: changedFrom } };
+  if (coverageUnknown || !metrics.complete) {
+    await tx.portfolioSnapshot.updateMany({ where, data: { riskDataComplete: false, riskRevision: revision,
+      riskRecomputedAt: now, adjustedDailyPnl: null, adjustedDailyPnlPct: null, adjustedWeeklyPnlPct: null, adjustedPeakLossPct: null } });
+    return;
+  }
+  // One set-based calculation revises every affected stored derived result.
+  // Raw NAV/legacy result columns and immutable broker observations stay intact.
+  await tx.$executeRaw`
+    WITH normalized AS (
+      SELECT "endAt", equity,
+        equity - SUM(CASE WHEN "endAt" > ${referenceAt.toISOString()}::timestamp THEN "externalCapital" ELSE 0 END)
+          OVER (ORDER BY "endAt") AS value
+      FROM "CapitalRiskPoint" WHERE "accountId" = ${scope.accountId} AND "brokerMode" = ${scope.mode} AND "endAt" >= ${referenceAt.toISOString()}::timestamp
+    ), series AS (
+      SELECT *, MAX(value) OVER (ORDER BY "endAt") AS peak FROM normalized
+    ), revised AS (
+      SELECT s.id, p.value, p.peak, d.value AS day_value, d.equity AS day_equity, w.value AS week_value, w.equity AS week_equity
+      FROM "PortfolioSnapshot" s JOIN series p ON p."endAt" = s."riskAsOf"
+      LEFT JOIN series d ON d."endAt" = date_trunc('day', s."riskAsOf")
+      LEFT JOIN series w ON w."endAt" = s."riskAsOf" - INTERVAL '7 days'
+      WHERE s."accountId" = ${scope.accountId} AND s."brokerMode" = ${scope.mode} AND s."riskAsOf" >= ${changedFrom.toISOString()}::timestamp
+    )
+    UPDATE "PortfolioSnapshot" s SET
+      "riskDataComplete" = COALESCE(r.day_equity > 0 AND r.week_equity > 0 AND r.peak > 0, false),
+      "riskReferenceAt" = ${referenceAt.toISOString()}::timestamp, "riskRevision" = ${revision}, "riskRecomputedAt" = ${now.toISOString()}::timestamp,
+      "adjustedDailyPnl" = CASE WHEN r.day_equity > 0 AND r.week_equity > 0 AND r.peak > 0 THEN r.value-r.day_value END,
+      "adjustedDailyPnlPct" = CASE WHEN r.day_equity > 0 AND r.week_equity > 0 AND r.peak > 0 THEN (r.value-r.day_value)/r.day_equity*100 END,
+      "adjustedWeeklyPnlPct" = CASE WHEN r.day_equity > 0 AND r.week_equity > 0 AND r.peak > 0 THEN (r.value-r.week_value)/r.week_equity*100 END,
+      "adjustedPeakLossPct" = CASE WHEN r.day_equity > 0 AND r.week_equity > 0 AND r.peak > 0 THEN GREATEST(0,(r.peak-r.value)/r.peak*100) END
+    FROM revised r WHERE r.id=s.id`;
 }
 
 /** Runs bounded HTTP reads outside PG transactions, then uses a scoped lock and
@@ -214,15 +280,16 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
     const previous = await prisma.capitalRiskActivity.findMany({ where });
     const prior = new Map(previous.map(activity => [activity.brokerActivityId, JSON.stringify(activity.evidence)]));
     let historyStart = new Date((before.coveredThrough?.getTime() ?? before.referenceAt.getTime()) - 2 * DAY);
-    historyStart = new Date(Math.max(before.referenceAt.getTime() - RISK_STEP_MS, historyStart.getTime()));
+    const evidenceStart = before.referenceAt.getTime() - 2 * DAY - RISK_STEP_MS;
+    historyStart = new Date(Math.max(evidenceStart, historyStart.getTime()));
     const requests = [{ from: historyStart.getTime(), to: end.getTime() }];
     for (const activity of activities) {
       const evidence = activityEvidence(activity);
       if ((evidence.external || !evidence.knownResult) && prior.get(activity.id) !== JSON.stringify(activity)) {
         // Re-fetch old EFFECTIVE bins even when the event was just CREATED.
         // Recompute all subsequent normalized values from retained absolute bins.
-        const affected = evidence.effectiveFrom?.getTime() ?? before.referenceAt.getTime() - RISK_STEP_MS;
-        const from = Math.max(before.referenceAt.getTime() - RISK_STEP_MS, Math.floor(affected / RISK_STEP_MS) * RISK_STEP_MS);
+        const affected = evidence.effectiveFrom?.getTime() ?? evidenceStart;
+        const from = Math.max(evidenceStart, Math.floor(affected / RISK_STEP_MS) * RISK_STEP_MS);
         const to = Math.min(end.getTime(), Math.ceil((evidence.effectiveTo?.getTime() ?? end.getTime()) / RISK_STEP_MS) * RISK_STEP_MS);
         if (from < to) requests.push({ from, to });
       }
@@ -232,7 +299,7 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
     // a permanent history-length cap. Each refresh audits at most 29 old days.
     let auditEnd: number | null = null;
     if (before.backfillCursor || !before.fullBackfillAt || now.getTime() - before.fullBackfillAt.getTime() >= DAY) {
-      const from = before.backfillCursor?.getTime() ?? before.referenceAt.getTime() - RISK_STEP_MS;
+      const from = before.backfillCursor?.getTime() ?? evidenceStart;
       auditEnd = Math.min(from + 29 * DAY, end.getTime());
       requests.push({ from, to: auditEnd });
     }
@@ -262,7 +329,7 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
       const revision = state.revision + 1;
       // Establish the reference once from actual funded broker equity. A new
       // account cannot inherit eight days of fictitious zero-return history.
-      const referenceAt = state.revision === 0 ? points.find(p => p.equity.greaterThan(0))?.endAt : state.referenceAt;
+      const referenceAt = state.revision === 0 ? points.find(p => p.endAt >= state.referenceAt && p.equity.greaterThan(0))?.endAt : state.referenceAt;
       if (!referenceAt) throw new Error('FUNDED_RISK_REFERENCE_UNAVAILABLE');
       const observation = await tx.capitalRiskObservation.create({ data: { ...where, revision, observedAt: now,
         activityAfter, activityUntil: now, history: history as unknown as Prisma.InputJsonValue,
@@ -280,6 +347,7 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
       const existingPoints = await tx.capitalRiskPoint.findMany({ where });
       const existingByTime = new Map(existingPoints.map(p => [p.endAt.getTime(), p]));
       const newPoints = points.filter(p => !existingByTime.has(p.endAt.getTime()));
+      let changedFrom: Date | null = null;
       for (let i = 0; i < newPoints.length; i += 1000) {
         await tx.capitalRiskPoint.createMany({ data: newPoints.slice(i, i + 1000).map(point => ({ ...where, ...point,
           cashflows: point.cashflows as Prisma.InputJsonValue, revision, observationId: observation.id })) });
@@ -288,13 +356,19 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
         const previous = existingByTime.get(point.endAt.getTime())!;
         if (previous.equity.equals(point.equity) && previous.externalCapital.equals(point.externalCapital)
           && JSON.stringify(previous.cashflows) === JSON.stringify(point.cashflows) && previous.complete === point.complete) continue;
+        if (!changedFrom || point.endAt < changedFrom) changedFrom = point.endAt;
         await tx.capitalRiskPoint.update({ where: { id: previous.id }, data: { ...point,
           cashflows: point.cashflows as Prisma.InputJsonValue, revision, observationId: observation.id } });
       }
       const allPoints = await tx.capitalRiskPoint.findMany({ where, orderBy: { endAt: 'asc' } });
       const allActivities = await tx.capitalRiskActivity.findMany({ where });
-      const coverageError = capitalCoverage(allPoints.filter(p => p.endAt >= referenceAt).map(p => ({ ...p, cashflows: p.cashflows as Record<string, number> })),
+      const coverageError = capitalCoverage(allPoints.map(p => ({ ...p, cashflows: p.cashflows as Record<string, number> })),
         allActivities.map(a => a.evidence as unknown as AlpacaActivity), referenceAt);
+      const coverageUnknown = unknown || !!coverageError;
+      if (changedFrom || state.status !== (coverageUnknown ? 'UNVERIFIED' : 'VERIFIED')) {
+        await recomputeSnapshots(tx, scope, allPoints.map(p => ({ ...p, cashflows: p.cashflows as Record<string, number> })),
+          referenceAt, revision, now, coverageUnknown || state.status !== 'VERIFIED' ? referenceAt : changedFrom!, coverageUnknown);
+      }
       await tx.capitalRiskState.update({ where: { scopeKey }, data: { revision, referenceAt, coveredThrough: end,
         activityThrough: now, lastAttemptAt: now, status: unknown || coverageError ? 'UNVERIFIED' : 'VERIFIED',
         error: unknown ? 'UNKNOWN_JOURNAL_OR_SECURITY_CAPITAL_EFFECT' : coverageError,
@@ -306,8 +380,14 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
     const reason = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'CAPITAL_EVIDENCE_UNAVAILABLE';
     // A scan failure must not replace the entire portfolio with an exception.
     // Its accounting/position evidence can still monitor existing exposure.
-    await prisma.capitalRiskState.updateMany({ where: { scopeKey, ...(expectedRevision !== undefined ? { revision: expectedRevision } : {}) },
-      data: { status: 'UNVERIFIED', error: reason, lastAttemptAt: now } }).catch(() => {});
+    await prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`;
+      const invalidated = await tx.capitalRiskState.updateMany({ where: { scopeKey, ...(expectedRevision !== undefined ? { revision: expectedRevision } : {}) },
+        data: { status: 'UNVERIFIED', error: reason, lastAttemptAt: now } });
+      if (invalidated.count) await tx.portfolioSnapshot.updateMany({ where: { ...where, riskAsOf: { not: null } }, data: {
+        riskDataComplete: false, riskRecomputedAt: now, adjustedDailyPnl: null, adjustedDailyPnlPct: null,
+        adjustedWeeklyPnlPct: null, adjustedPeakLossPct: null } });
+    }, { timeout: 30_000 }).catch(() => {});
     return readCashFlowRisk(scope, now).catch(() => empty(reason));
   }
 }

@@ -2,7 +2,8 @@
 // No provider implementation, credential or live account is reachable in CI.
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 import { prisma } from '../src/utils/prisma';
-import { getCashFlowRisk, readCashFlowRisk, RISK_STEP_MS as STEP } from '../src/services/cashFlowRisk';
+import { getCashFlowRisk, readCashFlowRisk, recordPortfolioObservation, RISK_STEP_MS as STEP } from '../src/services/cashFlowRisk';
+import type { PortfolioState } from '../src/agents/types';
 import type { AccountScope } from '../src/trading/accountScope';
 import type { AlpacaActivity } from '../src/services/alpacaBroker';
 const suite = process.env.RUN_CASH_FLOW_POSTGRES === 'true' ? describe : describe.skip;
@@ -50,9 +51,17 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     event('CSD', 10000); equityChanges.push({ at: Date.parse('2026-10-16T11:00:00Z'), amount: -4000 });
     expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000, dailyPnlPct: -4, weeklyPnlPct: -4, drawdownPct: 4, equity: 106000 });
   }, 25000);
+  test('date-only transfer just before the fixed reference is evidenced in prior bins, not subtracted twice', async () => {
+    event('CSD', 10000, Date.parse('2026-10-07T10:00:00Z'));
+    expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, referenceAt: '2026-10-08T00:00:00.000Z',
+      dailyPnl: 0, weeklyPnlPct: 0, drawdownPct: 0, equity: 110000 });
+  }, 25000);
   test('newly created old-effective flow refetches past bins and recomputes while retaining original response', async () => {
     const at = Date.parse('2026-10-12T10:00:00Z'); equityChanges.push({ at, amount: -10000 });
     expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, weeklyPnlPct: -10, drawdownPct: 10 });
+    const snapshot = await recordPortfolioObservation({ accountId: scope.accountId, brokerMode: scope.mode,
+      totalValue: 90000, cashBalance: 90000, invested: 0, pnlTotal: -100 } as PortfolioState, baseNow);
+    expect(snapshot.adjustedWeeklyPnlPct?.toNumber()).toBe(-10);
     flows.push({ at, type: 'CSW', amount: -10000 }); activities.push({ id: 'late-created-today', activity_type: 'CSW', date: '2026-10-12', net_amount: '-10000' });
     const next = new Date(baseNow.getTime() + STEP);
     expect(await getCashFlowRisk(scope, next)).toMatchObject({ complete: true, weeklyPnlPct: 0, drawdownPct: 0, revision: 2 });
@@ -63,6 +72,25 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     expect(JSON.stringify(observations[0].history)).not.toContain('CSW');
     expect(JSON.stringify(observations[1].history)).toContain('CSW');
     expect((await getCashFlowRisk(scope, next)).revision).toBe(2);
+    const revised = await prisma.portfolioSnapshot.findUniqueOrThrow({ where: { id: snapshot.id } });
+    expect(revised).toMatchObject({ riskDataComplete: true, riskRevision: 2, totalValue: 90000, pnlTotal: -100 });
+    expect(revised.adjustedWeeklyPnlPct?.toNumber()).toBe(0); expect(revised.adjustedPeakLossPct?.toNumber()).toBe(0);
+    expect(revised.riskRecomputedAt).toEqual(next);
+  }, 25000);
+  test('late same-day cash revises stored daily loss; a stale portfolio capture cannot restore the old revision', async () => {
+    const at = Date.parse('2026-10-16T10:00:00Z'); equityChanges.push({ at, amount: -10000 });
+    const oldRisk = await getCashFlowRisk(scope, baseNow);
+    const oldPortfolio = { accountId: scope.accountId, brokerMode: scope.mode, totalValue: 90000,
+      cashBalance: 90000, invested: 0, pnlTotal: -100, capitalRisk: oldRisk } as PortfolioState;
+    const snapshot = await recordPortfolioObservation(oldPortfolio, baseNow);
+    expect(snapshot.adjustedDailyPnl?.toNumber()).toBe(-10000);
+    flows.push({ at, type: 'CSW', amount: -10000 }); activities.push({ id: 'late-day', activity_type: 'CSW', date: '2026-10-16', net_amount: '-10000' });
+    const next = new Date(baseNow.getTime() + STEP); await getCashFlowRisk(scope, next);
+    const revised = await prisma.portfolioSnapshot.findUniqueOrThrow({ where: { id: snapshot.id } });
+    expect(revised).toMatchObject({ riskDataComplete: true, riskRevision: 2, totalValue: 90000, pnlDay: -10000, pnlTotal: -100 });
+    expect(revised.adjustedDailyPnl?.toNumber()).toBe(0); expect(revised.adjustedDailyPnlPct?.toNumber()).toBe(0);
+    const capturedAfter = await recordPortfolioObservation(oldPortfolio, next);
+    expect(capturedAfter.riskRevision).toBe(2); expect(capturedAfter.adjustedDailyPnl?.toNumber()).toBe(0);
   }, 25000);
   test('account and paper/live switching keep identical broker activity IDs and baselines isolated', async () => {
     event('CSW', -10000);

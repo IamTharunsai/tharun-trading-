@@ -402,8 +402,11 @@ model PortfolioSnapshot {
   riskAsOf DateTime?
   riskReferenceAt DateTime?
   riskRevision Int?
+  riskRecomputedAt DateTime?
   adjustedDailyPnl Decimal? @db.Decimal(30, 12)
   adjustedDailyPnlPct Decimal? @db.Decimal(30, 12)
+  adjustedWeeklyPnlPct Decimal? @db.Decimal(30, 12)
+  adjustedPeakLossPct Decimal? @db.Decimal(30, 12)
 
   @@index([timestamp])
   @@index([totalValue])

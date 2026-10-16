@@ -27,4 +27,5 @@ CREATE TABLE "CapitalRiskObservation" (
 CREATE UNIQUE INDEX "CapitalRiskObservation_accountId_brokerMode_revision_key" ON "CapitalRiskObservation"("accountId", "brokerMode", "revision");
 ALTER TABLE "PortfolioSnapshot" ADD COLUMN "riskDataComplete" BOOLEAN NOT NULL DEFAULT false,
  ADD COLUMN "riskAsOf" TIMESTAMP(3), ADD COLUMN "riskReferenceAt" TIMESTAMP(3), ADD COLUMN "riskRevision" INTEGER,
- ADD COLUMN "adjustedDailyPnl" DECIMAL(30,12), ADD COLUMN "adjustedDailyPnlPct" DECIMAL(30,12);
+ ADD COLUMN "riskRecomputedAt" TIMESTAMP(3), ADD COLUMN "adjustedDailyPnl" DECIMAL(30,12), ADD COLUMN "adjustedDailyPnlPct" DECIMAL(30,12),
+ ADD COLUMN "adjustedWeeklyPnlPct" DECIMAL(30,12), ADD COLUMN "adjustedPeakLossPct" DECIMAL(30,12);
