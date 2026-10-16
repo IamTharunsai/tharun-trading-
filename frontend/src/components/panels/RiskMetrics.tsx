@@ -21,9 +21,13 @@ export const RiskMetrics = () => {
     ['Buying power', dollars(data?.buyingPower)],
     ['Invested collateral', dollars(data?.investedCollateral)],
     ['Collateral / equity', percent(data?.exposurePct)],
-    ['Day P&L', complete ? dollars(data?.dailyPnl) : 'Unavailable: incomplete risk data'],
-    ['Day return', complete ? percent(data?.dailyPnlPct) : 'Unavailable: incomplete risk data'],
-    ['Current loss from recorded peak', percent(data?.maxDrawdownPct)],
+    ['Day result at risk valuation time', complete ? dollars(data?.dailyPnl) : 'Unavailable: incomplete risk data'],
+    ['Day result / opening equity', complete ? percent(data?.dailyPnlPct) : 'Unavailable: incomplete risk data'],
+    ['Loss from capital-adjusted peak', percent(data?.maxDrawdownPct)],
+    ['Risk valuation time', data?.capitalRisk?.asOf ?? 'Unavailable'],
+    ['Risk valuation equity', dollars(data?.capitalRisk?.equity)],
+    ['Risk valuation age', typeof data?.capitalRisk?.valuationAgeMs === 'number' ? `${Math.round(data.capitalRisk.valuationAgeMs / 1000)} seconds` : 'Unavailable'],
+    ['Fixed risk reference', data?.capitalRisk?.referenceAt ?? 'Unavailable'],
     ['Recorded realized result', dollars(data?.knownRealizedPnl)],
     ['Recorded open result', dollars(data?.knownUnrealizedPnl)],
     ['Accounting reconciliation', data?.accountingComplete === true ? 'Current inventory reconciled; fee history remains incomplete' : 'Pending — recorded results may exclude unresolved executions or fees'],
@@ -59,7 +63,7 @@ export const RiskMetrics = () => {
     {query.isLoading && <p role="status" className="text-sm text-slate-600">Loading account evidence…</p>}
     {query.isError && <p role="alert" className="text-sm text-red-700 mb-3">Risk data could not be refreshed.{data ? ' Cached values below may be outdated.' : ' No financial values are available.'} Use Refresh to retry.</p>}
     {(!query.isLoading || data) && <dl className="space-y-3">{rows.map(([label, value]) => <div className="flex justify-between items-start gap-4 text-sm" key={label}><dt className="text-slate-600">{label}</dt><dd className="text-slate-900 text-right font-medium break-words">{value}</dd></div>)}</dl>}
-    <p className="text-sm text-slate-600 mt-4">Current loss from a stored peak is not the historical maximum drawdown. No cash-flow-adjusted return series or risk-alert service is supplied here.</p>
+    <p className="text-sm text-slate-600 mt-4">Risk results use completed five-minute broker valuations with external cash transfers removed. Day percentages use opening equity; they are not time-weighted returns. Peak loss is measured since the displayed fixed reference. Current account equity is a separate observation.</p>
     <div className="mt-3"><LastUpdated query={query} label="Account response" staleAfterMs={60000} /></div>
   </section>;
 };

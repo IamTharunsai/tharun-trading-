@@ -72,6 +72,14 @@ export interface AlpacaActivity {
   status?: string;
 }
 
+export interface AlpacaPortfolioHistory {
+  timestamp: number[];
+  equity: number[];
+  timeframe: string;
+  cashflow: Record<string, number[]>;
+  // Returned P&L/base values are intentionally not used by risk accounting.
+}
+
 interface AlpacaPosition {
   asset_id: string;
   symbol: string;
@@ -251,6 +259,15 @@ export class AlpacaBroker {
     throw new Error('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED');
   }
 
+  // https://docs.alpaca.markets/us/reference/getaccountportfoliohistory-1
+  // Explicit ALL is essential: NONE/omission cannot establish capital coverage.
+  async getPortfolioHistoryVerified(start: string, end: string): Promise<AlpacaPortfolioHistory> {
+    const response = await this.client.get('/v2/account/portfolio/history', { params: {
+      start, end, timeframe: '5Min', intraday_reporting: 'continuous', pnl_reset: 'no_reset', cashflow_types: 'ALL',
+    } });
+    return response.data;
+  }
+
   /** Official Trading API recovery key; a transport failure must not mean no order. */
   async getOrderByClientOrderId(clientOrderId: string): Promise<AlpacaOrder | null> {
     try {
@@ -408,6 +425,7 @@ export class AlpacaBroker {
    */
   async getPortfolioSummary(): Promise<{
     account_id: string;
+    currency: string;
     last_equity: number;
     portfolio_value: number;
     cash: number;
@@ -420,6 +438,7 @@ export class AlpacaBroker {
       const account = await this.getAccount();
       return {
           account_id: account.id,
+          currency: account.currency,
           last_equity: Number(account.last_equity),
         portfolio_value: parseFloat(account.portfolio_value),
         cash: parseFloat(account.cash),
