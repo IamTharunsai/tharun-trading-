@@ -161,7 +161,11 @@ suite('broker evidence concurrency on disposable PostgreSQL', () => {
       process.env.MAX_OPEN_POSITIONS = '1';
       const risk = await validateTradeSignal({ asset: 'OTHER', market: 'stocks', direction: 'BUY', confidence: 80,
         entryPrice: 100, stopLossPrice: 90, takeProfitPrice: 120, positionSizePct: 1, reasoning: 'fixture', agentDecisionId: 'fixture',
-        voteCounts: { supporting: 10, opposing: 0, abstaining: 0 } }, { ...state, riskDataComplete: true, pnlDayPct: 0, pnlWeekPct: 0, drawdownFromPeak: 0 });
+        voteCounts: { supporting: 10, opposing: 0, abstaining: 0 } }, { ...state, riskDataComplete: true, pnlDayPct: 0, pnlWeekPct: 0, drawdownFromPeak: 0,
+          capitalRisk: { accountId: recoveryScope.accountId, brokerMode: recoveryScope.mode, complete: true, reason: null,
+            asOf: new Date().toISOString(), referenceAt: new Date(Date.now() - 8 * 86400000).toISOString(), revision: 1, valuationAgeMs: 0,
+            equity: 900, dailyPnl: 0, dailyPnlPct: 0, weeklyPnl: 0, weeklyPnlPct: 0, weeklyDrawdownPct: 0, drawdownPct: 0,
+            returnMethod: 'EXTERNAL_CAPITAL_ADJUSTED_OPENING_NAV' } });
       expect(risk.reason).toContain('MAX_POSITIONS');
       expect(await requestPositionExit(imported.id, 'fixture-recovery', recoveryScope)).toMatchObject({ closed: false, pending: true });
       expect(broker.createOrder).toHaveBeenCalledTimes(1);

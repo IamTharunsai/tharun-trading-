@@ -975,7 +975,7 @@ export async function runInvestmentCommitteeDebate(
         `${r.agentName}: ${r.finalVote} (${r.confidence}%)${r.changedMind ? ` [CHANGED from ${r.initialVote}]` : ''} — ${r.finalReason}`
       ).join('\n');
 
-      const fullDebateContext = `EVIDENCE — input ${inputFingerprint}:\n${round1Prompt}\n\nDEBATE FOR ${asset} @ $${snapshot.price}\nRegime: ${marketRegime}\nDaily P&L: ${portfolio.pnlDayPct.toFixed(2)}%\n\nROUND 1 — OPENING ARGUMENTS:\n${round1Lines}${round2Lines}\n\nROUND 3 — FINAL VERDICT:\n${round3Lines}\n\nFinal Vote Tally: BUY ${buyCount}, SELL ${sellCount}, HOLD ${holdCount}`;
+      const fullDebateContext = `EVIDENCE — input ${inputFingerprint}:\n${round1Prompt}\n\nDEBATE FOR ${asset} @ $${snapshot.price}\nRegime: ${marketRegime}\nDaily P&L: ${portfolio.pnlDayPct === null ? 'unavailable' : portfolio.pnlDayPct.toFixed(2) + '%'}\n\nROUND 1 — OPENING ARGUMENTS:\n${round1Lines}${round2Lines}\n\nROUND 3 — FINAL VERDICT:\n${round3Lines}\n\nFinal Vote Tally: BUY ${buyCount}, SELL ${sellCount}, HOLD ${holdCount}`;
 
       const masterResponse = await callResearch({
         model: 'claude-sonnet-5',
@@ -1021,7 +1021,7 @@ export async function runInvestmentCommitteeDebate(
       approved = false; blockReason = `Low confidence: ${finalConfidence}% (need ${minConfidence}%)`;
     } else if (riskManagerFinalVote !== masterDecision.finalDecision) {
       approved = false; blockReason = 'Risk reviewer withheld approval';
-    } else if (!Number.isFinite(portfolio.pnlDayPct) || portfolio.pnlDayPct <= -dailyLossLimit) {
+    } else if (portfolio.riskDataComplete !== true || portfolio.pnlDayPct === null || !Number.isFinite(portfolio.pnlDayPct) || portfolio.pnlDayPct <= -dailyLossLimit) {
       approved = false; blockReason = `Daily loss limit or unavailable daily P&L: ${portfolio.pnlDayPct}%`;
     } else if (Date.now() - snapshot.timestamp > maxSnapshotAgeMs) {
       approved = false; blockReason = 'Market evidence expired during research';
@@ -1173,7 +1173,7 @@ export function buildMarketContext(
     `Volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M | ${ind.volumeRatio.toFixed(2)}x avg (${ind.volumeRatio > 1.5 ? '⚡HIGH — institutional activity' : ind.volumeRatio < 0.7 ? '🔇LOW — weak conviction' : 'Normal'})`,
     `OBV cumulative level: ${ind.obv}; an OBV slope is not supplied`,
     `── PORTFOLIO ──`,
-    `Value: $${portfolio.totalValue.toFixed(2)} | Cash: $${portfolio.cashBalance.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct.toFixed(2)}%`,
+    `Value: $${portfolio.totalValue.toFixed(2)} | Cash: $${portfolio.cashBalance.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct === null ? 'unavailable' : portfolio.pnlDayPct.toFixed(2) + '%'}`,
   ];
   if (fundamentals && fundamentals !== 'No fundamental data available yet.') {
     lines.push(`FUNDAMENTALS: ${fundamentals}`);

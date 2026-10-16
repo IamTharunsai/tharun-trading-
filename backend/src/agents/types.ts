@@ -111,17 +111,18 @@ export interface PortfolioState {
   brokerMode?: 'paper' | 'live';
   buyingPower?: number;
   riskDataComplete?: boolean;
+  capitalRisk?: import('../services/cashFlowRisk').CashFlowRiskMetrics;
   accountingComplete?: boolean;
   historyDataComplete?: boolean;
   totalValue: number;
   cashBalance: number;
   invested: number;
-  pnlDay: number;
-  pnlDayPct: number;
-  pnlWeekPct: number;
+  pnlDay: number | null;
+  pnlDayPct: number | null;
+  pnlWeekPct: number | null;
   pnlTotal: number;
   positions: any[];
-  dailyLossToday: number;
+  dailyLossToday: number | null;
   tradesExecutedToday: number;
-  drawdownFromPeak: number;
+  drawdownFromPeak: number | null;
 }

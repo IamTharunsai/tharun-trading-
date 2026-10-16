@@ -9,6 +9,7 @@ import { executeTradeSignal, markToMarketOpenPositions, reconcileExecutionIntent
 import { validateTradeSignal } from '../trading/riskManager';
 import { runPostTradeAnalysis, generateWeeklyReport } from '../services/selfLearning';
 import { getPortfolioState } from '../services/portfolio';
+import { recordPortfolioObservation } from '../services/cashFlowRisk';
 import { checkStopLosses } from '../trading/riskManager';
 import { reconcilePositionExits } from '../trading/positionExits';
 import { generateDailyJournal } from '../services/journalGenerator';
@@ -319,18 +320,7 @@ export function initScheduler() {
       );
 
       const portfolio = await getPortfolioState();
-      await prisma.portfolioSnapshot.create({
-        data: {
-          totalValue: portfolio.totalValue,
-          accountId: portfolio.accountId, brokerMode: portfolio.brokerMode, source: 'BROKER_ACCOUNT_OBSERVATION',
-          cashBalance: portfolio.cashBalance,
-          invested: portfolio.invested,
-          pnlDay: portfolio.pnlDay,
-          pnlDayPct: portfolio.pnlDayPct,
-          pnlTotal: portfolio.pnlTotal,
-          pnlTotalPct: (portfolio.pnlTotal / Math.max(portfolio.totalValue, 1)) * 100
-        }
-      });
+      await recordPortfolioObservation(portfolio);
     } catch (err) { logger.error('Portfolio snapshot failed', { err }); }
   });
 

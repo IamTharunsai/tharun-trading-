@@ -12,8 +12,11 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
   const maxDrawdown = settings?.maxDrawdown ?? 10;
   const maxTradesPerDay = settings?.maxTradesPerDay ?? 1000;
 
-  const dailyUsed = Math.abs(Math.min(0, Number(portfolio.pnlDayPct ?? portfolio.dailyPnlPct) || 0));
-  const drawdown = Math.abs(Number(portfolio.drawdownFromPeak ?? portfolio.maxDrawdownPct) || 0);
+  const dailyResult = num(portfolio.pnlDayPct ?? portfolio.dailyPnlPct);
+  const peakLoss = num(portfolio.drawdownFromPeak ?? portfolio.maxDrawdownPct);
+  const known = portfolio.riskDataComplete === true && dailyResult !== null && peakLoss !== null;
+  const dailyUsed = dailyResult === null ? null : Math.abs(Math.min(0, dailyResult));
+  const drawdown = peakLoss === null ? null : Math.abs(peakLoss);
   const tradesUsed = Number(portfolio.tradesExecutedToday) || 0;
   const cash = num(portfolio.cashBalance);
   const invested = portfolioInvested(portfolio);
@@ -21,8 +24,9 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
   // Derive invested from NAV − cash only when that is non-negative; never show a negative.
   const investedShown = invested !== null ? invested : nav !== null && cash !== null ? Math.max(0, nav - cash) : null;
   const pctOf = (u: number, l: number) => (u / (l || 1)) * 100;
-  const worst = Math.max(pctOf(dailyUsed, dailyLossLimit), pctOf(drawdown, maxDrawdown), pctOf(tradesUsed, maxTradesPerDay));
-  const overall = worst >= 90 ? { label: 'LIMIT CRITICAL', cls: 'text-red-700 bg-red-50 border-red-200' }
+  const worst = Math.max(pctOf(dailyUsed ?? 0, dailyLossLimit), pctOf(drawdown ?? 0, maxDrawdown), pctOf(tradesUsed, maxTradesPerDay));
+  const overall = !known ? { label: 'RISK DATA INCOMPLETE', cls: 'text-amber-700 bg-amber-50 border-amber-200' }
+    : worst >= 90 ? { label: 'LIMIT CRITICAL', cls: 'text-red-700 bg-red-50 border-red-200' }
     : worst >= 70 ? { label: 'NEAR LIMIT', cls: 'text-amber-700 bg-amber-50 border-amber-200' }
     : { label: 'WITHIN LIMITS', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' };
 
@@ -60,9 +64,10 @@ export default function RiskMonitor({ portfolio }: { portfolio: any }) {
       </div>
 
       <div className="space-y-3.5">
-        <RiskBar label="Daily Loss Guardrail" used={dailyUsed} limit={dailyLossLimit} />
-        <RiskBar label="Max Drawdown Circuit" used={drawdown} limit={maxDrawdown} />
+        {known && dailyUsed !== null && drawdown !== null ? <><RiskBar label="Capital-adjusted daily loss" used={dailyUsed} limit={dailyLossLimit} />
+        <RiskBar label="Capital-adjusted peak loss" used={drawdown} limit={maxDrawdown} /></> : <p className="text-xs text-amber-700">Loss limits are unavailable while capital evidence is incomplete. Current holdings and recorded results remain visible.</p>}
         <RiskBar label="Day Trades Execution" used={tradesUsed} limit={maxTradesPerDay} unit="" />
+        <p className="text-xs text-slate-500">Risk valuation: {portfolio.capitalRisk?.asOf ?? 'unavailable'}. Reference: {portfolio.capitalRisk?.referenceAt ?? 'unavailable'}.</p>
       </div>
 
       {/* Cash reserve */}
