@@ -17,6 +17,7 @@ jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.
 jest.mock('../src/utils/redis', () => ({ redis: { status: 'ready', mget: jest.fn().mockResolvedValue([]) } }));
 jest.mock('../src/routes/backtest', () => ({ __esModule: true, default: require('express').Router() }));
 jest.mock('../src/routes/chat', () => ({ chatRouter: require('express').Router() }));
+jest.mock('../src/services/groundedDeepDive', () => ({ parseDeepDiveInput: jest.fn(), runGroundedDeepDive: jest.fn(), DeepDiveUnavailable: class extends Error {} }));
 jest.mock('../src/services/portfolio', () => ({ getPortfolioState: jest.fn().mockResolvedValue({ positions: [{ id: 'PRIVATE_POSITION' }] }) }));
 jest.mock('../src/services/portfolioAccounting', () => ({ calculateAuthenticatedPortfolio: jest.fn().mockResolvedValue({ totalValue: 123, dataSource: 'PRIVATE_ACCOUNT', timestamp: 'fixture' }) }));
 jest.mock('../src/services/positionResearch', () => ({ getPositionResearchStatus: jest.fn().mockResolvedValue([]), getPositionResearchDecision: jest.fn().mockResolvedValue(null) }));
@@ -104,6 +105,7 @@ const privateReads: Endpoint[] = [
   ['GET', '/api/market/polymarket-us/account'], ['GET', '/api/market/predictions/simulations'],
 ];
 const ownerMutations: Endpoint[] = [
+  ['POST', '/api/market/ai-deep-dive'],
   ['POST', '/api/agents/trigger-debate'], ['POST', '/api/journal/generate'],
   ['POST', '/api/intelligence/learning/log-activity'], ['POST', '/api/copy-trading/followers'],
   ['PATCH', '/api/copy-trading/followers/fixture'], ['POST', '/api/copy-trading/followers/fixture/toggle'],
@@ -115,7 +117,7 @@ const ownerMutations: Endpoint[] = [
 // Prewarm every mock at module scope; cold compilation/initialization is outside
 // individual five-second tests, and cannot lazily import a real financial module.
 const businessModules = [
-  '../src/services/portfolio', '../src/services/portfolioAccounting', '../src/services/positionResearch', '../src/agents/orchestrator',
+  '../src/services/portfolio', '../src/services/portfolioAccounting', '../src/services/positionResearch', '../src/services/groundedDeepDive', '../src/agents/orchestrator',
   '../src/trading/riskManager', '../src/trading/killLiquidation', '../src/jobs/scheduler', '../src/services/journalGenerator',
   '../src/services/marketData', '../src/services/accountManager', '../src/trading/brokerRouter', '../src/services/sentimentService',
   '../src/services/agentActivityMonitor', '../src/services/geopoliticalDataService', '../src/services/agentActivityLogger',
@@ -136,7 +138,7 @@ beforeEach(() => {
   jest.clearAllMocks(); ownerRole = 'OWNER';
   (jwt.verify as jest.Mock).mockImplementation((token: string) => {
     if (token === 'invalid' || token === 'expired') throw new Error('fixture invalid or expired');
-    return { userId: token, role: token === 'owner' ? 'MEMBER' : 'OWNER' };
+    return { userId: token, role: token === 'owner' ? 'MEMBER' : 'OWNER', exp: Math.floor(Date.now() / 1000) + 7200 };
   });
   (prisma.revokedToken.findUnique as jest.Mock).mockImplementation(({ where }) => Promise.resolve(where.token === 'revoked' ? { token: 'revoked' } : null));
   (prisma.user.findUnique as jest.Mock).mockImplementation(({ where }) => Promise.resolve(where.id === 'deleted' ? null : {
@@ -199,7 +201,7 @@ test('configured current owner email retains the existing owner policy', async (
 });
 test('database authentication outage never reaches a private handler', async () => {
   (prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('fixture offline'));
-  expect((await request(['GET', '/api/portfolio'], 'owner')).statusCode).toBe(401);
+  expect((await request(['GET', '/api/portfolio'], 'owner')).statusCode).toBe(503);
   protectedWork.forEach(work => expect(work).not.toHaveBeenCalled());
 });
 test.each(privateReads)('private %s %s accepts current owner without rewriting the payload', async (method, url) => {

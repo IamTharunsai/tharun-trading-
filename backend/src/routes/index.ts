@@ -6,6 +6,7 @@ import { respondWithDashboardEvidence } from './dashboardMarketResponse';
 // ── AUTH ROUTES ───────────────────────────────────────────────────────────────
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { prisma } from '../utils/prisma';
@@ -22,10 +23,11 @@ import axios from 'axios';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 import rateLimit from 'express-rate-limit';
-import { revokeToken } from '../middleware/auth';
+import { revokeToken, boundedAuthStore } from '../middleware/auth';
 import { appConfig } from '../utils/config';
 
 export const authRouter = Router();
+authRouter.use(privateResponse);
 
 // Dedicated rate limiter for authentication attempts (10 attempts per 15 min per IP)
 const authLimiter = rateLimit({
@@ -75,9 +77,9 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 
     // Short-lived 2-hour access token
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role || 'OWNER' },
+      { userId: user.id, email: user.email, role: user.role },
       appConfig.JWT_SECRET,
-      { expiresIn: '2h' }
+      { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
     );
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
@@ -91,7 +93,7 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
       user: {
         id: user.id,
         email: user.email,
-        role: user.role || 'OWNER',
+        role: user.role,
         totpEnabled: user.totpEnabled
       }
     });
@@ -102,17 +104,21 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 
 // Secure logout with token revocation
 authRouter.post('/logout', requireAuth, async (req: AuthRequest, res: Response) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (token) {
-    await revokeToken(token);
+  const token = req.headers.authorization!.slice('Bearer '.length);
+  const result = await revokeToken(token);
+  if (!result.persisted) {
+    res.setHeader('Retry-After', '1');
+    return res.status(503).json({ success: false, revocationConfirmed: false, code: 'LOGOUT_UNCONFIRMED',
+      error: 'Session blocked on this server; persistent revocation is not confirmed.' });
   }
   const ipAddress = req.ip || 'unknown';
-  if (req.user?.email) {
-    await prisma.authAuditLog.create({
-      data: { email: req.user.email, ipAddress, action: 'LOGOUT', success: 1 }
-    }).catch(() => {});
+  const logoutEmail = req.user?.email;
+  if (logoutEmail) {
+    void boundedAuthStore(() => prisma.authAuditLog.create({
+      data: { email: logoutEmail, ipAddress, action: 'LOGOUT', success: 1 }
+    })).catch(() => {});
   }
-  res.json({ success: true, message: 'Logged out successfully. Session invalidated.' });
+  res.json({ success: true, revocationConfirmed: true, message: 'Persistent session revocation confirmed.' });
 });
 
 // Secure first-run Owner account setup (Only permitted when zero OWNER accounts exist in database)
@@ -161,7 +167,7 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
   const token = jwt.sign(
     { userId: user.id, email: user.email, role: 'OWNER' },
     appConfig.JWT_SECRET,
-    { expiresIn: '2h' }
+    { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
   );
 
   res.status(201).json({
@@ -172,12 +178,11 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
 });
 
 authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
-  const user = await prisma.user.findUnique({ where: { id: req.userId } });
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  const user = req.user!;
   res.json({
     id: user.id,
     email: user.email,
-    role: user.role || 'OWNER',
+    role: user.role,
     totpEnabled: user.totpEnabled,
     lastLogin: user.lastLogin
   });
