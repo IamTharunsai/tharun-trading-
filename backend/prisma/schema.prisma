@@ -51,6 +51,8 @@ model Trade {
   positionId       String?
   position         Position? @relation(fields: [positionId], references: [id])
   closedQuantity   Float @default(0)
+  feeQuantity      Float @default(0)
+  actualFeeCash    Float @default(0)
   realizedPnl      Float @default(0)
   exitNotional     Float @default(0)
   unrealizedPnl    Float @default(0)
@@ -170,6 +172,11 @@ model Position {
   brokerMode     String?
   pendingEntryIntentId String?
   brokerObservedQuantity Float?
+  brokerObservedEntryPrice Float?
+  brokerObservedAt DateTime?
+  accountingStatus String @default("UNVERIFIED")
+  accountingError String?
+  evidenceVersion Int @default(0)
   trades         Trade[]
   exits          PositionExit[]
   market         String
@@ -257,6 +264,62 @@ model PositionExit {
   updatedAt          DateTime @updatedAt
 
   @@index([accountId, brokerMode, status, updatedAt])
+}
+
+// Immutable broker identity plus the cumulative amount already applied under the
+// account/symbol lock. Holdings are observations, never execution evidence.
+model BrokerOrderEvidence {
+  id String @id @default(cuid())
+  accountId String
+  brokerMode String
+  brokerOrderId String
+  positionId String
+  positionCycleAt DateTime
+  parentOrderId String?
+  symbol String
+  side String
+  source String
+  status String
+  allocationComplete Boolean @default(true)
+  appliedQuantity Decimal @default(0) @db.Decimal(30, 12)
+  appliedNotional Decimal @default(0) @db.Decimal(30, 12)
+  brokerUpdatedAt DateTime?
+  evidence Json
+  observedAt DateTime @default(now())
+  @@unique([accountId, brokerMode, brokerOrderId])
+  @@index([positionId, positionCycleAt])
+}
+
+// Activity IDs deduplicate delayed fee/fill observations. Unknown linkage is
+// deliberately retained; finding one local lot does not prove fee ownership.
+model BrokerActivity {
+  id String @id @default(cuid())
+  accountId String
+  brokerMode String
+  brokerActivityId String
+  activityType String
+  brokerOrderId String?
+  symbol String?
+  currency String?
+  quantity Decimal? @db.Decimal(30, 12)
+  cashAmount Decimal? @db.Decimal(30, 12)
+  effectiveAt DateTime?
+  dateOnly Boolean @default(false)
+  attributionStatus String @default("UNATTRIBUTED")
+  evidence Json
+  observedAt DateTime @default(now())
+  appliedAt DateTime?
+  @@unique([accountId, brokerMode, brokerActivityId])
+  @@index([accountId, brokerMode, attributionStatus])
+}
+
+model BrokerFillAllocation {
+  id String @id @default(cuid())
+  orderEvidenceId String
+  tradeId String
+  quantity Decimal @default(0) @db.Decimal(30, 12)
+  notional Decimal @default(0) @db.Decimal(30, 12)
+  @@unique([orderEvidenceId, tradeId])
 }
 
 // PORTFOLIO SNAPSHOTS

@@ -24,6 +24,9 @@ export const RiskMetrics = () => {
     ['Day P&L', complete ? dollars(data?.dailyPnl) : 'Unavailable: incomplete risk data'],
     ['Day return', complete ? percent(data?.dailyPnlPct) : 'Unavailable: incomplete risk data'],
     ['Current loss from recorded peak', percent(data?.maxDrawdownPct)],
+    ['Recorded realized result', dollars(data?.knownRealizedPnl)],
+    ['Recorded open result', dollars(data?.knownUnrealizedPnl)],
+    ['Accounting reconciliation', data?.accountingComplete === true ? 'Current inventory reconciled; fee history remains incomplete' : 'Pending — recorded results may exclude unresolved executions or fees'],
     ['Sharpe / Sortino', 'Unavailable: verified return series required'],
   ] : tab === 'var' ? [
     ['95% value at risk', 'Not calculated by this service'],
@@ -37,6 +40,9 @@ export const RiskMetrics = () => {
     ['Market beta / correlation', 'Not calculated by this service'],
   ] : [
     ['Risk evidence complete', data ? complete ? 'Yes, reported by backend' : 'No — do not infer risk readiness' : 'Unknown'],
+    ['Accounting evidence complete', data?.accountingComplete === true ? 'Current inventory reconciled' : 'Pending or unknown'],
+    ['Fee history complete', data?.feeDataComplete === true ? 'Reported complete' : 'No'],
+    ['Recorded history', data?.historyDataComplete === true ? 'No imported history gaps reported' : 'Incomplete or unknown opening history'],
     ['Backend stale flag', data ? data.isStale === true ? 'Stale' : data.isStale === false ? 'Not marked stale' : 'Unknown' : 'Unknown'],
     ['Broker mode', typeof data?.brokerMode === 'string' ? data.brokerMode : 'Unknown'],
     ['Data source', typeof data?.dataSource === 'string' ? data.dataSource : 'Unknown'],

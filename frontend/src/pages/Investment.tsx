@@ -49,6 +49,7 @@ export default function InvestmentPage() {
   const cashBalance  = num(portfolio?.cashBalance);
   const invested     = portfolioInvested(portfolio);
   const pnlTotal     = num(portfolio?.pnlTotal ?? portfolio?.totalPnl);
+  const knownRealizedPnl = num(portfolio?.knownRealizedPnl);
   const brokerEq     = brokerEquity(liveAccounts);
 
   // Real capital allocation: actual position market value as % of invested capital
@@ -89,7 +90,7 @@ export default function InvestmentPage() {
           { id: 'nav', label: 'Portfolio NAV',  value: fmtUsd(totalCapital), sub: brokerEq !== null ? `Broker equity (Alpaca): ${fmtUsd(brokerEq)}` : '', icon: <DollarSign size={16} />, color: 'text-blue-700' },
           { id: 'invested', label: 'Deployed Capital', value: fmtUsd(invested), sub: '', icon: <BarChart2 size={16} />, color: 'text-emerald-600' },
           { id: 'cash', label: 'Cash Available',   value: fmtUsd(cashBalance), sub: '', icon: <Shield size={16} />, color: 'text-slate-700' },
-          { id: 'pnl-total', label: 'Total P&L',        value: pnlTotal === null ? '—' : `${pnlTotal >= 0 ? '+' : '-'}$${Math.abs(pnlTotal).toFixed(2)}`, sub: '', icon: (pnlTotal ?? 0) >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />, color: pnlTotal === null ? 'text-slate-400' : pnlTotal >= 0 ? 'text-emerald-600' : 'text-red-600' },
+          { id: 'pnl-total', label: 'Total P&L',        value: pnlTotal === null ? '—' : `${pnlTotal >= 0 ? '+' : '-'}$${Math.abs(pnlTotal).toFixed(2)}`, sub: pnlTotal === null && knownRealizedPnl !== null ? `Recorded realized: ${fmtUsd(knownRealizedPnl)}; reconciliation pending` : 'Recorded ledger; fee history remains incomplete', icon: (pnlTotal ?? knownRealizedPnl ?? 0) >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />, color: pnlTotal === null ? 'text-slate-400' : pnlTotal >= 0 ? 'text-emerald-600' : 'text-red-600' },
         ].map(s => (
           <div key={s.label} data-testid={`stat-${s.id}`} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm">
             <div className="flex items-center justify-between mb-2">
