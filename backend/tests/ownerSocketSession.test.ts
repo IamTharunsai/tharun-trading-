@@ -94,16 +94,19 @@ describe('passive socket session lifetime', () => {
     expect(invalidated).toHaveBeenCalledTimes(1); expect(jest.getTimerCount()).toBe(0);
     notifySessionRevoked(raw); expect(invalidated).toHaveBeenCalledTimes(1);
   });
-  it('evicts locally before persistent revokeToken finishes, without changing HTTP persistence behavior', async () => {
+  it('evicts locally before bounded persistence finishes and cleans both lifecycles', async () => {
     const invalidated = jest.fn(); const raw = token();
-    await leaseFor(raw, invalidated).ready;
+    const lease = leaseFor(raw, invalidated); await lease.ready;
     let finish!: (value: unknown) => void;
     revokedCreate.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const persist = revokeToken(raw);
-    expect(invalidated).toHaveBeenCalledTimes(1); expect(jest.getTimerCount()).toBe(0);
+    expect(invalidated).toHaveBeenCalledTimes(1); expect(lease.isActive()).toBe(false);
+    // Socket timers are disposed; the bounded REST persistence attempt owns one deadline.
+    expect(jest.getTimerCount()).toBe(1);
     expect(revokedCreate).toHaveBeenCalledWith({ data: { token: raw } });
     await expect(authenticateSocketOwner(raw)).rejects.toThrow('unauthorized');
-    finish({}); await persist;
+    finish({}); await expect(persist).resolves.toEqual({ persisted: true });
+    expect(jest.getTimerCount()).toBe(0);
   });
   it('does not evict a different token and cleans up an explicitly disposed lease', async () => {
     const invalidated = jest.fn(); const raw = token(); const lease = leaseFor(raw, invalidated);

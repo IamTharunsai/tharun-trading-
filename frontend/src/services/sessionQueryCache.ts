@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 
-interface AuthSnapshot { token: string | null }
+interface AuthSnapshot { token: string | null; authEpoch?: number }
 interface AuthSource {
   getState: () => AuthSnapshot;
   subscribe: (listener: (state: AuthSnapshot) => void) => () => void;
@@ -32,12 +32,14 @@ function retire(client: QueryClient): void {
  */
 export function createSessionQueryCache(auth: AuthSource) {
   let identity = auth.getState().token;
+  let authEpoch = auth.getState().authEpoch;
   let snapshot: SessionQuerySnapshot = { client: newClient(), epoch: 0 };
   let disposed = false;
   const listeners = new Set<() => void>();
   const unsubscribeAuth = auth.subscribe(state => {
-    if (disposed || state.token === identity) return;
+    if (disposed || (state.token === identity && state.authEpoch === authEpoch)) return;
     identity = state.token;
+    authEpoch = state.authEpoch;
     const previous = snapshot.client;
     snapshot = { client: newClient(), epoch: snapshot.epoch + 1 };
     retire(previous);
