@@ -354,12 +354,32 @@ test('a current unauthorized readback retires the auth client and cannot keep ow
   const f = sessionFixture();
   try {
     f.api.defaults.adapter = config => Promise.resolve(response(config, observedFixture().raw()));
-    const previous = f.cache.getSnapshot().client; await previous.fetchQuery(f.options());
-    f.api.defaults.adapter = config => Promise.reject(httpError(config, 401));
-    await assert.rejects(previous.fetchQuery({ ...f.options(), staleTime: 0 }));
+    const previous = f.cache.getSnapshot().client, initial = await previous.fetchQuery(f.options());
+    let unauthorizedRequests = 0;
+    f.api.defaults.adapter = config => { unauthorizedRequests++; return Promise.reject(httpError(config, 401)); };
+    // Retiring the client cancels with revert. Query can return its prior data
+    // to the already-retired fetch caller; it must never enter the new client/UI.
+    const outcome = await previous.fetchQuery({ ...f.options(), staleTime: 0 }).then(value => ({ value }), error => ({ error }));
+    assert.equal(unauthorizedRequests, 1);
+    if (outcome.error) assert.ok(isCancelledError(outcome.error) || outcome.error.response?.status === 401);
+    else assert.deepEqual(outcome.value, initial);
     assert.equal(f.auth.getState().token, null); assert.notEqual(previous, f.cache.getSnapshot().client);
+    assert.equal(previous.getQueryData(teamWorkspaceQueryKey(1)), undefined);
+    assert.equal(f.cache.getSnapshot().client.getQueryCache().getAll().length, 0);
     const hook = renderHook(f); assert.equal(hook.meta.state, 'signed-out'); assert.deepEqual(hook.model.reviews, []);
     assert.equal(hook.meta.previousReadback, undefined);
+  } finally { f.dispose(); }
+});
+
+test('a direct current-session request rejects actual401 and cannot return an authorized snapshot', async () => {
+  const f = sessionFixture(); let config;
+  f.api.defaults.adapter = request => { config = request; return Promise.reject(httpError(request, 401)); };
+  try {
+    const previous = f.cache.getSnapshot().client;
+    await assert.rejects(f.options().queryFn({ signal: new AbortController().signal }), error => error.response?.status === 401);
+    assert.equal(config.url, '/agents/sessions'); assert.equal(config.headers.get('Authorization'), 'Bearer dummy-session-a');
+    assert.equal(f.auth.getState().token, null); assert.notEqual(f.cache.getSnapshot().client, previous);
+    assert.deepEqual(renderHook(f).model.reviews, []);
   } finally { f.dispose(); }
 });
 
