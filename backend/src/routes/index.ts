@@ -1,4 +1,5 @@
 import { deepDiveRouter } from './deepDive';
+import { agentSessionsRouter } from './agentSessions';
 import { privateResponse } from '../middleware/privateResponse';
 import { recordPredictionSimulation, listPredictionSimulations } from './predictionSimulation';
 import { entryDecisionWhere } from '../trading/decisionVisibility';
@@ -362,6 +363,7 @@ portfolioRouter.get('/live-accounts', async (_req: Request, res: Response) => {
 // ── /api/agents ───────────────────────────────────────────────────────────────
 export const agentsRouter = Router();
 agentsRouter.use(requireAuth);
+agentsRouter.use('/sessions', agentSessionsRouter);
 
 agentsRouter.post('/trigger-debate', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
