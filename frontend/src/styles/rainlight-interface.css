@@ -1,0 +1,101 @@
+@font-face {
+  font-family: 'Alike'; src: url('../assets/fonts/Alike-Regular.ttf') format('truetype');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans'; src: url('../assets/fonts/IBMPlexSans-Variable.ttf') format('truetype');
+  font-weight: 100 700; font-stretch: 75% 100%; font-style: normal; font-display: swap;
+}
+.rainlight-world { font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; line-height: 1.35; font-variant-numeric: tabular-nums; --rainlight-ink: #142c28; --rainlight-jade: #155f4b; --rainlight-muted: #4c6560; --rainlight-fault: #ac241f; }
+.rainlight-world * { box-sizing: border-box; }
+.rainlight-world ::selection { background: #a7cfb7; color: #142c28; }
+.rainlight-world :focus-visible { outline: 2px solid #246f59; outline-offset: 3px; }
+.rainlight-world button, .rainlight-world select { font: inherit; color: inherit; cursor: pointer; }
+.rainlight-world button:disabled, .rainlight-world select:disabled { cursor: not-allowed; opacity: .65; }
+.rainlight-world a { color: inherit; text-decoration: none; text-underline-offset: .2em; }
+.rainlight-world button, .rainlight-world a { -webkit-tap-highlight-color: transparent; }
+.rainlight-world button:hover:not(:disabled), .rainlight-world a:hover { filter: brightness(.95); }
+.rainlight-world h1, .rainlight-world h2, .rainlight-world h3, .rainlight-world p { margin: 0; }
+.rainlight-region { position: absolute; z-index: 2; min-width: 0; }
+.rainlight-contents { display: contents; }
+.rainlight-navigation-wash { position: absolute; inset: 0 auto 0 0; width: var(--r-navigation-w); background: rgba(5, 31, 29, .54); z-index: 1; }
+.rainlight-on-jade, .rainlight-brand { color: #f3f7f2; }
+.rainlight-brand { font-family: 'Alike', serif; font-size: 33px; line-height: 35px; }
+.rainlight-brand-description { font-size: 13px; line-height: 16px; }
+.rainlight-welcome { font-size: 13px; }
+.rainlight-main-heading h1 { font-family: 'Alike', serif; font-size: 33px; font-weight: 400; line-height: 34px; white-space: nowrap; }
+.rainlight-description { font-size: 17px; line-height: 20px; font-stretch: 90%; }
+.rainlight-nav-item { color: #e4eeea; }
+.rainlight-nav-item a { display: flex; align-items: center; gap: 12px; width: 100%; height: 100%; padding: 0 10px; }
+.rainlight-nav-item--current { background: rgba(173, 210, 194, .17); border-radius: 3px; }
+.rainlight-nav-item--current a { padding-left: 22px; }
+.rainlight-concept-caption { font-size: 10px; color: #c0d2cc; white-space: nowrap; }
+.rainlight-header-control { background: rgba(7, 34, 28, .88); color: #f0f6ef; border-radius: 3px; font-size: 12px; }
+.rainlight-header-control > a, .rainlight-header-control > span, .rainlight-header-control > button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; padding: 0 10px; }
+.rainlight-header-control button { background: transparent; border: 0; }
+.rainlight-header-control small { display: block; font-size: 10px; color: #d0ddd5; margin-top: 3px; }
+.rainlight-header-control svg { flex-shrink: 0; }
+.rainlight-connection-dot { width: 5px; height: 5px; border-radius: 50%; background: #9aaea3; }
+.rainlight-connection-dot[data-connection='connected'] { background: #87c8a6; }
+.rainlight-account-menu > a { justify-content: flex-start; gap: 10px; }
+.rainlight-initials { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; background: #d3e2d7; color: #274a3b; font-size: 14px; }
+.rainlight-reading-field { z-index: 1; background: rgba(242, 246, 242, .97); }
+.rainlight-small { font-size: 11px; line-height: 14px; white-space: nowrap; }
+.rainlight-muted { color: var(--rainlight-muted); }
+.rainlight-session-select select { width: 100%; height: 100%; padding: 0 10px; background: #edf3ef; border: 1px solid #baccc5; border-radius: 3px; font-size: 14px; }
+.rainlight-icon-control > button, .rainlight-icon-control > a { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; border: 0; padding: 0; background: transparent; }
+.rainlight-options { position: absolute; z-index: 10; right: 0; top: 34px; min-width: 190px; padding: 7px; background: #f4f7f1; box-shadow: 0 5px 20px #18362d30; }
+.rainlight-options a { display: block; padding: 10px; font-size: 13px; }
+.rainlight-commons-title { font-size: 15px; line-height: 22px; background: rgba(244, 247, 241, .68); border-radius: 2px; }
+.rainlight-station { border-radius: 4px; background: rgba(240, 246, 239, .93); box-shadow: 0 2px 7px #102e2822; }
+.rainlight-station--selected { box-shadow: 0 0 0 1px #286f5b, 0 2px 7px #102e2822; }
+.rainlight-station button { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; width: 100%; height: 100%; padding: 7px 11px; border: 0; background: transparent; border-radius: inherit; font-size: 12px; }
+.rainlight-station-name { font-weight: 500; white-space: nowrap; }
+.rainlight-state { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; line-height: 16px; white-space: nowrap; }
+.rainlight-state > span { width: 7px; height: 7px; border-radius: 50%; background: #6d8084; flex-shrink: 0; }
+.rainlight-state--running { color: #0c623d; }
+.rainlight-state--running > span, .rainlight-state--voted > span { background: #138453; }
+.rainlight-state--error { color: #ad201c; }
+.rainlight-state--error > span { background: #c12923; }
+.rainlight-state--unobserved { color: #536a64; }
+.rainlight-review-disc { background: rgba(7, 40, 31, .93); border-radius: 50%; z-index: 2; box-shadow: 0 1px 6px #0b251d33; }
+.rainlight-review-asset, .rainlight-review-text { text-align: center; color: #f1f5e8; z-index: 3; }
+.rainlight-review-asset { font-family: 'Alike', serif; font-size: 24px; line-height: 25px; }
+.rainlight-review-text { font-size: 13px; line-height: 17px; }
+.rainlight-review-caption { font-size: 12px; line-height: 16px; }
+.rainlight-inspector-heading { font-size: 14px; line-height: 18px; }
+.rainlight-specialist-name { font-weight: 600; font-size: 17px; line-height: 21px; }
+.rainlight-specialist-state { display: flex; align-items: center; justify-content: center; background: #e5f1e4; border-radius: 3px; }
+.rainlight-specialist-description { color: #435b55; font-size: 12px; line-height: 16px; }
+.rainlight-evidence-tab > button { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border: 1px solid #c2d2c9; border-radius: 3px; background: #f0f5ef; font-size: 12px; }
+.rainlight-evidence-tab > button[aria-selected='true'] { border-color: #2f7762; color: #153d30; background: #f8faf6; }
+.rainlight-fact-label { color: #435e55; font-size: 12px; line-height: 16px; }
+.rainlight-fact-value { font-size: 13px; line-height: 17px; }
+.rainlight-fact-value small { display: block; font-size: 11px; color: #49655a; }
+.rainlight-price-value { font-weight: 500; font-size: 20px; line-height: 23px; }
+.rainlight-tab-content { position: absolute; left: 76.04%; top: 39.55%; width: 21.75%; height: 16.5%; z-index: 3; overflow: auto; font-size: 13px; line-height: 1.45; scrollbar-color: #8ca99b #e8efe7; scrollbar-width: thin; }
+.rainlight-tab-content h3 { font-size: 14px; margin-bottom: 9px; }
+.rainlight-tab-content p + p { margin-top: 10px; }
+.rainlight-tab-content time { font-size: 11px; color: #49655a; }
+.rainlight-issue-field { background: #f3eee1; border-radius: 3px; }
+.rainlight-issue-heading { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #ac241f; line-height: 17px; white-space: nowrap; }
+.rainlight-issue-heading svg { flex-shrink: 0; }
+.rainlight-issue-detail { font-size: 11px; line-height: 14px; }
+.rainlight-decision-state { display: flex; align-items: center; justify-content: center; background: #f4e6b8; border-radius: 3px; color: #68501d; font-size: 12px; }
+.rainlight-execution-note { font-size: 11px; line-height: 15px; color: #4b655a; text-align: right; }
+.rainlight-request-research button { width: 100%; height: 100%; border: 1px solid #b5cbc1; border-radius: 3px; background: #f8faf4; color: #194c3b; display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 14px; }
+.rainlight-roster-heading { font-size: 13px; line-height: 17px; }
+.rainlight-roster-grid, .rainlight-roster-grid-right { display: grid; align-items: center; gap: 5px; }
+.rainlight-roster-grid { grid-template-columns: 100px 73px 93px minmax(0, 1fr) 76px; }
+.rainlight-roster-grid-right { grid-template-columns: minmax(0, 1fr) 86px 66px; }
+.rainlight-roster-head { font-size: 10px; line-height: 13px; color: #354f45; }
+.rainlight-roster-row { border-top: 1px solid #d4e0d8; }
+.rainlight-roster-row--selected { background: #e1eee2; }
+.rainlight-roster-row button { width: 100%; height: 100%; padding: 0 6px; text-align: left; border: 0; background: transparent; font-size: 11px; }
+.rainlight-roster-row button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rainlight-roster-row .rainlight-state { font-size: 11px; gap: 5px; }
+.rainlight-roster-row .rainlight-state > span { width: 6px; height: 6px; }
+.rainlight-footer-label { font-size: 12px; line-height: 15px; }
+.rainlight-footer-value { font-size: 12px; line-height: 15px; white-space: nowrap; }
+.rainlight-footer-fault { font-size: 11px; line-height: 15px; color: var(--rainlight-fault); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rainlight-footer-link { font-size: 12px; display: flex; align-items: center; justify-content: center; }

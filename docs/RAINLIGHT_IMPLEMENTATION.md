@@ -21,16 +21,23 @@ That approval is for assets/plan, not proof of an assembled working interface.
 
 ## Current implementation stage
 
-The first commit places only the approved architecture in the actual React page
-source. It does not replace the live home route yet. Its isolated visual fixture
-imports this component without login, API credentials, sockets or account data.
-A dedicated CI job typechecks and builds the fixture and captures its actual
-rendered geometry in a network-disabled, read-only, resource-bounded container.
-The screenshot and measurements are exact-head artifacts. No application code
-is executed on the host machine.
+The page now assembles selectable specialist desks, a review selector, a roster,
+an attributed inspector and keyboard-operated evidence tabs over the approved
+architecture. It does not replace the live home route yet. The production
+default has no sample prices, account values or invented activity. The separate
+visual fixture uses explicitly labeled synthetic observations and imports no
+login, API credentials, sockets or private account data.
 
-Next: inspect that rendered architecture, assemble the semantic first viewport,
-complete the hero and human assembly review, connect verified session/account
+A dedicated CI job typechecks both source and fixture, builds the fixture and
+captures its rendered geometry in a network-disabled, read-only,
+resource-bounded container. It exercises specialist selection, evidence tabs,
+review isolation and fault attribution. The screenshot and results are
+exact-source artifacts; newly authored semantic interactions remain unverified
+until that job executes successfully. No application code is executed on the
+host machine.
+
+Next: inspect the assembled first viewport, complete the hero and human assembly
+review, connect verified session/account
 data, implement city/office navigation and the bounded voice/text companion,
 then validate responsive layout, keyboard behavior, reduced motion and errors.
 Specialist activity must derive from attributable session events and receipt

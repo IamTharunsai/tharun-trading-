@@ -39,13 +39,40 @@ const server = http.createServer((req, res) => {
       return { className: image.className, x: box.x, y: box.y, width: box.width, height: box.height,
         naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight };
     }));
-    fs.writeFileSync(`${output}/plate-render.json`, JSON.stringify({ stage: 'architecture_only', viewport: { width: 1536, height: 1024 },
-      regions, pageErrors: failures, sourceCommit: process.env.SOURCE_COMMIT, scope: 'Rendered image placement, not live agent, financial or audio behavior.' }, null, 2));
+    fs.writeFileSync(`${output}/plate-render.json`, JSON.stringify({ stage: 'semantic_first_viewport', viewport: { width: 1536, height: 1024 },
+      regions, pageErrors: failures, sourceCommit: process.env.SOURCE_COMMIT, sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT,
+      scope: 'Rendered isolated fixture, not live agent, financial or audio behavior.' }, null, 2));
     assert.equal(regions.length, 4); assert.deepEqual(failures, []);
     const expected = [{ x: 0, y: 0, width: 210, height: 1024 }, { x: 210, y: 0, width: 663, height: 166 },
       { x: 873, y: 0, width: 663, height: 166 }, { x: 210, y: 211, width: 941, height: 506 }];
     regions.forEach((region, index) => Object.keys(expected[index]).forEach(key => assert.ok(Math.abs(region[key] - expected[index][key]) < 0.2, `plate_geometry_${index}_${key}`)));
     await page.screenshot({ path: `${output}/hero-repro.png`, fullPage: false });
+    await page.locator('[data-region="station-5"] button').click();
+    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), 'Risk Manager');
+    assert.equal(await page.locator('[data-region="station-5"] button').getAttribute('aria-pressed'), 'true');
+    await page.getByRole('tab', { name: 'Notes', exact: true }).click();
+    assert.match(await page.getByRole('tabpanel', { name: 'Notes', exact: true }).textContent(), /No attributable notes/);
+    await page.getByRole('tab', { name: 'Notes', exact: true }).press('ArrowRight');
+    assert.equal(await page.getByRole('tab', { name: 'Handoffs', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.getByRole('tab', { name: 'Handoffs', exact: true }).evaluate(node => document.activeElement === node), true);
+    await page.getByRole('button', { name: 'Previous specialist', exact: true }).click();
+    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), 'Fundamental');
+    await page.locator('[data-region="station-2"] button').click();
+    await page.getByRole('tab', { name: 'History', exact: true }).click();
+    assert.match(await page.getByRole('tabpanel', { name: 'History', exact: true }).textContent(), /Sample source observation/);
+    await page.getByRole('combobox', { name: 'Choose observed review', exact: true }).selectOption('fixture-review-complete');
+    await page.getByRole('tab', { name: 'Evidence', exact: true }).click();
+    assert.equal(await page.locator('[data-region="review-asset"]').textContent(), 'AAPL');
+    assert.equal(await page.locator('[data-region="price-value"]').textContent(), 'Unavailable');
+    assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Not observed');
+    await page.locator('[data-region="fault-status"] button').click();
+    assert.equal(await page.locator('[data-region="review-asset"]').textContent(), 'NU');
+    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), 'Options Flow');
+    assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Provider error');
+    fs.writeFileSync(`${output}/interaction-proof.json`, JSON.stringify({ viewport: { width: 1536, height: 1024 },
+      sourceCommit: process.env.SOURCE_COMMIT, sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT,
+      cases: ['select-specialist', 'unknown-notes', 'keyboard-tabs', 'previous-specialist',
+        'attributed-history', 'review-selection-clears-previous-evidence', 'fault-opens-attributable-review'], scope: 'Isolated fixture interactions, not backend or live trading proof.' }, null, 2));
     await context.close();
   } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(() => { process.stderr.write('commons_visual_proof_failed\n'); process.exitCode = 1; });
