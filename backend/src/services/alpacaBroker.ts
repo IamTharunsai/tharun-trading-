@@ -26,7 +26,7 @@ interface AlpacaOrderRequest {
   stop_loss?: { stop_price: number; limit_price?: number };
 }
 
-interface AlpacaOrder {
+export interface AlpacaOrder {
   id: string;
   client_order_id: string;
   created_at: string;
@@ -55,6 +55,21 @@ interface AlpacaOrder {
   status: 'pending_new' | 'accepted' | 'partially_filled' | 'filled' | 'done_for_day' | 'canceled' | 'replaced' | 'pending_cancel' | 'pending_replace' | 'stopped' | 'rejected' | 'suspended' | 'expired';
   extended_hours: boolean;
   legs: any[];
+}
+
+export interface AlpacaActivity {
+  id: string;
+  activity_type: string;
+  order_id?: string;
+  side?: string;
+  symbol?: string;
+  currency?: string;
+  qty?: string;
+  price?: string;
+  net_amount?: string;
+  transaction_time?: string;
+  date?: string;
+  status?: string;
 }
 
 interface AlpacaPosition {
@@ -198,13 +213,42 @@ export class AlpacaBroker {
    * Get order by ID
    */
   async getOrder(orderId: string): Promise<AlpacaOrder | null> {
+    return this.getOrderVerified(orderId);
+  }
+
+  // https://docs.alpaca.markets/us/reference/getorderbyorderid-1
+  // An unavailable response is not a missing order. Always fetch the actual
+  // nested family when recovering bracket executions.
+  async getOrderVerified(orderId: string): Promise<AlpacaOrder | null> {
     try {
-      const response = await this.client.get(`/v2/orders/${orderId}`);
+      const response = await this.client.get(`/v2/orders/${encodeURIComponent(orderId)}`, { params: { nested: true } });
+      if (!response.data?.id || response.data.id !== orderId) throw new Error('INVALID_BROKER_ORDER_IDENTITY');
       return response.data;
-    } catch (error) {
-      logger.error('Alpaca: Failed to get order', { orderId, error });
-      return null;
+    } catch (error: any) {
+      if (error?.response?.status === 404) return null;
+      throw error;
     }
+  }
+
+  // https://docs.alpaca.markets/us/reference/getaccountactivities-2
+  // Filters use creation time, so callers must overlap scans for late fees.
+  async listActivitiesVerified(after: string, until: string, maxPages = 20, orderId?: string): Promise<AlpacaActivity[]> {
+    const activities: AlpacaActivity[] = [];
+    const seen = new Set<string>();
+    let pageToken: string | undefined;
+    for (let page = 0; page < maxPages; page++) {
+      const response = await this.client.get('/v2/account/activities', { params: {
+        after, until, direction: 'asc', page_size: 100, page_token: pageToken, order_id: orderId,
+      } });
+      if (!Array.isArray(response.data)) throw new Error('INVALID_BROKER_ACTIVITIES');
+      for (const activity of response.data) {
+        if (!activity?.id || !activity.activity_type || seen.has(activity.id)) throw new Error('INVALID_BROKER_ACTIVITY_PAGE');
+        seen.add(activity.id); activities.push(activity);
+      }
+      if (response.data.length < 100) return activities;
+      pageToken = response.data[response.data.length - 1].id;
+    }
+    throw new Error('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED');
   }
 
   /** Official Trading API recovery key; a transport failure must not mean no order. */

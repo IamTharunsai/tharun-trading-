@@ -7,16 +7,20 @@ export interface PerformanceMetrics {
   brokerMode?: string;
   riskDataComplete?: boolean;
   feeDataComplete?: boolean;
+  accountingComplete?: boolean;
+  historyDataComplete?: boolean;
+  knownRealizedPnl: number;
+  knownUnrealizedPnl: number;
   totalEquity: number;
   cashBalance: number;
   buyingPower: number;
   investedCollateral: number;
-  realizedPnl: number;
-  unrealizedPnl: number;
-  totalPnl: number;
+  realizedPnl: number | null;
+  unrealizedPnl: number | null;
+  totalPnl: number | null;
   dailyPnl: number;
   dailyPnlPct: number;
-  totalFeesPaid: number;
+  totalFeesPaid: number | null;
   winRatePct: number;
   totalTrades: number;
   winningTrades: number;
@@ -51,10 +55,13 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   const openPositions = currentPortfolio.positions;
   const allClosedTrades = await prisma.trade.findMany({ where: { ...scope, status: 'CLOSED' } });
   const partiallyClosed = await prisma.trade.findMany({ where: { ...scope, status: 'OPEN' } });
+  const unknownFees = await prisma.brokerActivity.count({ where: { ...scope, activityType: { in: ['FEE', 'CFEE'] }, attributionStatus: { not: 'APPLIED' } } });
+  const unresolvedExits = await prisma.positionExit.count({ where: { ...scope, status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIAL', 'RECONCILIATION_REQUIRED'] } } });
+  const accountingComplete = currentPortfolio.accountingComplete === true && unknownFees === 0 && unresolvedExits === 0;
 
   // 1. Calculate Realized Trade Stats
   let realizedPnl = partiallyClosed.reduce((sum, trade) => sum + (trade.realizedPnl ?? 0), 0);
-  let totalFeesPaid = 0;
+  let totalFeesPaid = partiallyClosed.reduce((sum, trade) => sum + trade.fees + (trade.actualFeeCash ?? 0), 0);
   let winningTrades = 0;
   let losingTrades = 0;
   let breakEvenTrades = 0;
@@ -63,7 +70,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
 
   for (const t of allClosedTrades) {
     const pnl = Number(t.pnl) || 0;
-    const fees = Number(t.fees) || 0;
+    const fees = (Number(t.fees) || 0) + (t.actualFeeCash ?? 0);
     realizedPnl += pnl;
     totalFeesPaid += fees;
 
@@ -82,7 +89,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   const winRatePct = totalTrades > 0 ? round2((winningTrades / totalTrades) * 100) : 0;
   const averageWin = winningTrades > 0 ? round2(totalWinDollars / winningTrades) : 0;
   const averageLoss = losingTrades > 0 ? round2(totalLossDollars / losingTrades) : 0;
-  
+
   // Profit factor = gross profits / gross losses
   let profitFactor: number | string = 'N/A';
   if (totalLossDollars > 0) {
@@ -104,7 +111,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
 
   for (const pos of openPositions) {
     const currentPrice = prices[pos.asset] || pos.currentPrice;
-    const positionValue = currentPrice * pos.quantity;
+    const positionValue = currentPrice * Math.max(pos.quantity, pos.brokerObservedQuantity ?? 0);
     investedCollateral += positionValue;
 
     const isShort = pos.side === 'SELL';
@@ -123,7 +130,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   const cashBalance = currentPortfolio.cashBalance;
   const buyingPower = currentPortfolio.buyingPower ?? 0;
   const dataSource = `ALPACA_AUTHENTICATED_${currentPortfolio.brokerMode?.toUpperCase()}`;
-  const totalPnl = round2(realizedPnl + unrealizedPnl);
+  const totalPnl = accountingComplete ? round2(realizedPnl + unrealizedPnl) : null;
   const dailyPnl = round2(currentPortfolio.pnlDay);
   const dailyPnlPct = round2(currentPortfolio.pnlDayPct);
   // Dollar trade profits are not period returns. A reconciled cash-flow-adjusted
@@ -141,16 +148,18 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   return {
     accountId: currentPortfolio.accountId, brokerMode: currentPortfolio.brokerMode,
     riskDataComplete: currentPortfolio.riskDataComplete, feeDataComplete: false,
+    accountingComplete, knownRealizedPnl: round2(realizedPnl), knownUnrealizedPnl: round2(unrealizedPnl),
+    historyDataComplete: currentPortfolio.historyDataComplete,
     totalEquity: round2(totalEquity),
     cashBalance: round2(cashBalance),
     buyingPower: round2(buyingPower),
     investedCollateral: round2(investedCollateral),
-    realizedPnl: round2(realizedPnl),
-    unrealizedPnl: round2(unrealizedPnl),
+    realizedPnl: accountingComplete ? round2(realizedPnl) : null,
+    unrealizedPnl: accountingComplete ? round2(unrealizedPnl) : null,
     totalPnl,
     dailyPnl,
     dailyPnlPct,
-    totalFeesPaid: round2(totalFeesPaid),
+    totalFeesPaid: unknownFees === 0 ? round2(totalFeesPaid) : null,
     winRatePct,
     totalTrades,
     winningTrades,
@@ -169,7 +178,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
     polymarketEquity: round2(polymarketEquity),
     combinedTotal: round2(totalEquity),
     dataSource,
-    isStale: false,
+    isStale: !accountingComplete,
     timestamp: new Date().toISOString()
   };
 }

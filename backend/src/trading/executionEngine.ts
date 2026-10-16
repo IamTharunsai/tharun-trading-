@@ -122,7 +122,7 @@ async function placeBrokerOrder(
       orderId: order.id,
       fillPrice,
       fillQty,
-      fees: 0, // Alpaca charges $0 commissions
+      fees: 0, // Actual fee activities are reconciled independently; not a zero-fee assertion.
     };
   } catch (err: any) {
     const msg = err?.response?.data?.message || err?.message || String(err);
@@ -402,7 +402,7 @@ export async function markToMarketOpenPositions(): Promise<void> {
         continue;
       }
 
-      const remainingQuantity = trade.quantity - trade.closedQuantity;
+      const remainingQuantity = trade.quantity - trade.closedQuantity - (trade.feeQuantity ?? 0);
       const pnl = trade.type === 'BUY'
         ? (currentPrice - trade.entryPrice) * remainingQuantity
         : (trade.entryPrice - currentPrice) * remainingQuantity;
@@ -448,6 +448,7 @@ async function recordConfirmedExecution(signal: TradeSignal, intentId: string, o
       status: { in: ['SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED'] } }, data: { status: 'RECORDING' } });
     if (claimed.count !== 1) return;
     const scopeKey = positionScopeKey(intent.accountId, intent.mode, asset);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`;
     const existing = await tx.position.findUnique({ where: { scopeKey } });
     if (existing?.status === 'OPEN' && existing.side !== direction) throw new Error('Opposing fill needs lot reconciliation');
     const priorQty = existing?.status === 'OPEN' && existing.pendingEntryIntentId !== intentId ? existing.quantity : 0;
@@ -456,10 +457,12 @@ async function recordConfirmedExecution(signal: TradeSignal, intentId: string, o
     const position = await tx.position.upsert({ where: { scopeKey },
       create: { scopeKey, accountId: intent.accountId, brokerMode: intent.mode, asset, market,
         side: direction, entryPrice: fillPrice, currentPrice: fillPrice, quantity,
-        status: 'OPEN', brokerObservedQuantity: quantity, protectionStatus: protection, stopLossPrice: signal.stopLossPrice,
+        status: 'OPEN', accountingStatus: 'RECONCILED', accountingError: null,
+        brokerObservedQuantity: quantity, protectionStatus: protection, stopLossPrice: signal.stopLossPrice,
         takeProfitPrice: signal.takeProfitPrice, openedAt: new Date() },
       update: { side: direction, entryPrice: aggregatePrice, currentPrice: fillPrice, quantity: aggregateQuantity,
-        status: 'OPEN', pendingEntryIntentId: null, brokerObservedQuantity: aggregateQuantity, protectionStatus: protection, stopLossPrice: signal.stopLossPrice,
+        status: 'OPEN', accountingStatus: 'RECONCILED', accountingError: null, evidenceVersion: { increment: 1 },
+        pendingEntryIntentId: null, brokerObservedQuantity: aggregateQuantity, protectionStatus: protection, stopLossPrice: signal.stopLossPrice,
         takeProfitPrice: signal.takeProfitPrice, ...(priorQty === 0 ? { openedAt: new Date() } : {}) },
     });
     await tx.trade.create({ data: { asset, market, type: direction, status: 'OPEN',

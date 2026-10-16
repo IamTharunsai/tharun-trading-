@@ -6,7 +6,7 @@
 
 jest.mock('../src/utils/prisma', () => ({
   prisma: {
-    position: { findMany: jest.fn(), update: jest.fn(() => Promise.resolve()) },
+    position: { findMany: jest.fn(), update: jest.fn(() => Promise.resolve()), count: jest.fn().mockResolvedValue(0) },
     trade: { findMany: jest.fn(), count: jest.fn(() => Promise.resolve(0)) },
     portfolioSnapshot: { findFirst: jest.fn(() => Promise.resolve(null)) },
   },
@@ -56,6 +56,16 @@ describe('getPortfolioState — P&L math', () => {
     const state = await getPortfolioState();
 
     expect(state.pnlTotal).toBeCloseTo(130); // 100 unrealized + 30 realized
+  });
+  it('keeps broker quantity observations separate from the remaining execution P&L basis', async () => {
+    (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ quantity: 6, brokerObservedQuantity: 10, accountingStatus: 'RECONCILING' })]);
+    (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 90 });
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ status: 'OPEN', realizedPnl: -40 }]);
+    const state = await getPortfolioState();
+    expect(state.pnlTotal).toBe(-100); // $40 realized + $60 remaining execution loss
+    expect(state.accountingComplete).toBe(false);
+    expect(state.positions[0]).toMatchObject({ quantity: 6, brokerObservedQuantity: 10, unrealizedPnl: null });
+    expect(state.invested).toBe(900); // conservative exposure until the observation reconciles
   });
 
   it('computes unrealized P&L correctly for a SHORT position (profit when price falls)', async () => {

@@ -7,7 +7,7 @@
 jest.mock('../src/utils/prisma', () => ({
   prisma: {
     portfolioSnapshot: { findFirst: jest.fn() },
-    position: { findMany: jest.fn().mockResolvedValue([]) },
+    position: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
     trade: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
   },
 }));
