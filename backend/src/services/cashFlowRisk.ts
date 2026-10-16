@@ -175,16 +175,21 @@ type Scope = Pick<AccountScope, 'accountId' | 'mode'>;
 const whereScope = (scope: Scope) => ({ accountId: scope.accountId, brokerMode: scope.mode });
 const keyFor = (scope: Scope) => ['alpaca-risk', scope.mode, scope.accountId].map(encodeURIComponent).join(':');
 
-async function readMetrics(scope: Scope, now: Date): Promise<CashFlowRiskMetrics> {
-  const state = await prisma.capitalRiskState.findUnique({ where: { scopeKey: keyFor(scope) } });
+export async function readCashFlowRisk(scope: Scope, now: Date): Promise<CashFlowRiskMetrics> {
+  // State/status and its point projection must come from ONE database snapshot.
+  // A concurrent unknown-journal revision (or failed scan changing only status)
+  // must never combine its points with a previously VERIFIED state.
+  return prisma.$transaction(async tx => {
+  const state = await tx.capitalRiskState.findUnique({ where: { scopeKey: keyFor(scope) } });
   if (!state) return empty('RISK_HISTORY_UNAVAILABLE');
-  const rows = await prisma.capitalRiskPoint.findMany({ where: { ...whereScope(scope), endAt: { gte: state.referenceAt } }, orderBy: { endAt: 'asc' } });
+  const rows = await tx.capitalRiskPoint.findMany({ where: { ...whereScope(scope), endAt: { gte: state.referenceAt } }, orderBy: { endAt: 'asc' } });
   const metrics = { ...computeCashFlowRisk(rows.map(row => ({ ...row, cashflows: row.cashflows as Record<string, number> })), now, state.referenceAt, state.revision),
     accountId: scope.accountId, brokerMode: scope.mode };
   // Retain the last evidenced risk valuation/as-of while explicitly invalidating
   // returns after a failed scan. Raw NAV/position/recorded losses stay available.
   return state.status === 'VERIFIED' ? metrics : { ...metrics, complete: false, reason: state.error ?? 'CAPITAL_COVERAGE_UNAVAILABLE',
     dailyPnl: null, dailyPnlPct: null, weeklyPnl: null, weeklyPnlPct: null, weeklyDrawdownPct: null, drawdownPct: null };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000 });
 }
 
 /** Runs bounded HTTP reads outside PG transactions, then uses a scoped lock and
@@ -200,8 +205,8 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
     await prisma.capitalRiskState.upsert({ where: { scopeKey }, create: { scopeKey, ...where, referenceAt: initialReference }, update: {} });
     const before = await prisma.capitalRiskState.findUniqueOrThrow({ where: { scopeKey } });
     expectedRevision = before.revision;
-    if (before.coveredThrough && before.coveredThrough >= end && before.status === 'VERIFIED') return readMetrics(scope, now);
-    if (before.lastAttemptAt && now.getTime() - before.lastAttemptAt.getTime() < 30_000 && before.status !== 'VERIFIED') return readMetrics(scope, now);
+    if (before.coveredThrough && before.coveredThrough >= end && before.status === 'VERIFIED') return readCashFlowRisk(scope, now);
+    if (before.lastAttemptAt && now.getTime() - before.lastAttemptAt.getTime() < 30_000 && before.status !== 'VERIFIED') return readCashFlowRisk(scope, now);
     const activityAfter = new Date((before.activityThrough?.getTime() ?? before.referenceAt.getTime()) - 2 * DAY);
     // Filters are creation time, NOT effective/settlement time. Inclusive
     // overlap + stable IDs + complete pagination discovers newly posted old flows.
@@ -296,13 +301,13 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
         ...(auditEnd !== null ? auditEnd >= end.getTime() ? { fullBackfillAt: now, backfillCursor: null }
           : { backfillCursor: new Date(auditEnd) } : {}) } });
     }, { timeout: 120_000 });
-    return readMetrics(scope, now);
+    return readCashFlowRisk(scope, now);
   } catch (error) {
     const reason = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'CAPITAL_EVIDENCE_UNAVAILABLE';
     // A scan failure must not replace the entire portfolio with an exception.
     // Its accounting/position evidence can still monitor existing exposure.
     await prisma.capitalRiskState.updateMany({ where: { scopeKey, ...(expectedRevision !== undefined ? { revision: expectedRevision } : {}) },
       data: { status: 'UNVERIFIED', error: reason, lastAttemptAt: now } }).catch(() => {});
-    return readMetrics(scope, now).catch(() => empty(reason));
+    return readCashFlowRisk(scope, now).catch(() => empty(reason));
   }
 }

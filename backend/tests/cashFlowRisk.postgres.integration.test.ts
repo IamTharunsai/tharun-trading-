@@ -2,7 +2,7 @@
 // No provider implementation, credential or live account is reachable in CI.
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 import { prisma } from '../src/utils/prisma';
-import { getCashFlowRisk, RISK_STEP_MS as STEP } from '../src/services/cashFlowRisk';
+import { getCashFlowRisk, readCashFlowRisk, RISK_STEP_MS as STEP } from '../src/services/cashFlowRisk';
 import type { AccountScope } from '../src/trading/accountScope';
 import type { AlpacaActivity } from '../src/services/alpacaBroker';
 const suite = process.env.RUN_CASH_FLOW_POSTGRES === 'true' ? describe : describe.skip;
@@ -14,9 +14,9 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     const timestamp: number[] = []; const equity: number[] = []; const cashflow: Record<string, number[]> = {};
     for (let left = Date.parse(start); left < Date.parse(end); left += STEP) {
       timestamp.push(left / 1000);
-      equity.push(100000 + equityChanges.filter(change => change.at <= left + STEP).reduce((sum, change) => sum + change.amount, 0));
+      equity.push(100000 + equityChanges.filter(change => change.at < left + STEP).reduce((sum, change) => sum + change.amount, 0));
       for (const type of new Set(flows.map(flow => flow.type))) {
-        (cashflow[type] ??= []).push(flows.filter(flow => flow.type === type && flow.at > left && flow.at <= left + STEP).reduce((sum, flow) => sum + flow.amount, 0));
+        (cashflow[type] ??= []).push(flows.filter(flow => flow.type === type && flow.at >= left && flow.at < left + STEP).reduce((sum, flow) => sum + flow.amount, 0));
       }
     }
     return { timestamp, equity, cashflow, timeframe: '5Min' };
@@ -37,6 +37,8 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
   };
   test('concurrent withdrawal refresh and replay apply absolute capital once, retain a single revision', async () => {
     event('CSW', -10000);
+    let arrivals = 0; let release!: () => void; const fetched = new Promise<void>(resolve => { release = resolve; });
+    broker.listActivitiesVerified.mockImplementation(async () => { if (++arrivals === 2) release(); await fetched; return activities; });
     const values = await Promise.all([getCashFlowRisk(scope, baseNow), getCashFlowRisk(scope, baseNow)]);
     values.forEach(value => expect(value).toMatchObject({ complete: true, dailyPnl: 0, drawdownPct: 0, equity: 90000 }));
     expect(await prisma.capitalRiskObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
@@ -110,4 +112,30 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     expect((await slow).complete).toBe(true);
     expect((await prisma.capitalRiskState.findFirstOrThrow({ where: { accountId: scope.accountId } })).status).toBe('VERIFIED');
   }, 25000);
+  test('reader cannot combine verified r1 status with unknown-capital r2 points', async () => {
+    event('CSW', -10000); await getCashFlowRisk(scope, baseNow);
+    let stateRead!: () => void; const started = new Promise<void>(resolve => { stateRead = resolve; });
+    let resume!: () => void; const paused = new Promise<void>(resolve => { resume = resolve; });
+    const realTransaction = prisma.$transaction.bind(prisma);
+    const spy = jest.spyOn(prisma, '$transaction');
+    spy.mockImplementationOnce(((callback: any, options: any) => realTransaction(async tx => callback(new Proxy(tx, {
+      get(target, property) {
+        if (property !== 'capitalRiskState') return (target as any)[property];
+        return new Proxy(target.capitalRiskState, { get(model, method) {
+          if (method !== 'findUnique') return (model as any)[method];
+          return async (args: any) => { const value = await model.findUnique(args); stateRead(); await paused; return value; };
+        } });
+      },
+    })), options)) as any);
+    const next = new Date(baseNow.getTime() + STEP);
+    const reader = readCashFlowRisk(scope, next);
+    await started;
+    try {
+      equityChanges.push({ at: Date.parse('2026-10-16T11:00:00Z'), amount: 20000 });
+      activities.push({ id: 'concurrent-journal', activity_type: 'JNLC', net_amount: '20000', date: '2026-10-16' });
+      expect(await getCashFlowRisk(scope, next)).toMatchObject({ complete: false, revision: 2, equity: 110000 });
+    } finally { resume(); spy.mockRestore(); }
+    expect(await reader).toMatchObject({ complete: true, revision: 1, equity: 90000 });
+    expect(await readCashFlowRisk(scope, next)).toMatchObject({ complete: false, revision: 2, equity: 110000, dailyPnl: null });
+  }, 30000);
 });

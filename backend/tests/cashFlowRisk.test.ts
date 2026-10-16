@@ -43,6 +43,11 @@ test('date-only evidence needs broker bucket corroboration; two transfers cannot
   expect(capitalCoverage(series(0), [activity], reference)).toBe('CAPITAL_ACTIVITY_HISTORY_MISMATCH');
   expect(capitalCoverage(points, [], reference)).toBe('CAPITAL_ACTIVITY_COVERAGE_UNAVAILABLE');
 });
+test('precise flow at a left bucket boundary matches that bucket end, not the prior valuation', () => {
+  const start = new Date('2026-10-16T10:00:00Z');
+  const points = parseRiskHistory({ timeframe: '5Min', timestamp: [start.getTime() / 1000], equity: [101000], cashflow: { CSD: [1000] } }, start, new Date(start.getTime() + STEP));
+  expect(capitalCoverage(points, [{ id: 'precise', activity_type: 'CSD', net_amount: '1000', transaction_time: start.toISOString() }], new Date(start.getTime() - STEP))).toBeNull();
+});
 test('ACATC uses signed cash dollars; securities quantity and journals are unknown', () => {
   expect(activityEvidence({ id: 'cash', activity_type: 'ACATC', net_amount: '-500', date: '2026-10-16' }).amount?.toNumber()).toBe(-500);
   expect(() => activityEvidence({ id: 'cash', activity_type: 'ACATC', qty: '500' })).toThrow('EXTERNAL_CAPITAL_AMOUNT_UNAVAILABLE');
@@ -66,12 +71,12 @@ test('actual risk gates consume adjusted losses and reject cross-account/stale e
   jest.useFakeTimers().setSystemTime(now);
   const signal = { asset: 'FIXTURE', direction: 'BUY', confidence: 80, entryPrice: 100, stopLossPrice: 95,
     takeProfitPrice: 110, positionSizePct: 1, voteCounts: { supporting: 10, opposing: 0, abstaining: 0 } } as TradeSignal;
-  const evidence = { ...computeCashFlowRisk(series(-10000), now, reference), accountId: 'fixture', brokerMode: 'paper' };
+  const evidence = { ...computeCashFlowRisk(series(-10000), now, reference, 1), accountId: 'fixture', brokerMode: 'paper' };
   const portfolio = { accountId: 'fixture', brokerMode: 'paper', totalValue: 90000, cashBalance: 90000, pnlDayPct: 0,
     pnlWeekPct: 0, drawdownFromPeak: 0, riskDataComplete: true, capitalRisk: evidence, positions: [], tradesExecutedToday: 0 } as unknown as PortfolioState;
   try {
     expect((await validateTradeSignal(signal, portfolio)).approved).toBe(true);
-    expect((await validateTradeSignal(signal, { ...portfolio, pnlDayPct: -4 })).reason).toContain('DAILY_LOSS_LIMIT');
+    expect((await validateTradeSignal(signal, { ...portfolio, pnlDayPct: -4, capitalRisk: { ...evidence, dailyPnlPct: -4 } })).reason).toContain('DAILY_LOSS_LIMIT');
     expect((await validateTradeSignal(signal, { ...portfolio, capitalRisk: { ...evidence, weeklyDrawdownPct: 7 } })).reason).toContain('WEEKLY_DRAWDOWN_GATE');
     expect((await validateTradeSignal(signal, { ...portfolio, brokerMode: 'live' })).approved).toBe(false);
     expect((await validateTradeSignal(signal, { ...portfolio, capitalRisk: { ...evidence, asOf: 'invalid' } })).approved).toBe(false);

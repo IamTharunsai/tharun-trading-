@@ -121,6 +121,7 @@ export async function validateTradeSignal(
   const evidence = portfolio.capitalRisk;
   if (portfolio.riskDataComplete !== true || evidence?.complete !== true || !evidence.asOf
     || !Number.isFinite(Date.parse(evidence.asOf)) || evidence.accountId !== portfolio.accountId || evidence.brokerMode !== portfolio.brokerMode
+    || !Number.isSafeInteger(evidence.revision) || evidence.revision < 1
     || !evidence.referenceAt || Date.now() - Date.parse(evidence.asOf) >= 390_000
     || Date.parse(evidence.asOf) > Date.now()) return { approved: false, reason: 'RISK_BASELINE_UNAVAILABLE: scoped capital-adjusted history is incomplete or stale' };
   if (!Number.isFinite(signal.confidence) || signal.confidence < 0 || signal.confidence > 100) {
@@ -133,6 +134,7 @@ export async function validateTradeSignal(
     return { approved: false, reason: 'INVALID_TRADE_GEOMETRY: positive finite values and correctly ordered stop/target are required' };
   }
   if (portfolio.pnlDayPct === null || portfolio.pnlWeekPct === null || portfolio.drawdownFromPeak === null
+    || portfolio.pnlDayPct !== evidence.dailyPnlPct || portfolio.pnlWeekPct !== evidence.weeklyPnlPct || portfolio.drawdownFromPeak !== evidence.drawdownPct
     || ![portfolio.totalValue, portfolio.cashBalance, portfolio.pnlDayPct, portfolio.pnlWeekPct, portfolio.drawdownFromPeak].every(Number.isFinite)
     || portfolio.totalValue <= 0 || portfolio.cashBalance < 0) {
     return { approved: false, reason: 'INVALID_PORTFOLIO: current verified equity and risk metrics are required' };
