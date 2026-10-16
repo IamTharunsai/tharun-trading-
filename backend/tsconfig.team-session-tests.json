@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
+  "include": ["src/**/*", "tests/teamSessions.test.ts", "tests/teamSessions.route.test.ts", "tests/committee.behavior.test.ts", "tests/privateRuntimeRoutes.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

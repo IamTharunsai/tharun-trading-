@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'crypto';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { getIO } from '../websocket/server';
+import { createDebateEventEmitter } from './debateEvents';
 import { AgentVote, MarketSnapshot, PortfolioState } from './types';
 import { getFundamentalsSummary } from '../services/fundamentalsService';
 import { getStockMemorySummary, recordDebate, getRegimeMatchedLessons } from '../services/stockMemoryService';
@@ -552,6 +553,8 @@ export async function runInvestmentCommitteeDebate(
   const io = positionReview ? null : getIO();
   const debateId = `debate_${randomUUID()}`;
   const asset = snapshot.asset;
+  const emit = createDebateEventEmitter({ debateId, asset, market: snapshot.market,
+    purpose: positionReview ? 'POSITION_REVIEW' : executionPurpose, marketSnapshotAt: snapshot.timestamp }, io);
   const maxSnapshotAgeMs = Number(process.env.MAX_SNAPSHOT_AGE_MS ?? 300000);
   if (!(Number.isFinite(maxSnapshotAgeMs) && maxSnapshotAgeMs > 0)
     || !Number.isFinite(snapshot.timestamp) || snapshot.timestamp > Date.now() + 5000 || Date.now() - snapshot.timestamp > maxSnapshotAgeMs
@@ -590,7 +593,11 @@ export async function runInvestmentCommitteeDebate(
   logger.info(`📊  Market Regime: ${marketRegime}`);
   logger.info(`${'═'.repeat(60)}\n`);
 
-  io?.emit('debate:start', { debateId, asset, price: snapshot.price, regime: marketRegime });
+  emit('debate:start', { debateId, asset, price: snapshot.price, regime: marketRegime,
+    purpose: executionPurpose, market: snapshot.market, marketSnapshotAt: snapshot.timestamp, exchangeObservedAt: null,
+    resumedFromCheckpoint: !!checkpoint, checkpointStage: checkpoint?.status });
+
+  try {
 
   const transcript: DebateTranscript = {
     purpose: positionReview ? 'POSITION_REVIEW' : executionPurpose,
@@ -683,7 +690,7 @@ export async function runInvestmentCommitteeDebate(
     transcript.round1 = round1Results.map(r => ({ agentId: r.agentId, agentName: r.agentName, vote: r.vote, argument: r.openingArgument }));
   } else {
     logger.info('📢 ROUND 1: OPENING ARGUMENTS');
-    io?.emit('debate:round', { round: 1, debateId, asset });
+    emit('debate:round', { round: 1, debateId, asset });
 
     round1Results = [];
 
@@ -695,7 +702,7 @@ export async function runInvestmentCommitteeDebate(
     const round1AgentResults = await runAgentsSequentially(round1Roster, async (agent) => {
       try {
         if (!hasRequiredEvidence(agent.id)) throw new Error('Required source evidence is unavailable');
-        io?.emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
+        emit('debate:agent-speaking', { agentId: agent.id, agentName: agent.name, round: 1, debateId });
 
         // Prompt caching only hits when the content BEFORE a cache_control
         // breakpoint is byte-identical across calls. Previously agent.systemPrompt
@@ -738,13 +745,13 @@ export async function runInvestmentCommitteeDebate(
           weaknessOfMyOwnView: parsed.weaknessOfMyOwnView || ''
         };
         logger.info(`  ${agent.icon} ${agent.name}: ${result.vote} (${result.confidence}%)`);
-        io?.emit('debate:agent-voted', { ...result, round: 1, debateId });
+        emit('debate:agent-voted', { ...result, round: 1, debateId });
         if (!positionReview) agentActivityMonitor.logVote(agent.id, agent.name, asset, result.vote, result.openingArgument, result.confidence / 100, 1).catch(() => {});
         return result;
       } catch (err) {
         logger.error(`Agent ${agent.id} Round 1 failed`, { err: (err as Error)?.message || err });
         const fallback = { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
-        io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
+        emit('debate:agent-voted', { ...fallback, round: 1, debateId, failureState: true });
         return fallback;
       }
     });
@@ -752,7 +759,7 @@ export async function runInvestmentCommitteeDebate(
     round1Results.push(...round1AgentResults);
 
     const devilAgent = AGENT_ROSTER[9];
-    io?.emit('debate:agent-speaking', { agentId: 10, agentName: devilAgent.name, round: 1, debateId });
+    emit('debate:agent-speaking', { agentId: 10, agentName: devilAgent.name, round: 1, debateId });
     try {
       const round1Summary = round1AgentResults.map(r => `${r.agentName} (${r.vote} ${r.confidence}%): ${r.openingArgument}`).join('\n\n');
       const devilResponse = await callResearch({
@@ -777,14 +784,14 @@ export async function runInvestmentCommitteeDebate(
         round1Results.push(devilResult);
         transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: devilResult.vote, argument: devilResult.openingArgument });
         logger.info(`  ${devilAgent.icon} ${devilAgent.name}: ${devilResult.vote} (${devilResult.confidence}%)`);
-        io?.emit('debate:agent-voted', { ...devilResult, round: 1, debateId });
+        emit('debate:agent-voted', { ...devilResult, round: 1, debateId });
       }
     } catch (err) {
       logger.error('Devil\'s Advocate Round 1 failed', { err: (err as Error)?.message || err });
       const fallback = { agentId: 10, agentName: devilAgent.name, agentIcon: devilAgent.icon, vote: 'HOLD' as const, confidence: 0, openingArgument: 'Analysis unavailable', keyFactors: [], riskWarnings: [], weaknessOfMyOwnView: '' };
       round1Results.push(fallback);
       transcript.round1.push({ agentId: 10, agentName: devilAgent.name, vote: 'HOLD', argument: 'Analysis unavailable' });
-      io?.emit('debate:agent-voted', { ...fallback, round: 1, debateId });
+      emit('debate:agent-voted', { ...fallback, round: 1, debateId, failureState: true });
     }
 
     await saveDebateCheckpoint(asset, 'ROUND1_DONE', round1Results, null, marketRegime, inputFingerprint, evidenceBundle);
@@ -796,7 +803,7 @@ export async function runInvestmentCommitteeDebate(
     if (round2Exchange) transcript.round2.push(round2Exchange);
   } else {
     logger.info('\n⚔️  ROUND 2: CROSS-EXAMINATION');
-    io?.emit('debate:round', { round: 2, debateId, asset });
+    emit('debate:round', { round: 2, debateId, asset });
 
     const dominantView = getDominantView(round1Results);
 
@@ -832,12 +839,14 @@ export async function runInvestmentCommitteeDebate(
 
           round2Exchange = exchangeSchema.parse({ challenger: challenger.agentName, target: dominantView.leadAgent.agentName, challenge: challengeText, rebuttal: rebuttalText });
           transcript.round2.push(round2Exchange);
-          io?.emit('debate:cross-examination', { ...round2Exchange, debateId });
+          emit('debate:cross-examination', { ...round2Exchange, debateId,
+            challengerId: challenger.agentId, targetId: dominantView.leadAgent.agentId });
           logger.info(`  ⚔️ ${challenger.agentName} → ${dominantView.leadAgent.agentName}: "${challengeText}"`);
           logger.info(`  🛡️ ${dominantView.leadAgent.agentName}: "${rebuttalText}"`);
         }
       } catch (err) {
         logger.error('Round 2 cross-examination failed', { err: (err as Error)?.message || err });
+        emit('debate:error', { debateId, errorCode: 'cross_examination_unavailable', fatal: false });
       }
     }
 
@@ -845,7 +854,7 @@ export async function runInvestmentCommitteeDebate(
   }
 
   logger.info('\n🗳️  ROUND 3: FINAL VERDICT');
-  io?.emit('debate:round', { round: 3, debateId, asset });
+  emit('debate:round', { round: 3, debateId, asset });
 
   const debateSummary = buildDebateSummary(round1Results, round2Exchange);
 
@@ -870,7 +879,7 @@ export async function runInvestmentCommitteeDebate(
       const changed = parsed.changedMind && parsed.finalVote !== originalVote?.vote;
       if (changed) logger.info(`  🔄 ${agent.name} CHANGED: ${originalVote?.vote} → ${parsed.finalVote}`);
 
-      io?.emit('debate:final-vote', { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, finalVote: parsed.finalVote, finalReason: parsed.finalReason, confidence: parsed.confidence, changedMind: changed, debateId });
+      emit('debate:final-vote', { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, finalVote: parsed.finalVote, finalReason: parsed.finalReason, confidence: parsed.confidence, changedMind: changed, debateId });
       if (!positionReview) agentActivityMonitor.logVote(agent.id, agent.name, asset, parsed.finalVote, parsed.finalReason || '', parsed.confidence / 100, 3).catch(() => {});
 
       return {
@@ -888,6 +897,7 @@ export async function runInvestmentCommitteeDebate(
     } catch (err) {
       const fallbackVote = 'HOLD' as const;
       if (!positionReview) agentActivityMonitor.logVote(agent.id, agent.name, asset, fallbackVote, 'Final research unavailable', 0, 3).catch(() => {});
+      emit('debate:agent-error', { debateId, agentId: agent.id, round: 3, errorCode: 'final_unavailable' });
       return { agentId: agent.id, agentName: agent.name, agentIcon: agent.icon, initialVote: originalVote?.vote || 'HOLD', finalVote: fallbackVote, confidence: 0, changedMind: false, finalReason: 'Error', openingArgument: originalVote?.openingArgument || '', keyFactors: [], riskWarnings: ['Final research unavailable'], challenges: [], rebuttals: [], failureState: true };
     }
   });
@@ -895,7 +905,7 @@ export async function runInvestmentCommitteeDebate(
   transcript.agentArguments = round3Results as AgentArgument[];
 
   logger.info('\n👑 MASTER COORDINATOR: FINAL SYNTHESIS');
-  io?.emit('debate:master-thinking', { debateId, asset });
+  emit('debate:master-thinking', { debateId, asset });
 
   const finalVotes = round3Results;
   const buyCount = finalVotes.filter(v => v.finalVote === 'BUY').length;
@@ -979,6 +989,7 @@ export async function runInvestmentCommitteeDebate(
       masterDecision = masterDecisionSchema.parse(extractJSON(mc.text));
     } catch (err) {
       logger.error('Master Coordinator failed', { err: (err as Error)?.message || err });
+      emit('debate:error', { debateId, errorCode: 'coordinator_unavailable', fatal: false });
       masterDecision = { finalDecision: 'HOLD', confidence: 0, synthesis: 'Error', blockReason: 'System error', positionSizeRecommendation: 0 };
     }
   }
@@ -1114,14 +1125,21 @@ export async function runInvestmentCommitteeDebate(
     await clearDebateCheckpoint(asset);
   } catch (dbErr) {
     logger.error('Failed to save debate', { dbErr });
+    emit('debate:error', { debateId, errorCode: 'decision_persistence_failed', fatal: false });
     transcript.executionApproved = false;
     transcript.positionSizePct = 0;
     transcript.blockReason = 'Decision persistence failed — execution blocked';
   }
 
-  io?.emit('debate:complete', { debateId, asset, transcript });
+  emit('debate:complete', { debateId, asset, transcript });
 
   return transcript;
+  } catch (error) {
+    // Report an observed rejection, never infer failure from age or missing events.
+    // Observation/transport failure must not replace the committee's original error.
+    try { emit('debate:error', { debateId, errorCode: 'session_failed', fatal: true }); } catch { /* preserve original rejection */ }
+    throw error;
+  }
 }
 
 // ── HELPERS ──────────────────────────────────────────────────────────

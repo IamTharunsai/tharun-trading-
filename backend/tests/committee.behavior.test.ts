@@ -33,6 +33,9 @@ jest.mock('../src/services/sentimentService', () => ({
 import { prisma } from '../src/utils/prisma';
 import { getForecast } from '../src/services/kronosService';
 import { routedMessagesCreate } from '../src/utils/llmRouter';
+import { getIO } from '../src/websocket/server';
+import { getFundamentalsSummary } from '../src/services/fundamentalsService';
+import { teamSessionRegistry } from '../src/services/teamSessions';
 // Load and transform the real committee before Jest starts an individual test's
 // five-second deadline. Cold TypeScript loading is not committee execution.
 import { runInvestmentCommitteeDebate, getLlmSpendToday } from '../src/agents/debateEngine';
@@ -129,6 +132,15 @@ describe('real committee behavior with dummy providers', () => {
     expect(JSON.stringify(finalCall.messages)).toContain('105.00');
     expect(JSON.stringify(masterCall.messages)).toContain('105.00');
     expect(JSON.stringify((prisma.agentDecision.create as jest.Mock).mock.calls[0][0].data.marketSnapshot)).toContain('AAPL');
+    const observed = teamSessionRegistry.snapshot().sessions.find(s => s.id === result.id)!;
+    expect(observed).toMatchObject({ status: 'complete', purpose: 'ENTRY', market: 'stocks', marketSnapshotAt: input.timestamp,
+      exchangeObservedAt: null, result: { decisionId: result.decisionId, tradeExecution: 'not-observed' } });
+    expect(Object.keys(observed.agents)).toHaveLength(14);
+    expect(observed.entries.filter(e => e.kind === 'analyzing').every(e => e.round === 1)).toBe(true);
+    expect(observed.entries.filter(e => e.kind === 'final-vote')).toHaveLength(14);
+    expect(observed.coordinator?.lastObservation.kind).toBe('coordinator');
+    const transport = (getIO as jest.Mock).mock.results.slice(-1)[0].value;
+    expect(transport.emit.mock.calls.find(([event]: [string]) => event === 'debate:complete')[1].sessionObservation.sequence).toBe(observed.lastSequence);
   });
 
   it('cannot approve when the current decision fails to persist', async () => {
@@ -152,6 +164,7 @@ describe('real committee behavior with dummy providers', () => {
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.finalDecision).toBe('HOLD');
     expect(result.executionApproved).toBe(false);
+    expect(teamSessionRegistry.snapshot().sessions.find(s => s.id === result.id)!.entries.some(e => e.errorCode === 'coordinator_unavailable')).toBe(true);
   });
 
   it('forces the quantitative forecaster to abstain when no real forecast exists', async () => {
@@ -161,6 +174,7 @@ describe('real committee behavior with dummy providers', () => {
   });
 
   it('runs all specialists with actual held context but persists no execution authority', async () => {
+    const observedBefore = teamSessionRegistry.snapshot().counters.acceptedEvents;
     const holding = { id: 'holding-1', asset: 'AAPL', market: 'stocks', side: 'BUY', quantity: 3,
       entryPrice: 99, stopLossPrice: 97, takeProfitPrice: 105, openedAt: new Date('2025-01-01T00:00:00Z') };
     const context: PositionResearchContext = { positionId: holding.id, asset: holding.asset, side: 'BUY', quantity: 3,
@@ -178,6 +192,9 @@ describe('real committee behavior with dummy providers', () => {
     expect(JSON.stringify((prisma.agentDecision.create as jest.Mock).mock.calls[0][0])).toContain('holding-1');
     const finalCall = (routedMessagesCreate as jest.Mock).mock.calls.find(([p]) => JSON.stringify(p.messages).includes('Final vote?'))![0];
     expect(JSON.stringify(finalCall.messages)).toContain('POSITION_REVIEW');
+    expect(teamSessionRegistry.snapshot().sessions.some(s => s.id === result.id)).toBe(false);
+    expect(teamSessionRegistry.snapshot().counters.acceptedEvents).toBe(observedBefore);
+    expect(getIO).not.toHaveBeenCalled();
   });
   it('rejects canceled research before any paid council call', async () => {
     const controller = new AbortController(); controller.abort(new Error('fixture canceled'));
@@ -209,5 +226,67 @@ describe('real committee behavior with dummy providers', () => {
     const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
     expect(result.executionApproved).toBe(false);
     expect(result.blockReason).toMatch(/risk reviewer/i);
+  });
+
+  it('records concurrent same-asset ENTRY and manual RESEARCH as distinct actual sessions', async () => {
+    const input = snapshot();
+    const [entry, research] = await Promise.all([
+      runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL'),
+      runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL', undefined, 'COUNCIL', undefined, undefined, 'RESEARCH'),
+    ]);
+    expect(entry.id).not.toBe(research.id);
+    for (const result of [entry, research]) {
+      const session = teamSessionRegistry.snapshot().sessions.find(s => s.id === result.id)!;
+      expect(session.purpose).toBe(result.purpose); expect(session.status).toBe('complete');
+      expect(session.entries.filter(e => e.kind === 'final-vote')).toHaveLength(14);
+    }
+  });
+
+  it('records actual challenge and response with source agent IDs', async () => {
+    (routedMessagesCreate as jest.Mock).mockImplementation((params: any) => {
+      if (JSON.stringify(params.messages).includes('What is your counter-argument?')) {
+        return reply({ vote: 'SELL', confidence: 80, openingArgument: 'Fixture dissent', keyFactors: ['fixture'], riskWarnings: [] });
+      }
+      return defaultReply(params);
+    });
+    const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
+    const observed = teamSessionRegistry.snapshot().sessions.find(s => s.id === result.id)!;
+    expect(observed.entries.find(e => e.kind === 'challenge')).toMatchObject({ agentId: 10, content: 'Fixture challenge' });
+    expect(observed.entries.find(e => e.kind === 'rebuttal')).toMatchObject({ agentId: 1, content: 'Fixture response' });
+  });
+
+  it('marks observed opening/final and storage failures using safe codes', async () => {
+    (routedMessagesCreate as jest.Mock).mockRejectedValue(Object.assign(new Error('PRIVATE_PROVIDER_DETAIL'), { code: 'schema_invalid' }));
+    (prisma.agentDecision.create as jest.Mock).mockRejectedValueOnce(new Error('PRIVATE_DATABASE_DETAIL'));
+    const result = await runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL');
+    const observed = teamSessionRegistry.snapshot().sessions.find(s => s.id === result.id)!;
+    const codes = observed.entries.map(e => e.errorCode);
+    expect(codes).toContain('opening_unavailable'); expect(codes).toContain('final_unavailable');
+    expect(codes).toContain('decision_persistence_failed');
+    expect(observed.result?.committeeApproved).toBe(false); expect(observed.result?.decisionId).toBeUndefined();
+    expect(JSON.stringify(observed)).not.toContain('PRIVATE_');
+  });
+
+  it('reports an actually rejected session and preserves the original rejection identity', async () => {
+    const failure = new Error('PRIVATE_PREPARATION_DETAIL');
+    (getFundamentalsSummary as jest.Mock).mockRejectedValueOnce(failure);
+    const before = teamSessionRegistry.snapshot().counters.acceptedEvents;
+    await expect(runInvestmentCommitteeDebate(snapshot(), portfolio, 'TRENDING_BULL')).rejects.toBe(failure);
+    const observed = teamSessionRegistry.snapshot().sessions[0];
+    expect(observed.status).toBe('failed'); expect(observed.entries[observed.entries.length - 1]).toMatchObject({ errorCode: 'session_failed', fatal: true });
+    expect(teamSessionRegistry.snapshot().counters.acceptedEvents).toBe(before + 2);
+    expect(JSON.stringify(observed)).not.toContain('PRIVATE_PREPARATION_DETAIL');
+  });
+
+  it('does not replay saved checkpoint specialist receipts as newly observed work', async () => {
+    const input = snapshot();
+    await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL');
+    const saved = (prisma.debateCheckpoint.upsert as jest.Mock).mock.calls.slice(-1)[0][0].create;
+    (prisma.debateCheckpoint.findUnique as jest.Mock).mockResolvedValueOnce({ ...saved, updatedAt: new Date() });
+    const resumed = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL');
+    const observed = teamSessionRegistry.snapshot().sessions.find(s => s.id === resumed.id)!;
+    expect(observed.resumedFromCheckpoint).toBe(true); expect(observed.checkpointStage).toBe('ROUND2_DONE');
+    expect(observed.entries.some(e => e.kind === 'analyzing' || e.kind === 'opening-vote' || e.kind === 'challenge')).toBe(false);
+    expect(observed.entries.filter(e => e.kind === 'final-vote')).toHaveLength(14);
   });
 });
