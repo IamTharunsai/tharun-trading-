@@ -109,37 +109,6 @@ import { requestPositionExit, ExitResult } from './positionExits';
 import { logger } from '../utils/logger';
 import { TradeSignal, PortfolioState } from '../agents/types';
 
-// ─── Real 7-day rolling drawdown from DB portfolio snapshots ─────────────────
-/**
- * Queries the portfolioSnapshot table for the highest value in the past 7 days
- * and computes the drawdown from that peak to the current portfolio value.
- * Falls back to 0 if no snapshots are found (new account / first week).
- */
-async function computeWeeklyDrawdownPct(currentValue: number, accountId?: string, brokerMode?: string): Promise<number> {
-  try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    // Find the highest total portfolio value recorded over the last 7 days
-    const snapshots = await (prisma as any).portfolioSnapshot.findMany({
-      where: { accountId: accountId ?? null, brokerMode: brokerMode ?? null, timestamp: { gte: sevenDaysAgo } },
-      select: { totalValue: true },
-      orderBy: { timestamp: 'asc' },
-    });
-
-    if (!snapshots || snapshots.length === 0) return 0;
-
-    const weeklyPeak = Math.max(...snapshots.map((s: { totalValue: number }) => Number(s.totalValue)));
-    if (weeklyPeak <= 0) return 0;
-
-    const dd = Math.max(0, (weeklyPeak - currentValue) / weeklyPeak * 100);
-    logger.info(`[RISK] Weekly drawdown: peak=$${weeklyPeak.toFixed(2)}, current=$${currentValue.toFixed(2)}, dd=${dd.toFixed(2)}%`);
-    return dd;
-  } catch (err: any) {
-    // Missing risk storage cannot be interpreted as a zero-loss account.
-    logger.debug(`[RISK] Could not fetch portfolio snapshots for weekly drawdown: ${err?.message}`);
-    throw err;
-  }
-}
-
 // ─── validateTradeSignal — thin wrapper called by scheduler.ts ───────────────
 /**
  * Quick risk gate before executeTradeSignal is called.
@@ -149,7 +118,11 @@ export async function validateTradeSignal(
   signal: TradeSignal,
   portfolio: PortfolioState,
 ): Promise<{ approved: boolean; reason: string; adjustedSize?: number }> {
-  if (portfolio.riskDataComplete === false) return { approved: false, reason: 'RISK_BASELINE_UNAVAILABLE: current account history is incomplete' };
+  const evidence = portfolio.capitalRisk;
+  if (portfolio.riskDataComplete !== true || evidence?.complete !== true || !evidence.asOf
+    || !Number.isFinite(Date.parse(evidence.asOf)) || evidence.accountId !== portfolio.accountId || evidence.brokerMode !== portfolio.brokerMode
+    || !evidence.referenceAt || Date.now() - Date.parse(evidence.asOf) >= 390_000
+    || Date.parse(evidence.asOf) > Date.now()) return { approved: false, reason: 'RISK_BASELINE_UNAVAILABLE: scoped capital-adjusted history is incomplete or stale' };
   if (!Number.isFinite(signal.confidence) || signal.confidence < 0 || signal.confidence > 100) {
     return { approved: false, reason: 'INVALID_CONFIDENCE: expected a percentage in [0, 100]' };
   }
@@ -159,7 +132,8 @@ export async function validateTradeSignal(
     || (signal.direction === 'SELL' && !(signal.stopLossPrice > signal.entryPrice && signal.takeProfitPrice < signal.entryPrice))) {
     return { approved: false, reason: 'INVALID_TRADE_GEOMETRY: positive finite values and correctly ordered stop/target are required' };
   }
-  if (![portfolio.totalValue, portfolio.cashBalance, portfolio.pnlDayPct, portfolio.pnlWeekPct, portfolio.drawdownFromPeak].every(Number.isFinite)
+  if (portfolio.pnlDayPct === null || portfolio.pnlWeekPct === null || portfolio.drawdownFromPeak === null
+    || ![portfolio.totalValue, portfolio.cashBalance, portfolio.pnlDayPct, portfolio.pnlWeekPct, portfolio.drawdownFromPeak].every(Number.isFinite)
     || portfolio.totalValue <= 0 || portfolio.cashBalance < 0) {
     return { approved: false, reason: 'INVALID_PORTFOLIO: current verified equity and risk metrics are required' };
   }
@@ -187,13 +161,10 @@ export async function validateTradeSignal(
     return { approved: false, reason: 'HOLD — no position change needed' };
   }
 
-  // Compute real 7-day rolling drawdown from portfolio snapshots
-  let weeklyDrawdownPct: number;
-  try {
-    weeklyDrawdownPct = Math.max(await computeWeeklyDrawdownPct(portfolio.totalValue, portfolio.accountId, portfolio.brokerMode), -portfolio.pnlWeekPct, 0);
-  } catch {
-    return { approved: false, reason: 'RISK_DATA_UNAVAILABLE: weekly drawdown could not be verified' };
-  }
+  // The same completed broker buckets feed every loss and peak gate. Raw NAV
+  // snapshots would reintroduce withdrawals as loss and deposits as recovery.
+  if (evidence.weeklyDrawdownPct === null || !Number.isFinite(evidence.weeklyDrawdownPct)) return { approved: false, reason: 'RISK_DATA_UNAVAILABLE: weekly drawdown could not be verified' };
+  const weeklyDrawdownPct = Math.max(evidence.weeklyDrawdownPct, -portfolio.pnlWeekPct, 0);
 
   if (!signal.voteCounts) {
     return { approved: false, reason: `MISSING_COMMITTEE_EVIDENCE: ${signal.confidence}% confidence; autonomous execution requires recorded council evidence` };

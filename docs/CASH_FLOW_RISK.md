@@ -1,0 +1,42 @@
+# Capital-adjusted trading loss controls
+
+The risk service separates the current authenticated account NAV/exposure from its most recent **completed five-minute broker valuation**. A withdrawal from $100,000 to $90,000 is $0 trading loss when verified external capital is -$10,000. A $10,000 deposit plus a $4,000 investment loss produces $106,000 NAV and a -$4,000 result (-4% of $100,000 opening NAV). Deposits cannot manufacture recovery; withdrawals cannot manufacture loss.
+
+## Executable contract and official sources
+
+- [Trading portfolio history](https://docs.alpaca.markets/us/reference/getaccountportfoliohistory-1): request `timeframe=5Min`, `intraday_reporting=continuous`, `pnl_reset=no_reset`, `cashflow_types=ALL`. Each request is at most 29 days. Do not use returned `profit_loss`, percentages, `base_value` or account `last_equity` as capital-adjusted evidence. The API documents simple equity/base-value P&L and its official examples include deposits separately.
+- [Official SDK history model](https://alpaca.markets/sdks/python/api_reference/trading/models.html#alpaca.trading.models.PortfolioHistory): timestamps label the beginning of each time window; equity is valued at its end; cashflow arrays contain amounts per activity type. The service stores end timestamps explicitly, excludes unfinished buckets, validates aligned arrays and every expected bin, and never interpolates missing equity.
+- [Account activities](https://docs.alpaca.markets/us/docs/account-activities): `CSD` is cash deposit (+), `CSW` cash withdrawal (-), `ACATC` ACATS cash IN/OUT; NTA `net_amount` is signed money. Only those three types are classified as external cash. `ACATS` securities, generic journals (`JNL`, `JNLC`, `JNLS`), unknown transfers/types and unsupported adjustments are unverified capital effects. No share quantity is converted into cash or assumed to have zero value. Fees, dividends, interest, capital-gain distributions and documented pass-through charges/rebates remain investment results.
+- [Activity query contract](https://docs.alpaca.markets/us/reference/getaccountactivities-2): `after`/`until` filter creation time, not settlement time. Stable IDs paginate up to 100 activities per page. Complete paging is mandatory; transport errors, duplicate pages and scan limits are incomplete coverage. A successful empty response is distinct from failure.
+
+The broker history supplies intraday transfer placement. Activity occurrence/settlement dates provide conservative matching/refetch intervals only. A date-only activity is **never ordered at midnight against an intraday opening observation**. Per-type signed dollar totals must corroborate the broker's cashflow bins over merged matching intervals; two activities cannot both claim the same transfer bucket. Missing/mismatched amount, currency, time or activity coverage remains unknown. Historical `ACATC` uses actual signed cash `net_amount`, never security value.
+
+For signed external capital C between two broker equity endpoints:
+
+`dollarTradingPnl = Ecurrent - Eopening - C`
+
+`periodPct = dollarTradingPnl / Eopening * 100`
+
+These are simple investment-result percentages denominated by opening NAV, **not TWR, IRR or a forecast**. Day openings are UTC midnight; weekly results compare the completed endpoint with the endpoint exactly seven days earlier. Opening NAV must be positive. The flow-neutral series is `E(t) - sum(C since fixed reference)`; peak and weekly peak losses use this same series and normalized peak denominator. The reference is established once from actual positive broker equity within the initial eight-day scoped backfill. It is **not an account-inception/all-time performance assertion**. New/unfunded accounts cannot inherit invented history; a missing day/week opening stays unavailable.
+
+## Coverage, late postings and concurrency
+
+Account ID and paper/live mode scope every state, point, activity and immutable observation. Activities normally rescan two creation days of overlap. Newly discovered/changed events trigger refetch of their earlier effective intervals even when posted today. Normal history refresh overlaps two days. A daily rotating 29-day backfill also detects corrected old broker bins without a new activity ID; the retained cursor makes progress across older accounts. Up to 16 history requests and 100 activity pages per refresh bound work. Exhaustion explicitly invalidates readiness; it does not publish a zero flow or loss. The full backfill completion time and cursor are persisted.
+
+All HTTP reads happen outside database transactions. Application acquires an account/mode advisory transaction lock and compares the revision fetched before the HTTP reads. A slower worker cannot overwrite a later revision, and a slower failed scan cannot invalidate newer successful evidence. Bucket projections store absolute capital amounts, not increments, so replay and concurrent workers cannot double-apply money. The entire normalized series is recomputed from retained absolute bins when read; an old transfer therefore changes every later adjusted value and peak consistently.
+
+Each accepted revision appends the exact history responses, request intervals, activity creation interval and activity payloads to `CapitalRiskObservation`. Projections link to their source observation; old responses are preserved. A late posting updates a projection and revision, without silently rewriting prior broker evidence, raw legacy snapshots, immutable entry fills or recorded realized losses.
+
+Returned `capitalRisk` includes account/mode, completed valuation equity, `asOf`, age, fixed reference, revision, method, completeness and reason. Current NAV/cash/exposure and known ledger results remain available when risk data is incomplete. Derived period results and drawdowns are null. New-entry controls require fresh complete evidence (age under six minutes thirty seconds), with no raw-NAV fallback. Existing position, stop/target and pending-exit monitoring continue independently. UI risk bars never turn null evidence into a green zero.
+
+## Rollout and validation
+
+The migration creates four new tables and adds nullable adjusted-result/evidence fields to `PortfolioSnapshot`, with `riskDataComplete=false` for legacy rows. It changes no legacy NAV, P&L, basis, account assignment or execution status. Legacy numeric defaults are not verified risk returns. Deployments using the repository's `db push` flow get the same additive schema; the focused CI also executes the actual migration against the previous schema and then checks repeat `db push` and preserved legacy observations.
+
+Focused typed/mock tests cover withdrawal, deposit plus loss, fees/dividends/interest, signed cash versus securities, missing arrays/bins, date-only ambiguity, matching totals, multi-page activities, stale evidence and actual loss gates. Isolated PostgreSQL tests exercise concurrent refresh/replay, old-effective postings, immutable revisions, account/mode isolation, unknown journals, gaps/paging errors, legacy ownership/loss and a slow failed worker racing a successful refresh. The CI runtime is read-only, non-root, capability-free, resource-bounded and offline; PostgreSQL is disposable and reachable only through its isolated loopback namespace.
+
+## Limits that remain explicit
+
+This validates calculation and evidence-handling behavior against official contracts and mocked broker payloads, not a live account or production historical cause. Broker omission of both an activity and its cashflow cannot be independently disproved by this application. Corrections without activity changes become visible as rotating backfill reaches them. Date-only cash not corroborated by history, in-kind transfers and unclassified journals require broker evidence/classification before completeness can recover; no prices or dollar capital are invented. Long retention and the rate of activity/history growth need operational capacity review. The displayed result is at the stated completed-bin time, not wall-clock live P&L. Sharpe/Sortino and time-weighted returns remain unavailable. Unscoped historical journal/forecast reports are not repaired or promoted to verified account returns by this change.
+
+No production database, credentials, provider/broker account calls, actual orders or trading-mode flags are used during development. Root owns production rollout. This focused PR must remain draft until exact-head CI and independent accounting review complete.

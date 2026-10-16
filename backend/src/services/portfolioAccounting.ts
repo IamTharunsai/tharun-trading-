@@ -6,6 +6,7 @@ export interface PerformanceMetrics {
   accountId?: string;
   brokerMode?: string;
   riskDataComplete?: boolean;
+  capitalRisk?: import('./cashFlowRisk').CashFlowRiskMetrics;
   feeDataComplete?: boolean;
   accountingComplete?: boolean;
   historyDataComplete?: boolean;
@@ -18,8 +19,8 @@ export interface PerformanceMetrics {
   realizedPnl: number | null;
   unrealizedPnl: number | null;
   totalPnl: number | null;
-  dailyPnl: number;
-  dailyPnlPct: number;
+  dailyPnl: number | null;
+  dailyPnlPct: number | null;
   totalFeesPaid: number | null;
   winRatePct: number;
   totalTrades: number;
@@ -32,7 +33,7 @@ export interface PerformanceMetrics {
   expectancy: number;
   sharpeRatio: number | string;
   sortinoRatio: number | string;
-  maxDrawdownPct: number;
+  maxDrawdownPct: number | null;
   exposurePct: number;
   turnover: number;
   alpacaEquity: number;
@@ -131,16 +132,14 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   const buyingPower = currentPortfolio.buyingPower ?? 0;
   const dataSource = `ALPACA_AUTHENTICATED_${currentPortfolio.brokerMode?.toUpperCase()}`;
   const totalPnl = accountingComplete ? round2(realizedPnl + unrealizedPnl) : null;
-  const dailyPnl = round2(currentPortfolio.pnlDay);
-  const dailyPnlPct = round2(currentPortfolio.pnlDayPct);
+  const dailyPnl = currentPortfolio.pnlDay === null ? null : round2(currentPortfolio.pnlDay);
+  const dailyPnlPct = currentPortfolio.pnlDayPct === null ? null : round2(currentPortfolio.pnlDayPct);
   // Dollar trade profits are not period returns. A reconciled cash-flow-adjusted
   // return series is required before publishing Sharpe or Sortino.
   const sharpeRatio = 'N/A: verified return series required';
   const sortinoRatio = 'N/A: verified return series required';
   // Drawdown from peak
-  const peakSnap = await prisma.portfolioSnapshot.findFirst({ where: scope, orderBy: { totalValue: 'desc' } });
-  const peak = peakSnap ? Math.max(peakSnap.totalValue, totalEquity) : totalEquity;
-  const maxDrawdownPct = (peak > 0 && totalEquity > 0) ? round2(((peak - totalEquity) / peak) * 100) : 0;
+  const maxDrawdownPct = currentPortfolio.drawdownFromPeak === null ? null : round2(currentPortfolio.drawdownFromPeak);
 
   // Exposure %
   const exposurePct = totalEquity > 0 ? round2((investedCollateral / totalEquity) * 100) : 0;
@@ -148,6 +147,7 @@ export async function calculateAuthenticatedPortfolio(): Promise<PerformanceMetr
   return {
     accountId: currentPortfolio.accountId, brokerMode: currentPortfolio.brokerMode,
     riskDataComplete: currentPortfolio.riskDataComplete, feeDataComplete: false,
+    capitalRisk: currentPortfolio.capitalRisk,
     accountingComplete, knownRealizedPnl: round2(realizedPnl), knownUnrealizedPnl: round2(unrealizedPnl),
     historyDataComplete: currentPortfolio.historyDataComplete,
     totalEquity: round2(totalEquity),

@@ -10,7 +10,7 @@ import { calculateAuthenticatedPortfolio } from '../src/services/portfolioAccoun
 beforeEach(() => {
   jest.clearAllMocks();
   (getPortfolioState as jest.Mock).mockResolvedValue({ accountId: 'fixture', brokerMode: 'paper', totalValue: 900,
-    cashBalance: 900, positions: [], pnlDay: -100, pnlDayPct: -10, accountingComplete: false });
+    cashBalance: 900, positions: [], pnlDay: -100, pnlDayPct: -10, drawdownFromPeak: 10, accountingComplete: false });
   (prisma.trade.findMany as jest.Mock).mockImplementation(async ({ where }) => where.status === 'CLOSED'
     ? [{ pnl: -40, fees: 0, actualFeeCash: 0 }] : []);
   (prisma.brokerActivity.count as jest.Mock).mockResolvedValue(1);

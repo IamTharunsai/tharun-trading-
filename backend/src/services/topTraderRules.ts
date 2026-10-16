@@ -31,6 +31,10 @@ export async function validateWithTopTraderRules(
   const violations: string[] = [];
   const warnings: string[] = [];
   let score = 100;
+  if (portfolio.riskDataComplete !== true || portfolio.pnlDayPct === null || portfolio.drawdownFromPeak === null) {
+    return { approved: false, violations: ['Capital-adjusted loss history is incomplete; existing-position monitoring remains active.'],
+      warnings, score: 0, tier: 'REJECTED' };
+  }
 
   // ── LAW 1: THE FIRST LAW — Never risk ruin ────────────────────────────────
   // One bad trade should NEVER threaten the account's survival

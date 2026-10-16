@@ -2,6 +2,7 @@ import { prisma } from '../utils/prisma';
 import { PortfolioState } from '../agents/types';
 import { getCurrentPrices } from './marketData';
 import { getVerifiedAccountScope } from '../trading/accountScope';
+import { getCashFlowRisk } from './cashFlowRisk';
 
 /** Current account only. Legacy history is not silently assigned to new credentials. */
 export async function getPortfolioState(): Promise<PortfolioState> {
@@ -34,19 +35,13 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const realizedPnl = trades.reduce((sum, trade) => sum + (trade.status === 'CLOSED' ? trade.pnl ?? 0 : trade.realizedPnl ?? 0), 0);
   const totalValue = summary.portfolio_value;
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const day = await prisma.portfolioSnapshot.findFirst({ where: { ...where, timestamp: { lt: today } }, orderBy: { timestamp: 'desc' } });
-  const week = await prisma.portfolioSnapshot.findFirst({ where: { ...where, timestamp: { gte: new Date(Date.now() - 7 * 86400000) } }, orderBy: { timestamp: 'asc' } });
-  const peak = await prisma.portfolioSnapshot.findFirst({ where, orderBy: { totalValue: 'desc' } });
-  const dayBaseline = day?.totalValue ?? summary.last_equity;
-  const dayKnown = Number.isFinite(dayBaseline) && dayBaseline > 0;
-  const weekKnown = !!week && Number.isFinite(week.totalValue) && week.totalValue > 0;
-  const pnlDay = dayKnown ? totalValue - dayBaseline : 0;
-  const pnlDayPct = dayKnown ? pnlDay / dayBaseline * 100 : 0;
-  const pnlWeekPct = weekKnown ? (totalValue - week.totalValue) / week.totalValue * 100 : 0;
-  const peakValue = Math.max(peak?.totalValue ?? totalValue, totalValue);
+  const capitalRisk = await getCashFlowRisk(scope);
+  const pnlDay = capitalRisk.dailyPnl;
+  const pnlDayPct = capitalRisk.dailyPnlPct;
+  const pnlWeekPct = capitalRisk.weeklyPnlPct;
   return {
     accountId: scope.accountId, brokerMode: scope.mode, buyingPower: summary.buying_power,
-    riskDataComplete: dayKnown && weekKnown,
+    riskDataComplete: capitalRisk.complete, capitalRisk,
     historyDataComplete,
     accountingComplete: historyDataComplete && hiddenDiscrepancies === 0 && positions.every(position => position.accountingStatus === 'RECONCILED'),
     totalValue, cashBalance: summary.cash, invested, pnlDay, pnlDayPct, pnlWeekPct,
@@ -54,6 +49,6 @@ export async function getPortfolioState(): Promise<PortfolioState> {
     positions: positions.map(position => position.accountingStatus === 'RECONCILED' ? position
       : { ...position, unrealizedPnl: null, unrealizedPnlPct: null }),
     tradesExecutedToday: await prisma.trade.count({ where: { ...where, brokerConfirmed: true, openedAt: { gte: today }, status: { in: ['OPEN', 'CLOSED'] } } }),
-    dailyLossToday: Math.max(0, -pnlDay), drawdownFromPeak: (peakValue - totalValue) / peakValue * 100,
+    dailyLossToday: pnlDay === null ? null : Math.max(0, -pnlDay), drawdownFromPeak: capitalRisk.drawdownPct,
   };
 }

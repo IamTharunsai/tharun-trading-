@@ -1,3 +1,5 @@
+jest.mock('../src/services/cashFlowRisk', () => ({ getCashFlowRisk: jest.fn() }));
+import { getCashFlowRisk } from '../src/services/cashFlowRisk';
 // Regression coverage for the P&L bug a user caught by comparing the live
 // dashboard against the real Alpaca account: Today's P&L and Total P&L only
 // ever summed CLOSED trades, so both read exactly $0.00 forever regardless
@@ -33,6 +35,7 @@ const mockPosition = (overrides: any) => ({
 describe('getPortfolioState — P&L math', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (getCashFlowRisk as jest.Mock).mockResolvedValue({ complete: false, dailyPnl: null, dailyPnlPct: null, weeklyPnlPct: null, drawdownPct: null });
     mockSummary = { account_id: 'fixture-account', portfolio_value: 100000, cash: 100000, buying_power: 100000, last_equity: 100000 };
   });
 
@@ -80,49 +83,28 @@ describe('getPortfolioState — P&L math', () => {
     expect(state.pnlTotal).toBeCloseTo(100); // 5 shares * $20 profit (short)
   });
 
-  it("uses the broker's previous equity for Today's P&L when there is no local day snapshot", async () => {
-    mockSummary.portfolio_value = 100160;
-    (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ entryPrice: 100 })]);
-    (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 115 });
-    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ status: 'CLOSED', pnl: 10 }]);
-    (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue(null);
-
-    const state = await getPortfolioState();
-
-    expect(state.pnlDay).toBeCloseTo(160); // (10 shares * $15) + $10 realized
-  });
-
-  it("uses a real start-of-day snapshot baseline for Today's P&L when one exists", async () => {
-    (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ entryPrice: 100 })]);
-    (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 100 }); // flat vs entry
-    (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
-    // Prior snapshot at $99,000; local calc gives totalValue = 100000 (cash) + 0 (pnlTotal) - 1000 (invested) + 1000 (invested) = 100000
-    (prisma.portfolioSnapshot.findFirst as jest.Mock).mockImplementation(({ where }: any) =>
-      Promise.resolve(where ? { totalValue: 99000 } : { totalValue: 99000 })
-    );
-
-    const state = await getPortfolioState();
-
-    // pnlDay should reflect the real delta from the snapshot baseline, not
-    // just today's realized trades (there are none here).
-    expect(state.pnlDay).toBeCloseTo(state.totalValue - 99000);
-  });
-
-  it("computes pnlDayPct against the start-of-day baseline value, not current totalValue", async () => {
-    mockSummary.portfolio_value = 50000;
-    // 100k -> 50k drop (a $500,000 unrealized loss: 1000 shares, $1000 -> $500).
-    // Baseline-denominator (correct, matches pnlWeekPct): -50000 / 100000 = -50%.
-    // Current-value-denominator (the bug this test guards against): -50000 / 50000 = -100%.
-    (prisma.position.findMany as jest.Mock).mockResolvedValue([
-      mockPosition({ entryPrice: 1000, quantity: 100, currentPrice: 1000 }),
-    ]);
-    (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 500 });
+  it('never treats last_equity or a raw NAV snapshot as verified period profit', async () => {
+    mockSummary.portfolio_value = 90000;
+    (prisma.position.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue({ totalValue: 100000 });
-
     const state = await getPortfolioState();
-
-    expect(state.totalValue).toBeCloseTo(50000);
-    expect(state.pnlDayPct).toBeCloseTo(-50);
+    expect(state).toMatchObject({ totalValue: 90000, pnlDay: null, pnlDayPct: null, drawdownFromPeak: null, riskDataComplete: false });
+    expect(prisma.portfolioSnapshot.findFirst).not.toHaveBeenCalled();
+  });
+  it('uses the broker-evidenced adjusted result independently from wall-clock NAV', async () => {
+    (prisma.position.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
+    (getCashFlowRisk as jest.Mock).mockResolvedValue({ complete: true, dailyPnl: -4000, dailyPnlPct: -4, weeklyPnlPct: -4, drawdownPct: 4,
+      equity: 106000, asOf: '2026-10-16T12:00:00Z', referenceAt: '2026-10-08T00:00:00Z' });
+    const state = await getPortfolioState();
+    expect(state).toMatchObject({ totalValue: 100000, pnlDay: -4000, pnlDayPct: -4, drawdownFromPeak: 4, riskDataComplete: true,
+      capitalRisk: { equity: 106000, asOf: '2026-10-16T12:00:00Z' } });
+  });
+  it('retains known recorded losses and exposure when cashflow evidence is unavailable', async () => {
+    (prisma.position.findMany as jest.Mock).mockResolvedValue([mockPosition({ quantity: 6, currentPrice: 90 })]);
+    (getCurrentPrices as jest.Mock).mockReturnValue({ NVDA: 90 });
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([{ status: 'OPEN', realizedPnl: -40 }]);
+    expect(await getPortfolioState()).toMatchObject({ pnlTotal: -100, invested: 540, pnlDay: null, riskDataComplete: false });
   });
 });

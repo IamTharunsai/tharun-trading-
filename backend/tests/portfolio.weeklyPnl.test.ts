@@ -1,58 +1,18 @@
-// pnlWeekPct is the weekly counterpart to the existing pnlDayPct: same
-// start-of-window snapshot baseline pattern, just a 7-day window instead of
-// a same-day window. Backs the new WEEKLY_DRAWDOWN_LIMIT_PCT circuit breaker
-// in riskManager.ts, which was previously a dead variable — declared and
-// read from env, but never checked against anything.
-
-jest.mock('../src/utils/prisma', () => ({
-  prisma: {
-    portfolioSnapshot: { findFirst: jest.fn() },
-    position: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
-    trade: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
-  },
-}));
-jest.mock('../src/services/marketData', () => ({ getCurrentPrices: jest.fn(() => ({})) }));
-jest.mock('../src/services/alpacaBroker', () => ({ createAlpacaBroker: jest.fn(() => null) }));
-jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: jest.fn(() => Promise.resolve({
-  accountId: 'fixture-account', mode: 'paper', broker: { getPortfolioSummary: async () => ({
-    account_id: 'fixture-account', portfolio_value: 100000, cash: 100000, buying_power: 100000, last_equity: 100000,
-  }) },
-})) }));
-
-import { prisma } from '../src/utils/prisma';
+jest.mock('../src/utils/prisma', () => ({ prisma: {
+  position: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+  trade: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+} }));
+jest.mock('../src/services/marketData', () => ({ getCurrentPrices: () => ({}) }));
+jest.mock('../src/services/cashFlowRisk', () => ({ getCashFlowRisk: jest.fn() }));
+jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: async () => ({ accountId: 'fixture', mode: 'paper',
+  broker: { getPortfolioSummary: async () => ({ account_id: 'fixture', portfolio_value: 106000, cash: 106000 }) } }) }));
+import { getCashFlowRisk } from '../src/services/cashFlowRisk';
 import { getPortfolioState } from '../src/services/portfolio';
-
-describe('getPortfolioState — weekly P&L', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it('computes pnlWeekPct from the earliest snapshot in the last 7 days', async () => {
-    (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue({ totalValue: 100000, timestamp: new Date() });
-
-    const state = await getPortfolioState();
-    expect(typeof state.pnlWeekPct).toBe('number');
-  });
-
-  it('reflects the delta between current totalValue and the week-start snapshot baseline', async () => {
-    (prisma.position.findMany as jest.Mock).mockResolvedValue([]);
-    (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
-    // Every portfolioSnapshot.findFirst call (start-of-day, week-start, peak)
-    // resolves to the same baseline here — totalValue with no positions/trades
-    // is STARTING_CAPITAL (100000), so a 95000 baseline is a -5% week.
-    (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue({ totalValue: 95000, timestamp: new Date() });
-
-    const state = await getPortfolioState();
-
-    expect(state.pnlWeekPct).toBeCloseTo(((state.totalValue - 95000) / 95000) * 100);
-  });
-
-  it('falls back to 0 when there is no snapshot in the last 7 days', async () => {
-    (prisma.position.findMany as jest.Mock).mockResolvedValue([]);
-    (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
-    (prisma.portfolioSnapshot.findFirst as jest.Mock).mockResolvedValue(null);
-
-    const state = await getPortfolioState();
-
-    expect(state.pnlWeekPct).toBe(0);
-    expect(state.riskDataComplete).toBe(false);
-  });
+test('weekly result is the shared verified capital-adjusted opening-NAV result', async () => {
+  (getCashFlowRisk as jest.Mock).mockResolvedValue({ complete: true, dailyPnl: -4000, dailyPnlPct: -4, weeklyPnlPct: -4, drawdownPct: 4 });
+  expect(await getPortfolioState()).toMatchObject({ pnlWeekPct: -4, riskDataComplete: true });
+});
+test('unknown weekly coverage remains null while NAV is still available', async () => {
+  (getCashFlowRisk as jest.Mock).mockResolvedValue({ complete: false, dailyPnl: null, dailyPnlPct: null, weeklyPnlPct: null, drawdownPct: null });
+  expect(await getPortfolioState()).toMatchObject({ totalValue: 106000, pnlWeekPct: null, riskDataComplete: false });
 });

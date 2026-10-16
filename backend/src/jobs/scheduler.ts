@@ -325,8 +325,15 @@ export function initScheduler() {
           accountId: portfolio.accountId, brokerMode: portfolio.brokerMode, source: 'BROKER_ACCOUNT_OBSERVATION',
           cashBalance: portfolio.cashBalance,
           invested: portfolio.invested,
-          pnlDay: portfolio.pnlDay,
-          pnlDayPct: portfolio.pnlDayPct,
+          // The legacy columns retain their default when risk is unavailable.
+          // Consumers use the explicit nullable adjusted fields and completeness.
+          ...(portfolio.pnlDay !== null ? { pnlDay: portfolio.pnlDay } : {}),
+          ...(portfolio.pnlDayPct !== null ? { pnlDayPct: portfolio.pnlDayPct } : {}),
+          riskDataComplete: portfolio.riskDataComplete === true,
+          riskAsOf: portfolio.capitalRisk?.asOf ? new Date(portfolio.capitalRisk.asOf) : null,
+          riskReferenceAt: portfolio.capitalRisk?.referenceAt ? new Date(portfolio.capitalRisk.referenceAt) : null,
+          riskRevision: portfolio.capitalRisk?.revision,
+          adjustedDailyPnl: portfolio.pnlDay, adjustedDailyPnlPct: portfolio.pnlDayPct,
           pnlTotal: portfolio.pnlTotal,
           pnlTotalPct: (portfolio.pnlTotal / Math.max(portfolio.totalValue, 1)) * 100
         }
