@@ -44,6 +44,14 @@ Specialist activity must derive from attributable session events and receipt
 times. Architectural people are scenery, not actual agents or invented work.
 Parallel opening research must not appear as a false mandatory serial pipeline.
 
+The generated comp contains a few factual defects: a serial handoff path, an
+inconsistent waiting count, and a news-provider label attached to Options Flow.
+The implementation corrects those labels and counts rather than presenting
+them as actual system behavior. Isolated sample handoffs remain labeled sample
+data; production handoffs require explicit attributable events. A new
+"Work observed" state records a received observation without claiming that a
+worker is currently running.
+
 No draft visual fixture certifies backend operation, financial accuracy, broker
 execution, microphone behavior or profitability. First-viewport gates, actual
 desktop/mobile/device checks, the independent finish review and design

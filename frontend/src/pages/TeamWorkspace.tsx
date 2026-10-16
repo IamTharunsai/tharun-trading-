@@ -1,7 +1,7 @@
 import { CSSProperties, KeyboardEvent, ReactNode, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, CalendarDays, BarChart3, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign,
-  ExternalLink, FileText, LayoutGrid, MoreHorizontal, RefreshCw, Settings, AlertTriangle } from 'lucide-react';
+  ExternalLink, FileText, LayoutGrid, MoreVertical, RefreshCw, Settings, AlertTriangle } from 'lucide-react';
 import { AGENTS, AGENTS_BY_ID } from '../constants/agents';
 import { EMPTY_WORKSPACE, SpecialistObservation, WorkspaceModel } from '../components/workspace/workspaceModel';
 import navigationPlate from '../../../assets/plates/atrium-navigation.png';
@@ -16,7 +16,7 @@ const shortNames: Record<number, string> = { 3: 'Sentiment', 4: 'Fundamental', 7
 const shortName = (id: number) => (shortNames[id]
   ?? AGENTS_BY_ID[id]?.name.replace(/^The /, '') ?? 'Unknown specialist');
 const stateLabel = (state: SpecialistObservation['state']) => ({ unobserved: 'Not observed', waiting: 'Waiting',
-  running: 'Running', voted: 'Evidence received', error: 'Provider error' }[state]);
+  running: 'Running', observed: 'Work observed', voted: 'Evidence received', error: 'Provider error' }[state]);
 function Region({ id, className = '', children }: { id: string; className?: string; children?: ReactNode }) {
   const style: CSSProperties = { left: `var(--r-${id}-x)`, top: `var(--r-${id}-y)`,
     width: `var(--r-${id}-w)`, height: `var(--r-${id}-h)` };
@@ -42,7 +42,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
   const [menuOpen, setMenuOpen] = useState(false);
   const review = model.reviews.find(item => item.id === selectedReviewId) ?? model.reviews[0];
   const observation = review?.specialists[selectedSpecialist];
-  const observed = Object.values(review?.specialists ?? {}).filter(item => item.state === 'running' || item.state === 'voted').length;
+  const observed = Object.values(review?.specialists ?? {}).filter(item => item.state !== 'unobserved' && item.state !== 'waiting').length;
   const waiting = Object.values(review?.specialists ?? {}).filter(item => item.state === 'waiting').length;
   const firstIssueReview = model.reviews.find(item => item.issue);
   const selectSpecialist = (id: number) => { setSelectedSpecialist(id); setTab('Evidence'); };
@@ -72,6 +72,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <img className="rainlight-plate rainlight-plate--courtyard" src={courtyardPlate} alt="" />
       </div>
       <div className="rainlight-navigation-wash" aria-hidden="true" />
+      <div className="rainlight-header-wash" aria-hidden="true" />
       <header className="rainlight-contents">
         <Region id="brand" className="rainlight-brand">Bhishma</Region>
         <Region id="brand-description" className="rainlight-on-jade rainlight-brand-description">Personal trading<br />supervision workspace</Region>
@@ -97,7 +98,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="observed-count" className="rainlight-small">Observed {observed} specialists · {waiting} waiting</Region>
         <Region id="session-receipt" className="rainlight-small">{review?.receiptLabel ?? 'No receipt'}</Region>
         <Region id="session-refresh" className="rainlight-icon-control"><button aria-label="Refresh observed team state" onClick={onRefresh} disabled={!onRefresh}><RefreshCw size={15} /></button></Region>
-        <Region id="session-menu" className="rainlight-icon-control"><button aria-label="Review options" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreHorizontal size={17} /></button>
+        <Region id="session-menu" className="rainlight-icon-control"><button aria-label="Review options" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreVertical size={17} /></button>
           {menuOpen && <div className="rainlight-options"><Link to="/agents/debate-room">Open review history</Link><Link to="/agents/monitor">Open activity monitor</Link></div>}
         </Region>
       </section>
@@ -117,7 +118,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="inspector-heading" className="rainlight-inspector-heading">Specialist details</Region>
         <Region id="previous-specialist" className="rainlight-icon-control"><button aria-label="Previous specialist" onClick={() => moveSpecialist(-1)}><ChevronLeft size={18} /></button></Region>
         <Region id="next-specialist" className="rainlight-icon-control"><button aria-label="Next specialist" onClick={() => moveSpecialist(1)}><ChevronRight size={18} /></button></Region>
-        <Region id="specialist-name" className="rainlight-specialist-name">{shortName(selectedSpecialist)}</Region>
+        <Region id="specialist-name" className="rainlight-specialist-name">{selectedSpecialist}. {shortName(selectedSpecialist)}</Region>
         <Region id="specialist-state" className="rainlight-specialist-state"><State observation={observation} /></Region>
         <Region id="specialist-index" className="rainlight-small rainlight-muted">{selectedSpecialist} of {AGENTS.length}</Region>
         <Region id="specialist-description" className="rainlight-specialist-description">{descriptions[selectedSpecialist] ?? `${AGENTS_BY_ID[selectedSpecialist].role}. Inspect attributable observations and recorded evidence; missing events leave current activity unconfirmed.`}</Region>
@@ -163,7 +164,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="footer-background" className="rainlight-reading-field" />
         <Region id="account-label" className="rainlight-footer-label">{model.accountLabel}</Region>
         <Region id="account-value" className="rainlight-footer-value">{model.accountSummary}</Region>
-        <Region id="positions-label" className="rainlight-footer-label">Open positions</Region>
+        <Region id="positions-label" className="rainlight-footer-label">Positions{model.positionsCount !== undefined ? ` (${model.positionsCount})` : ''}</Region>
         <Region id="positions-value" className="rainlight-footer-value">{model.positionsLabel}</Region>
         <Region id="fault-label" className="rainlight-footer-label">{model.faultsLabel}</Region>
         <Region id="fault-detail" className="rainlight-footer-fault">{model.faultSummary}</Region>

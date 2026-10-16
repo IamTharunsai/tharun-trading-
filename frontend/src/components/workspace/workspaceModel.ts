@@ -1,5 +1,5 @@
 /** Presentation data only. Missing observations never imply an idle or busy worker. */
-export type SpecialistState = 'unobserved' | 'waiting' | 'running' | 'voted' | 'error';
+export type SpecialistState = 'unobserved' | 'waiting' | 'running' | 'observed' | 'voted' | 'error';
 export interface SpecialistObservation {
   state: SpecialistState;
   receiptLabel?: string;
@@ -33,6 +33,7 @@ export interface WorkspaceModel {
   accountLabel: string;
   accountSummary: string;
   positionsLabel: string;
+  positionsCount?: number;
   faultsLabel: string;
   observedFaultCount: number | null;
   faultSummary: string;

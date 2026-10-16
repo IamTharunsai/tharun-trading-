@@ -4,7 +4,7 @@ import { WorkspaceModel } from '../../src/components/workspace/workspaceModel';
 export const workspaceFixture: WorkspaceModel = {
   sampleState: true, modeLabel: 'Paper mode', connectionLabel: 'Design fixture, not a live connection', connectionState: 'connected',
   accountLabel: 'Account (paper)', accountSummary: 'Sample paper equity  $25,000.00  ·  0 open positions',
-  positionsLabel: 'No open positions', faultsLabel: 'Data faults (1)', observedFaultCount: 1,
+  positionsLabel: 'No open positions', positionsCount: 0, faultsLabel: 'Data faults (1)', observedFaultCount: 1,
   faultSummary: 'Options Flow   Provider response invalid — no vote recorded',
   reviews: [{ id: 'fixture-review-nu', asset: 'NU', marketLabel: 'Stocks', stageLabel: 'opening arguments',
     receiptLabel: 'Updated 13:07:40 EDT', instrumentName: 'Nu Holdings Ltd.', listing: 'NYSE · Stocks',

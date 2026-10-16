@@ -39,16 +39,28 @@ const server = http.createServer((req, res) => {
       return { className: image.className, x: box.x, y: box.y, width: box.width, height: box.height,
         naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight };
     }));
+    const lettering = await page.evaluate(() => ({
+      fontsReady: { display: document.fonts.check('24px Alike'), body: document.fonts.check('14px "IBM Plex Sans"') },
+      regions: ['session-status', 'review-asset', 'review-market', 'review-stage', 'review-caption', 'specialist-index', 'forecast-label']
+        .map(id => {
+          const node = document.querySelector(`[data-region="${id}"]`);
+          const style = getComputedStyle(node);
+          return { id, fontFamily: style.fontFamily, fontSize: style.fontSize, fontStretch: style.fontStretch,
+            lineHeight: style.lineHeight, width: node.clientWidth, height: node.clientHeight,
+            contentWidth: node.scrollWidth, contentHeight: node.scrollHeight };
+        }),
+    }));
     fs.writeFileSync(`${output}/plate-render.json`, JSON.stringify({ stage: 'semantic_first_viewport', viewport: { width: 1536, height: 1024 },
-      regions, pageErrors: failures, sourceCommit: process.env.SOURCE_COMMIT, sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT,
+      regions, lettering, pageErrors: failures, sourceCommit: process.env.SOURCE_COMMIT, sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT,
       scope: 'Rendered isolated fixture, not live agent, financial or audio behavior.' }, null, 2));
     assert.equal(regions.length, 4); assert.deepEqual(failures, []);
+    assert.equal(lettering.fontsReady.display, true); assert.equal(lettering.fontsReady.body, true);
     const expected = [{ x: 0, y: 0, width: 210, height: 1024 }, { x: 210, y: 0, width: 663, height: 166 },
       { x: 873, y: 0, width: 663, height: 166 }, { x: 210, y: 211, width: 941, height: 506 }];
     regions.forEach((region, index) => Object.keys(expected[index]).forEach(key => assert.ok(Math.abs(region[key] - expected[index][key]) < 0.2, `plate_geometry_${index}_${key}`)));
     await page.screenshot({ path: `${output}/hero-repro.png`, fullPage: false });
     await page.locator('[data-region="station-5"] button').click();
-    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), 'Risk Manager');
+    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), '5. Risk Manager');
     assert.equal(await page.locator('[data-region="station-5"] button').getAttribute('aria-pressed'), 'true');
     await page.getByRole('tab', { name: 'Notes', exact: true }).click();
     assert.match(await page.getByRole('tabpanel', { name: 'Notes', exact: true }).textContent(), /No attributable notes/);
@@ -56,7 +68,7 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.getByRole('tab', { name: 'Handoffs', exact: true }).getAttribute('aria-selected'), 'true');
     assert.equal(await page.getByRole('tab', { name: 'Handoffs', exact: true }).evaluate(node => document.activeElement === node), true);
     await page.getByRole('button', { name: 'Previous specialist', exact: true }).click();
-    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), 'Fundamental');
+    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), '4. Fundamental');
     await page.locator('[data-region="station-2"] button').click();
     await page.getByRole('tab', { name: 'History', exact: true }).click();
     assert.match(await page.getByRole('tabpanel', { name: 'History', exact: true }).textContent(), /Sample source observation/);
@@ -67,7 +79,7 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Not observed');
     await page.locator('[data-region="fault-status"] button').click();
     assert.equal(await page.locator('[data-region="review-asset"]').textContent(), 'NU');
-    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), 'Options Flow');
+    assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), '12. Options Flow');
     assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Provider error');
     fs.writeFileSync(`${output}/interaction-proof.json`, JSON.stringify({ viewport: { width: 1536, height: 1024 },
       sourceCommit: process.env.SOURCE_COMMIT, sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT,
