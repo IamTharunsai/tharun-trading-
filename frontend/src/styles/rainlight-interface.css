@@ -42,6 +42,7 @@
 .rainlight-connection-dot[data-connection='connected'] { background: #87c8a6; }
 .rainlight-account-menu > a { justify-content: flex-start; gap: 10px; }
 .rainlight-initials { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; background: #d3e2d7; color: #274a3b; font-size: 14px; }
+.rainlight-crest { display: block; flex-shrink: 0; width: 38px; height: 38px; object-fit: contain; }
 .rainlight-reading-field { z-index: 1; background: rgba(245, 248, 245, .97); border: 1px solid #d8e4dd; border-radius: 8px; }
 .rainlight-reading-field[data-region='session-background'] { border: 0; border-radius: 0; }
 .rainlight-small { font-size: 11px; line-height: 14px; white-space: nowrap; }
@@ -109,3 +110,19 @@
 .rainlight-footer-value { font-size: 12px; line-height: 15px; white-space: nowrap; }
 .rainlight-footer-fault { font-size: 11px; line-height: 15px; color: var(--rainlight-fault); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rainlight-footer-link { font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.rainlight-coverage { max-width: 1160px; margin: 32px auto; padding: 28px; background: #f5f8f5; color: #142c28; border: 1px solid #cfddd4; border-radius: 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.rainlight-coverage > * + * { margin-top: 20px; }
+.rainlight-coverage-heading { margin: 0; font-family: 'Alike', serif; font-weight: 400; font-size: 27px; }
+.rainlight-coverage p { max-width: 75ch; }
+.rainlight-coverage p + p { margin-top: 8px; }
+.rainlight-coverage h3 { margin: 16px 0 8px; font-size: 16px; }
+.rainlight-coverage-status { color: #284f40; }
+.rainlight-coverage-error { padding: 16px; background: #f8e9e4; color: #84231f; border-radius: 8px; }
+.rainlight-coverage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.rainlight-coverage-details { padding-top: 20px; border-top: 1px solid #cfddd4; }
+.rainlight-coverage summary { cursor: pointer; font-weight: 600; }
+.rainlight-coverage a, .rainlight-coverage button { text-decoration: underline; text-underline-offset: .2em; color: #155f4b; }
+.rainlight-coverage button { min-height: 44px; padding: 8px 12px; border: 1px solid #a8c3b6; border-radius: 6px; background: #edf4ee; cursor: pointer; font: inherit; }
+.rainlight-coverage button:disabled { cursor: not-allowed; opacity: .65; }
+.rainlight-coverage :focus-visible { outline: 2px solid #246f59; outline-offset: 3px; }
+@media (max-width: 700px) { .rainlight-coverage { margin: 20px 12px; padding: 20px; } .rainlight-coverage-grid { grid-template-columns: 1fr; gap: 16px; } }
