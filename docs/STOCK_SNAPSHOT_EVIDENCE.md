@@ -1,0 +1,15 @@
+# Stock analysis evidence repair
+
+Previously, a newly selected stock needed Polygon history or a previously populated quote/price cache. Without either, the committee received no snapshot. The cache-only fallback also manufactured volume from quote size and supplied an empty history; the other branch relabeled up to 60 bars as a 200-period average. This is a source-confirmed defect, not proof that it explains every production no-trade decision.
+
+Stock analysis now requests exact-symbol Alpaca IEX daily history and the official snapshot endpoint on demand using the configured active-mode credentials. It follows bounded pagination at the fixed provider endpoint, validates OHLCV/order/duplicates/dates, excludes today's unfinished daily aggregate and requires 200 completed bars for the existing 200-period indicators. The current stock trade, bid/ask, daily volume and previous daily close come from provider observations. Forex has no verified adapter and cannot silently use the stock path.
+
+The snapshot separates its assembly time from trade/quote observations, history period starts and receipt time. A weekend research read may retain the latest preceding session's observations, up to eight calendar days; this is historical research evidence, not a fresh executable quote. Analysis does not overwrite the independently refreshed exit-price cache. The existing execution pipeline still needs separate quote-age/price-movement qualification before it can be certified for live trading. This repair does not change trading mode, order placement, risk limits, live activation or execution schedules.
+
+Unmeasured volume change is null. The committee describes observed candle-window extremes instead of claiming verified 52-week extremes. Stock session comparisons and daily aggregate volume are explicitly distinguished from rolling 24-hour measurements. Other crypto indicator-history limitations are outside this focused repair and remain part of the end-to-end audit.
+
+Requests share a 20-second deadline, allow no redirects and bound response size/page count. Provider failures are logged as fixed safe categories without raw HTTP requests, credentials or response bodies. Unavailable or malformed evidence returns no snapshot rather than fabricated measurements. Stocks with fewer than 200 valid completed bars currently require a future nullable-indicator research contract; they are not silently promoted to complete technical evidence.
+
+Validation is authored for an offline, read-only, non-root, network-disabled CI container. It first checks full source types, then runs the uncached-stock reproduction against pinned pre-repair `1c0f0bd` and requires the specific null-result failure, then runs the repaired stock-evidence, indicator and committee-grounding tests. Publication must report executed results, not just the existence of this workflow. Providers and accounts are mocked; no broker order or live-account qualification is implied.
+
+Official contracts: [Alpaca historical bars](https://docs.alpaca.markets/us/reference/stockbars), [single-symbol snapshot](https://docs.alpaca.markets/us/reference/stocksnapshotsingle).

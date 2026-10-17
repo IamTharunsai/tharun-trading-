@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 import { redis } from '../utils/redis';
 import { getIO } from '../websocket/server';
 import { MarketSnapshot, Candle, TechnicalIndicators } from '../agents/types';
-import { alpacaMarketStream } from './alpacaMarketStream';
+import { fetchAlpacaStockSnapshotEvidence } from './stockSnapshotEvidence';
 
 // Base crypto assets (Binance WebSocket streams)
 export const CRYPTO_ASSETS = [
@@ -208,6 +208,8 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
   try {
     let candles: Candle[] = [];
     let priceData: any = {};
+    let dataEvidence: MarketSnapshot['dataEvidence'];
+    if (market === 'forex') return null; // No verified forex data adapter is connected.
 
     if (market === 'crypto') {
       // Fetch candles from Binance
@@ -235,60 +237,17 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
         askPrice: parseFloat(tickerRes.data.askPrice || tickerRes.data.lastPrice),
       };
     } else {
-      // Fetch real stock candles from Polygon (daily, last 60 days) if valid API key is present
-      const toDate = new Date().toISOString().slice(0, 10);
-      const fromDate = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-      let candleRes: any = null;
-      if (process.env.POLYGON_API_KEY && !process.env.POLYGON_API_KEY.includes('XXXX') && process.env.POLYGON_API_KEY !== 'dummy-key') {
-        try {
-          candleRes = await axios.get(
-            `https://api.polygon.io/v2/aggs/ticker/${asset}/range/1/day/${fromDate}/${toDate}`,
-            { params: { adjusted: true, sort: 'asc', limit: 60, apiKey: process.env.POLYGON_API_KEY }, timeout: 6000 }
-          );
-        } catch (polyErr: any) {
-          logger.debug(`Polygon candle fetch unavailable for ${asset}: ${polyErr?.message || polyErr}`);
-        }
-      }
-
-      if (candleRes?.data?.results?.length > 5) {
-        candles = candleRes.data.results.map((r: any) => ({
-          open: r.o, high: r.h, low: r.l, close: r.c, volume: r.v, timestamp: r.t
-        }));
-        const last = candles[candles.length - 1];
-        const prev = candles[candles.length - 2];
-        const change = last.close - prev.close;
-        priceData = {
-          price: last.close,
-          priceChange24h: change,
-          priceChangePct24h: (change / prev.close) * 100,
-          volume24h: last.volume,
-          high24h: last.high,
-          low24h: last.low,
-          bidPrice: last.close,
-          askPrice: last.close,
-        };
-        latestPrices[asset] = last.close;
-      } else {
-        // Fallback to real-time Alpaca quotes stream or cached price
-        const alpacaQuote = alpacaMarketStream.getLatestQuote(asset);
-        const cached = await redis.get(`price:${asset}`);
-        const effectivePrice = alpacaQuote?.askPrice || latestPrices[asset] || (cached ? JSON.parse(cached).price : null);
-
-        if (!effectivePrice) return null;
-
-        priceData = {
-          price: effectivePrice,
-          priceChange24h: 0,
-          priceChangePct24h: 0,
-          volume24h: (alpacaQuote?.askSize || 100) * 100,
-          high24h: effectivePrice,
-          low24h: effectivePrice,
-          bidPrice: alpacaQuote?.bidPrice || effectivePrice,
-          askPrice: alpacaQuote?.askPrice || effectivePrice,
-        };
-        latestPrices[asset] = effectivePrice;
-        candles = [];
-      }
+      // Read newly selected symbols on demand; a subscription/cache entry is
+      // neither a prerequisite nor a substitute for observed OHLCV history.
+      const evidence = await fetchAlpacaStockSnapshotEvidence(asset);
+      candles = evidence.candles;
+      priceData = evidence;
+      dataEvidence = { source: evidence.source, timeframe: evidence.timeframe,
+        priceObservedAt: evidence.priceObservedAt, quoteObservedAt: evidence.quoteObservedAt,
+        receivedAt: evidence.receivedAt, historyFirstPeriodAt: candles[0].timestamp,
+        historyLastPeriodAt: candles[candles.length - 1].timestamp, completedBars: candles.length,
+        changeWindow: 'latest_trade_vs_previous_daily_close', volumeWindow: 'provider_daily_bar' };
+      // Analysis reads do not overwrite the independently refreshed exit-price cache.
     }
 
     const indicators = calculateIndicators(candles, priceData.volume24h);
@@ -296,14 +255,18 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
     return {
       asset, market,
       ...priceData,
-      volumeChange: 0,
+      volumeChange: null,
       spread: Math.abs(priceData.askPrice - priceData.bidPrice),
       candles,
       indicators,
+      dataEvidence,
       timestamp: Date.now()
     };
   } catch (error) {
-    logger.error(`Failed to build snapshot for ${asset}`, { error });
+    // Transport errors may carry credentials/request bodies; emit a bounded code.
+    const message = (error as Error)?.message;
+    const code = typeof message === 'string' && /^STOCK_[A-Z_]+$/.test(message) ? message : 'MARKET_SNAPSHOT_UNAVAILABLE';
+    logger.warn('market_snapshot_unavailable', { market, code });
     return null;
   }
 }
