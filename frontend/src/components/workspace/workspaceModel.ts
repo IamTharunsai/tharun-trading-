@@ -10,6 +10,7 @@ export interface SpecialistObservation {
 export interface WorkspaceReview {
   id: string;
   asset: string;
+  market?: 'stocks' | 'crypto' | 'forex';
   marketLabel: string;
   stageLabel: string;
   receiptLabel: string;

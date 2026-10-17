@@ -32,7 +32,8 @@ const server = http.createServer((req, res) => {
     page.on('requestfailed', request => failures.push(new URL(request.url()).origin === 'http://127.0.0.1:4173' ? 'local_asset_failed' : 'external_request_blocked'));
     await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
     await page.locator('.rainlight-plate').first().waitFor();
-    await page.waitForFunction(() => [...document.images].length === 4 && [...document.images].every(image => image.complete && image.naturalWidth > 0));
+    await page.waitForFunction(() => document.querySelectorAll('.rainlight-plate').length === 4 && document.images.length === 5 && [...document.images].every(image => image.complete && image.naturalWidth > 0));
+    assert.equal(await page.locator('img.rainlight-crest').count(), 1);
     await page.evaluate(() => document.fonts.ready);
     const regions = await page.locator('.rainlight-plate').evaluateAll(images => images.map(image => {
       const box = image.getBoundingClientRect();
@@ -80,7 +81,7 @@ const server = http.createServer((req, res) => {
     await page.locator('[data-region="fault-status"] button').click();
     assert.equal(await page.locator('[data-region="review-asset"]').textContent(), 'NU');
     assert.equal(await page.locator('[data-region="specialist-name"]').textContent(), '12. Options Flow');
-    assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Provider error');
+    assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Observed issue');
     fs.writeFileSync(`${output}/interaction-proof.json`, JSON.stringify({ viewport: { width: 1536, height: 1024 },
       sourceCommit: process.env.SOURCE_COMMIT, sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT,
       cases: ['select-specialist', 'unknown-notes', 'keyboard-tabs', 'previous-specialist',

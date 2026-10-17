@@ -3,7 +3,12 @@ import { Link } from 'react-router-dom';
 import { BookOpen, CalendarDays, BarChart3, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Database,
   ExternalLink, FileText, LayoutGrid, MoreVertical, RefreshCw, Settings, AlertTriangle } from 'lucide-react';
 import { AGENTS, AGENTS_BY_ID } from '../constants/agents';
-import { EMPTY_WORKSPACE, SpecialistObservation, WorkspaceModel } from '../components/workspace/workspaceModel';
+import { SpecialistObservation, WorkspaceModel } from '../components/workspace/workspaceModel';
+import WorkspaceReadbackCoverage, { readbackStateLabel, ResearchNotice } from '../components/workspace/WorkspaceReadbackCoverage';
+import { TeamReadbackError, TeamWorkspaceReadbackMeta } from '../utils/teamWorkspaceAdapter';
+import { useTeamWorkspaceReadback } from '../hooks/useTeamWorkspaceReadback';
+import { useWorkspaceResearchRequest } from '../hooks/useWorkspaceResearchRequest';
+import crest from '../../../assets/brand/bhishma-dog-crest.png';
 import navigationPlate from '../../../assets/plates/atrium-navigation.png';
 import westHeaderPlate from '../../../assets/plates/atrium-header-west.png';
 import eastHeaderPlate from '../../../assets/plates/atrium-header-east.png';
@@ -16,7 +21,7 @@ const shortNames: Record<number, string> = { 3: 'Sentiment', 4: 'Fundamental', 7
 const shortName = (id: number) => (shortNames[id]
   ?? AGENTS_BY_ID[id]?.name.replace(/^The /, '') ?? 'Unknown specialist');
 const stateLabel = (state: SpecialistObservation['state']) => ({ unobserved: 'Not observed', waiting: 'Waiting',
-  running: 'Running', observed: 'Work observed', voted: 'Evidence received', error: 'Provider error' }[state]);
+  running: 'Running', observed: 'Work observed', voted: 'Evidence received', error: 'Observed issue' }[state]);
 function Region({ id, className = '', children }: { id: string; className?: string; children?: ReactNode }) {
   const style: CSSProperties = { left: `var(--r-${id}-x)`, top: `var(--r-${id}-y)`,
     width: `var(--r-${id}-w)`, height: `var(--r-${id}-h)` };
@@ -32,8 +37,9 @@ const descriptions: Record<number, string> = {
 const evidenceTabs = ['Evidence', 'Notes', 'Handoffs', 'History'] as const;
 type EvidenceTab = typeof evidenceTabs[number];
 
-export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
-  model: WorkspaceModel; onRefresh?: () => void; onRequestResearch?: (asset: string) => void;
+export function TeamWorkspaceView({ model, meta, error, research, onRefresh, onRequestResearch }: {
+  model: WorkspaceModel; meta?: TeamWorkspaceReadbackMeta; error?: TeamReadbackError | null; research?: ResearchNotice;
+  onRefresh?: () => void; onRequestResearch?: (reviewId: string) => void;
 }) {
   const [selectedReviewId, setSelectedReviewId] = useState('');
   const [selectedSpecialist, setSelectedSpecialist] = useState(2);
@@ -64,7 +70,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
     { id: 'journal', label: 'Journal', href: '/journal', Icon: BookOpen },
     { id: 'settings', label: 'Settings', href: '/settings', Icon: Settings }];
   return (
-    <main className="rainlight-world" aria-label="Rainlight Commons" data-sample-state={model.sampleState}>
+    <><main className="rainlight-world" aria-label="Rainlight Commons" data-sample-state={model.sampleState}>
       <div className="rainlight-architecture" aria-hidden="true">
         <img className="rainlight-plate rainlight-plate--navigation" src={navigationPlate} alt="" />
         <img className="rainlight-plate rainlight-plate--west" src={westHeaderPlate} alt="" />
@@ -80,9 +86,9 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="main-heading" className="rainlight-on-jade rainlight-main-heading"><h1>Fourteen specialists. A clearer view.</h1></Region>
         <Region id="main-description" className="rainlight-on-jade rainlight-description">Understand what each specialist is doing, their evidence and handoffs, while positions and faults remain visible.</Region>
         <Region id="mode-select" className="rainlight-header-control"><Link to="/settings"><Database size={16} />{model.modeLabel}<ChevronDown size={14} /></Link></Region>
-        <Region id="session-status" className="rainlight-header-control"><span><CalendarDays size={15} />{model.reviews.length} observed sessions<span className="rainlight-connection-dot" data-connection={model.connectionState} aria-label={model.connectionLabel} /></span></Region>
+        <Region id="session-status" className="rainlight-header-control"><span><CalendarDays size={15} />{meta && !['ready', 'stale', 'empty'].includes(meta.state) ? readbackStateLabel[meta.state] : `${model.reviews.length} observed sessions`}<span className="rainlight-connection-dot" data-connection={model.connectionState} aria-label={model.connectionLabel} /></span></Region>
         <Region id="fault-status" className="rainlight-header-control"><button onClick={() => { if (firstIssueReview?.issue) { setSelectedReviewId(firstIssueReview.id); selectSpecialist(firstIssueReview.issue.specialistId); } }} disabled={!firstIssueReview}><AlertTriangle size={15} color={model.observedFaultCount !== null && model.observedFaultCount > 0 ? '#d83731' : undefined} />{model.observedFaultCount === null ? 'Unverified' : `${model.observedFaultCount} data fault${model.observedFaultCount === 1 ? '' : 's'}`}</button></Region>
-        <Region id="account-menu" className="rainlight-header-control rainlight-account-menu"><Link to="/settings"><span className="rainlight-initials" aria-hidden="true">RC</span><span>Rainlight Commons<small>A more considered market.</small></span><ChevronDown size={13} /></Link></Region>
+        <Region id="account-menu" className="rainlight-header-control rainlight-account-menu"><Link to="/city"><img className="rainlight-crest" src={crest} alt="Bhishma crest" /><span>Rainlight Commons<small>A more considered market.</small></span><ChevronDown size={13} /></Link></Region>
       </header>
       <nav className="rainlight-contents" aria-label="Main navigation">
         {nav.map(({ id, label, href, Icon }) => <Region key={id} id={`nav-${id}`} className={`rainlight-nav-item ${id === 'workspace' ? 'rainlight-nav-item--current' : ''}`}><Link to={href} aria-current={id === 'workspace' ? 'page' : undefined}><Icon size={21} strokeWidth={1.5} />{label}</Link></Region>)}
@@ -96,10 +102,10 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
           {model.reviews.map(item => <option key={item.id} value={item.id}>{item.asset} · {item.marketLabel} · {item.stageLabel}</option>)}
         </select></Region>
         <Region id="observed-count" className="rainlight-small">Observed {observed} specialists · {waiting} waiting</Region>
-        <Region id="session-receipt" className="rainlight-small">{review?.receiptLabel ?? 'No receipt'}</Region>
-        <Region id="session-refresh" className="rainlight-icon-control"><button aria-label="Refresh observed team state" onClick={onRefresh} disabled={!onRefresh}><RefreshCw size={15} /></button></Region>
+        <Region id="session-receipt" className="rainlight-small">{meta ? <a href="#workspace-coverage" title={meta.asOfLabel}>{meta.serverCapturedAt === null ? readbackStateLabel[meta.state] : `${meta.stale ? 'Older' : 'As of'} ${new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(meta.serverCapturedAt)}`} · Coverage</a> : review?.receiptLabel ?? 'No receipt'}</Region>
+        <Region id="session-refresh" className="rainlight-icon-control"><button aria-label="Refresh observed team state" onClick={onRefresh} disabled={!onRefresh || meta?.isRefreshing || meta?.state === 'signed-out'}><RefreshCw size={15} /></button></Region>
         <Region id="session-menu" className="rainlight-icon-control"><button aria-label="Review options" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><MoreVertical size={17} /></button>
-          {menuOpen && <div className="rainlight-options"><Link to="/agents/debate-room">Open review history</Link><Link to="/agents/monitor">Open activity monitor</Link></div>}
+          {menuOpen && <div className="rainlight-options"><Link to="/">Commons</Link><Link to="/city">City</Link><Link to="/offices/council">Council office</Link><Link to="/agents/debate-room">Open review history</Link><Link to="/agents/monitor">Open activity monitor</Link></div>}
         </Region>
       </section>
       <section className="rainlight-contents" aria-label="Specialist workspace">
@@ -143,7 +149,7 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="decision-label" className="rainlight-fact-label">Decision state</Region>
         <Region id="decision-state" className="rainlight-decision-state">{review?.decisionLabel ?? 'No decision received'}</Region>
         <Region id="execution-note" className="rainlight-execution-note">A recommendation is not a fill.</Region>
-        <Region id="request-research" className="rainlight-request-research"><button disabled={!review || !onRequestResearch} onClick={() => review && onRequestResearch?.(review.asset)}><FileText size={17} />Request research only</button></Region>
+        <Region id="request-research" className="rainlight-request-research">{review && onRequestResearch ? <button disabled={research?.phase === 'pending'} onClick={() => onRequestResearch(review.id)}><FileText size={17} />{research?.phase === 'pending' ? 'Requesting research only' : 'Request research only'}</button> : <Link to="/agents/debate-room"><FileText size={17} />Choose asset for research</Link>}</Region>
       </section>
       <section className="rainlight-contents" aria-label="Specialist roster">
         <Region id="roster-background" className="rainlight-reading-field" />
@@ -170,10 +176,13 @@ export function TeamWorkspaceView({ model, onRefresh, onRequestResearch }: {
         <Region id="fault-detail" className="rainlight-footer-fault">{model.faultSummary}</Region>
         <Region id="fault-link" className="rainlight-footer-link"><Link to="/agents/monitor">View</Link></Region>
       </footer>
-    </main>
+    </main>{meta && <WorkspaceReadbackCoverage meta={meta} error={error} reviewId={review?.id} onRefresh={onRefresh} research={research} />}</>
   );
 }
 
-/** The public home route is connected after the assembled view is verified.
- * Production defaults contain no sample financial values or simulated work. */
-export default function TeamWorkspacePage() { return <TeamWorkspaceView model={EMPTY_WORKSPACE} />; }
+/** Mounted beneath SessionQueryProvider: actual owner readback, never sample work. */
+export default function TeamWorkspacePage() {
+  const readback = useTeamWorkspaceReadback();
+  const research = useWorkspaceResearchRequest(readback.model, readback.refresh, !!readback.error);
+  return <TeamWorkspaceView {...readback} research={research.notice} onRefresh={() => { void readback.refresh(); }} onRequestResearch={research.request} />;
+}

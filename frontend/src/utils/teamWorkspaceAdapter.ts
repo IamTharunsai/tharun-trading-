@@ -70,7 +70,7 @@ function review(session: TeamReadbackSession): WorkspaceReview {
   const specialists: WorkspaceReview['specialists'] = {};
   for (const agent of Object.values(session.agents)) specialists[agent.agentId] = specialistObservation(agent.lastObservation, session);
   const latestAgentError = allReceipts(session).find(entry => entry.agentId && entry.errorCode);
-  return { id: session.id, asset: session.asset, marketLabel: ({ stocks: 'Stocks', crypto: 'Crypto', forex: 'Forex' })[session.market],
+  return { id: session.id, asset: session.asset, market: session.market, marketLabel: ({ stocks: 'Stocks', crypto: 'Crypto', forex: 'Forex' })[session.market],
     stageLabel: `${session.purpose === 'RESEARCH' ? 'Research' : 'Entry review'} · last observed ${stageLabels[session.stage]}`,
     receiptLabel: `Server receipt ${formatTeamReceiptTime(session.lastObservedAt)}`, specialists,
     decisionLabel: session.result?.decision ? `Committee ${session.result.decision} · execution not observed`
