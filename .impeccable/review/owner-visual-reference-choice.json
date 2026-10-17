@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "direct-owner-visual-reference-choice",
+  "source": "Human reply in this chat",
+  "acceptedWords": "Use this render as the visual reference; continue without the extra review tool (Recommended)",
+  "renderedHead": "8e5a7c80c5bb8db6620aa8bf6af8faefd07e9a81",
+  "renderedMerge": "2dd2bd9b4539eac38db505c2b5da5827b5a5f83a",
+  "screenshotSha256": "5C852986B9B91850D84604D0131770B5F6D07612667F8C93DCE5547C591545E9",
+  "authority": "The owner selected this actual render as the ongoing visual reference and instructed continuation without the additional review tool.",
+  "nativeCaptureReceiptGenerated": false,
+  "scope": "Visual direction only. Does not establish live data, broker execution, accessibility, security or profitability."
+}
