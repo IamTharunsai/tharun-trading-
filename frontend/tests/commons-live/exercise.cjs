@@ -72,6 +72,11 @@ async function run() {
   const research = () => page.getByRole('button', { name: 'Request research only', exact: true }).click();
   const countPosts = () => requests.filter(item => item.method === 'POST').length;
   const release = (kind, status, body) => { held.filter(item => item.kind === kind).forEach(item => send(item.res, status, body)); held = held.filter(item => item.kind !== kind); };
+  const waitHeld = async kind => {
+    const deadline = Date.now() + 2000;
+    while (!held.some(item => item.kind === kind) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.ok(held.some(item => item.kind === kind), `expected held ${kind} transport`);
+  };
   async function check(name, fn) { await fn(); cases.push(name); process.stdout.write(`PASS ${name}\n`); }
   try {
     await page.goto(origin, { waitUntil: 'networkidle' });
@@ -95,7 +100,11 @@ async function run() {
       assert.match(await coverage.textContent(), /no verified exchange quote timestamp/);
       assert.equal(await page.locator('[data-region="price-value"]').textContent(), 'Unavailable');
       assert.equal(await page.locator('img.rainlight-crest').getAttribute('alt'), 'Bhishma crest');
-      await page.screenshot({ path: `${output}/commons-mounted.png`, fullPage: true });
+      // Keep screenshots bounded to the approved viewport inside the resource-limited jail.
+      fs.writeFileSync(`${output}/mounted-geometry.json`, JSON.stringify(await page.evaluate(() => ({
+        viewport: { width: innerWidth, height: innerHeight }, document: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+      })), null, 2));
+      await page.screenshot({ path: `${output}/commons-mounted.png`, fullPage: false });
     });
     await check('concurrent-same-asset-ids-stay-distinct', async () => {
       await page.getByRole('combobox', { name: 'Choose observed review' }).selectOption('research-two');
@@ -158,7 +167,7 @@ async function run() {
       mode = 'positive'; await signIn('owner'); await state('ready');
     });
     await check('late-old-read-401-cannot-retire-new-identity', async () => {
-      mode = 'hold'; await refresh(); await page.waitForFunction(() => document.querySelector('[data-readback-state]')?.textContent.includes('Refreshing'));
+      mode = 'hold'; await refresh(); await waitHeld('get');
       mode = 'positive'; await signIn('next'); await state('ready');
       const before = await page.evaluate(() => window.commonsFixture.auth()); release('get', 401, {});
       await page.waitForTimeout(100); assert.deepEqual(await page.evaluate(() => window.commonsFixture.auth()), before);
@@ -166,14 +175,14 @@ async function run() {
     });
     await check('same-token-new-epoch-does-not-reuse-held-snapshot', async () => {
       await signIn('owner'); await state('ready'); mode = 'hold'; await refresh();
-      await page.waitForFunction(() => document.querySelector('[data-readback-state]')?.textContent.includes('Refreshing'));
+      await waitHeld('get');
       const before = await page.evaluate(() => window.commonsFixture.auth()); await signIn('owner'); await state('loading');
       assert.equal(await page.locator('[data-region="review-asset"]').textContent(), '—');
       assert.ok((await page.evaluate(() => window.commonsFixture.auth())).cacheEpoch > before.cacheEpoch);
       mode = 'positive'; release('get', 200, snapshot()); await state('ready');
     });
     await check('research-ack-from-retired-identity-is-discarded', async () => {
-      postMode = 'hold'; await research(); await page.locator('[data-research-state="pending"]').waitFor();
+      postMode = 'hold'; await research(); await page.locator('[data-research-state="pending"]').waitFor(); await waitHeld('post');
       await signIn('next'); await state('ready'); release('post', 200, { status: 'running' }); postMode = 'ack';
       await page.waitForTimeout(100); assert.equal(await page.locator('[data-research-state]').count(), 0);
       assert.equal(await page.locator('[data-region="review-asset"]').textContent(), 'NEW-IDENTITY');
