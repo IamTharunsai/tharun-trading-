@@ -100,11 +100,15 @@ async function run() {
       assert.match(await coverage.textContent(), /no verified exchange quote timestamp/);
       assert.equal(await page.locator('[data-region="price-value"]').textContent(), 'Unavailable');
       assert.equal(await page.locator('img.rainlight-crest').getAttribute('alt'), 'Bhishma crest');
+      assert.equal(await page.locator('[data-region="session-receipt"]').evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
       // Keep screenshots bounded to the approved viewport inside the resource-limited jail.
       fs.writeFileSync(`${output}/mounted-geometry.json`, JSON.stringify(await page.evaluate(() => ({
         viewport: { width: innerWidth, height: innerHeight }, document: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
       })), null, 2));
       await page.screenshot({ path: `${output}/commons-mounted.png`, fullPage: false });
+      await coverage.evaluate(node => node.scrollIntoView({ block: 'start' }));
+      await page.screenshot({ path: `${output}/commons-coverage.png`, fullPage: false });
+      await page.evaluate(() => window.scrollTo(0, 0));
     });
     await check('concurrent-same-asset-ids-stay-distinct', async () => {
       await page.getByRole('combobox', { name: 'Choose observed review' }).selectOption('research-two');
