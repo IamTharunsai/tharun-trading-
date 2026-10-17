@@ -60,6 +60,10 @@
         {
           "at": "2026-10-16T15:07:03.454Z",
           "text": "Three actual hero comparisons completed. Current rendered fixture head8e5a7c8/merge2dd2bd9 passed seven offline browser cases. Last overall79.35%, no plate integrity problems, text/control findings remain. Human visual-reference choice pending; no force/reset/approval recorded. Formal capture portability blocked by canonical Linux path and unavailable local OS jail."
+        },
+        {
+          "at": "2026-10-17T04:33:18.127Z",
+          "text": "Owner explicitly chose: Use this render as the visual reference; continue without the extra review tool (Recommended). Continue using actual8e5 render as visual reference; formal extra tool workflow overridden by owner. No native capture receipt or approval fabricated; all tests/security/functional coverage still required."
         }
       ],
       "gate": {
