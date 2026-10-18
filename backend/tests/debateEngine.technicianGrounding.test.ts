@@ -1,3 +1,4 @@
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 describe('Technician agent — anti-hallucination grounding', () => {
   it('systemPrompt instructs against unsupported historical/precise claims', () => {
     const { AGENT_ROSTER } = require('../src/agents/debateEngine');

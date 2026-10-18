@@ -1167,14 +1167,21 @@ export function buildMarketContext(
     `EMA9: $${ind.ema9.toFixed(2)} | EMA21: $${ind.ema21.toFixed(2)} | EMA200: $${ind.ema200.toFixed(2)}`,
     `SMA50: $${ind.sma50.toFixed(2)} | SMA200: $${ind.sma200.toFixed(2)}`,
     `VWAP: $${ind.vwap.toFixed(2)} | ATR(14): $${ind.atr14.toFixed(2)}`,
-    `52W High: $${ind.week52High.toFixed(2)} | 52W Low: $${ind.week52Low.toFixed(2)} | ${ind.distanceFrom52wHigh.toFixed(1)}% from high`,
+    `Observed candle-window high: $${ind.week52High.toFixed(2)} | low: $${ind.week52Low.toFixed(2)} | ${ind.distanceFrom52wHigh.toFixed(1)}% from high (not a verified 52-week window)`,
     `Fibonacci: 23.6%=$${ind.fibonacci.r236.toFixed(2)} | 38.2%=$${ind.fibonacci.r382.toFixed(2)} | 50%=$${ind.fibonacci.r500.toFixed(2)} | 61.8%=$${ind.fibonacci.r618.toFixed(2)}`,
     `Trend: Price ${ind.isAboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 | SMA50 ${ind.isSma50AboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 (current ordering; crossover timing unavailable)`,
-    `Volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M | ${ind.volumeRatio.toFixed(2)}x avg (${ind.volumeRatio > 1.5 ? '⚡HIGH — institutional activity' : ind.volumeRatio < 0.7 ? '🔇LOW — weak conviction' : 'Normal'})`,
+    `Provider volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M. Last completed candle volume ratio: ${ind.volumeRatio.toFixed(2)}x its 20-candle average. This ratio does not describe current daily-bar volume or establish institutional activity.`,
     `OBV cumulative level: ${ind.obv}; an OBV slope is not supplied`,
     `── PORTFOLIO ──`,
     `Value: $${portfolio.totalValue.toFixed(2)} | Cash: $${portfolio.cashBalance.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct === null ? 'unavailable' : portfolio.pnlDayPct.toFixed(2) + '%'}`,
   ];
+  if (snapshot.dataEvidence) {
+    const evidence = snapshot.dataEvidence;
+    lines.push(`MARKET DATA SOURCE: ${evidence.source}; ${evidence.completedBars} completed ${evidence.timeframe} bars. Bar timestamps identify period starts.`,
+      `History periods: ${new Date(evidence.historyFirstPeriodAt).toISOString()} to ${new Date(evidence.historyLastPeriodAt).toISOString()}.`,
+      `Latest trade observed: ${new Date(evidence.priceObservedAt).toISOString()}; quote observed: ${new Date(evidence.quoteObservedAt).toISOString()}. Receipt time does not make these observations current.`,
+      `Stock change compares latest trade with previous daily close; volume/high/low describe the provider daily bar. These are not rolling 24-hour measurements. No volume-change measurement is supplied.`);
+  }
   if (fundamentals && fundamentals !== 'No fundamental data available yet.') {
     lines.push(`FUNDAMENTALS: ${fundamentals}`);
   }
