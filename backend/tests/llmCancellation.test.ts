@@ -17,6 +17,9 @@ test('in-flight cancellation reaches HTTP and never starts a fallback provider',
     options.signal.addEventListener('abort', () => reject(new Error('transport canceled')), { once: true });
   }));
   const result = routedMessagesCreate({ model: 'fast', messages: [] }, undefined, { signal: controller.signal });
+  // Admission is asynchronous. Abort only after this fixture has actually dispatched.
+  for (let i = 0; i < 50 && !(axios.post as jest.Mock).mock.calls.length; i++) await Promise.resolve();
+  expect(axios.post).toHaveBeenCalledTimes(1);
   controller.abort(new Error('fixture canceled'));
   await expect(result).rejects.toThrow('fixture canceled');
   expect(axios.post).toHaveBeenCalledTimes(1);

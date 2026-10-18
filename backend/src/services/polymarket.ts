@@ -291,16 +291,15 @@ Respond ONLY in valid JSON:
 
   // 2. Routed LLM (NVIDIA NIM / Anthropic / Ollama per env, with provider failover)
   if (!parsed) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45_000);
     try {
       const { llmText, parseJsonLoose } = await import('../utils/llmRouter');
-      const text = await Promise.race([
-        llmText({ tier: 'smart', prompt, maxTokens: 700, temperature: 0.2 }),
-        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 45000)),
-      ]);
+      const text = await llmText({ tier: 'smart', prompt, maxTokens: 700, temperature: 0.2, signal: controller.signal });
       parsed = parsePredictionAssessment(parseJsonLoose<unknown>(text));
     } catch {
       // no LLM available
-    }
+    } finally { clearTimeout(timeout); }
   }
 
   const pYes = Number(parsed?.ourProbabilityYes);

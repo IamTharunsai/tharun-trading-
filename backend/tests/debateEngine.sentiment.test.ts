@@ -23,7 +23,7 @@ jest.mock('../src/services/intermarketService', () => ({ intermarketService: { g
 jest.mock('../src/services/fredService', () => ({ getMacroSnapshot: jest.fn().mockResolvedValue({ fixture: true }), macroLine: jest.fn(() => 'Fixture macro observation: policy rate 4%') }));
 jest.mock('../src/services/optionsFlowService', () => ({ optionsFlowService: { analyzeOptionsFlow: jest.fn().mockResolvedValue({ callPutRatio: 1.2, sentiment: 'BULLISH', confidence: 80, callVolume: 200, putVolume: 100, unusualActivity: [] }) } }));
 jest.mock('../src/services/kronosService', () => ({ getForecast: jest.fn() }));
-jest.mock('../src/utils/llmRouter', () => ({ routedMessagesCreate: jest.fn(), providerFor: jest.fn(() => 'ollama') }));
+jest.mock('../src/utils/llmRouter', () => ({ routedMessagesCreate: jest.fn(), providerFor: jest.fn(() => 'ollama'), createLlmDeadline: () => performance.now() + 60000 }));
 
 import { prisma } from '../src/utils/prisma';
 import { getForecast } from '../src/services/kronosService';
