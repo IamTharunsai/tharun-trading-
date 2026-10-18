@@ -10,11 +10,11 @@ export interface MarketSnapshot {
   priceChange24h: number;
   priceChangePct24h: number;
   volume24h: number;
-  volumeChange: number;
+  volumeChange: number | null;
   high24h: number;
   low24h: number;
   marketCap?: number;
-  // Candlestick data (last 50 candles, 1h timeframe)
+  // Provider candle periods; consult dataEvidence for the stock timeframe/window.
   candles: Candle[];
   // Technical indicators
   indicators: TechnicalIndicators;
@@ -23,6 +23,9 @@ export interface MarketSnapshot {
   askPrice: number;
   spread: number;
   timestamp: number;
+  dataEvidence?: { source: string; timeframe: '1Day'; priceObservedAt: number; quoteObservedAt: number;
+    receivedAt: number; historyFirstPeriodAt: number; historyLastPeriodAt: number; completedBars: number;
+    changeWindow: 'latest_trade_vs_previous_daily_close'; volumeWindow: 'provider_daily_bar' };
 }
 
 export interface Candle {
