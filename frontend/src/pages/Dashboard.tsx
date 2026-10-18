@@ -31,6 +31,7 @@ import { DollarSign, TrendingUp, TrendingDown, Activity, BarChart2, Zap, Play, S
 import { format } from 'date-fns';
 import LastUpdated from '../components/common/LastUpdated';
 import toast from 'react-hot-toast';
+import { schedulerPresentation } from '../utils/schedulerPresentation';
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -39,7 +40,9 @@ export default function DashboardPage() {
   const { data: stats } = useQuery({ queryKey: ['trade-stats'], queryFn: getTradeStats, refetchInterval: 30000 });
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: getPositions, refetchInterval: 5000 });
   const { data: liveAccounts } = useQuery({ queryKey: ['live-accounts'], queryFn: getLiveAccounts, refetchInterval: 30000, retry: false });
-  const { data: sysStatus } = useSystemStatus();
+  const systemStatusQuery = useSystemStatus();
+  const sysStatus = systemStatusQuery.isError ? undefined : systemStatusQuery.data;
+  const schedulerView = schedulerPresentation(sysStatus?.schedulerRuntime);
   const pmUsQuery = useQuery({ queryKey: ['polymarket-us-account'], queryFn: getPolymarketUsAccount, refetchInterval: 60000, retry: false });
   const pmUs = pmUsQuery.data;
   const pmUsConnected = !pmUsQuery.isError && pmUs?.connected === true;
@@ -114,9 +117,9 @@ export default function DashboardPage() {
             </span>
           ) : (
             sysStatus?.scheduler ? (
-              <span data-testid="autotrading-status" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono text-xs font-bold ${sysStatus.scheduler === 'online' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                <span className={`w-2 h-2 rounded-full ${sysStatus.scheduler === 'online' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                {sysStatus.scheduler === 'online' ? 'AUTO-TRADING SCHEDULER ONLINE' : 'SCHEDULER OFFLINE'}
+              <span data-testid="autotrading-status" title={schedulerView.detail} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono text-xs font-bold ${schedulerView.tone === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+                <span className={`w-2 h-2 rounded-full ${schedulerView.tone === 'ok' ? 'bg-emerald-500' : 'bg-amber-600'}`} />
+                {schedulerView.label}
               </span>
             ) : (
               <span data-testid="autotrading-status" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-mono text-xs text-slate-500 font-bold">
@@ -133,6 +136,11 @@ export default function DashboardPage() {
             {tradingMode || import.meta.env.VITE_TRADING_MODE || 'UNKNOWN'} MODE
           </span>
         </div>
+      </div>
+
+      <div className="text-sm text-slate-700" data-testid="scheduler-evidence-detail">
+        <p>{schedulerView.detail}</p>
+        {!!sysStatus?.schedulerRuntime?.jobHealth.failedJobs.length && <p>Jobs needing attention: {sysStatus.schedulerRuntime.jobHealth.failedJobs.slice(0, 24).join(', ')}.</p>}
       </div>
 
       {/* ── 1000-Trade Day HFT & Arbitrage Trigger Bar ─────────────────────── */}

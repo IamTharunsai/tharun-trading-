@@ -87,6 +87,8 @@ const NAV_GROUPS = [
   }
 ];
 
+import { schedulerPresentation } from '../../utils/schedulerPresentation';
+
 export default function Layout() {
   const { killSwitchActive, setKillSwitch } = useStore();
   const navigate = useNavigate();
@@ -97,6 +99,7 @@ export default function Layout() {
   const location = useLocation();
   const statusQ = useSystemStatus();
   const status = statusQ.isError ? undefined : statusQ.data;
+  const schedulerView = schedulerPresentation(status?.schedulerRuntime);
   const statusKnown = !!status && typeof status === 'object' && !!status.scheduler;
   const llmFast = status?.llm?.fast;
   const llmSmart = status?.llm?.smart;
@@ -231,8 +234,9 @@ export default function Layout() {
                 <StatusPill tone="bad" label="TRADING HALTED" testId="sidebar-system-status" />
               ) : (
                 <StatusPill
-                  tone={status!.scheduler === 'online' ? 'ok' : 'bad'}
-                  label={`${String(status!.tradingMode || '').toUpperCase() || '—'} · ${status!.scheduler === 'online' ? 'RUNNING' : 'SCHEDULER OFF'}`}
+                  tone={schedulerView.tone}
+                  label={`${String(status!.tradingMode || '').toUpperCase() || '—'} · ${schedulerView.tone === 'ok' ? 'HEARTBEAT' : schedulerView.tone === 'unknown' ? 'UNVERIFIED' : 'CHECK JOBS'}`}
+                  title={schedulerView.detail}
                   testId="sidebar-system-status"
                 />
               )
@@ -344,8 +348,9 @@ export default function Layout() {
             ) : (
               <>
                 <StatusPill
-                  tone={status!.scheduler === 'online' ? 'ok' : 'bad'}
-                  label={`SCHEDULER ${status!.scheduler === 'online' ? 'ONLINE' : 'OFFLINE'}`}
+                  tone={schedulerView.tone}
+                  label={schedulerView.label}
+                  title={schedulerView.detail}
                   testId="status-scheduler"
                 />
                 <span className="text-slate-300">·</span>
