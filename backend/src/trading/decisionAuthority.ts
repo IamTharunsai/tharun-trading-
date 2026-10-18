@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { TradeSignal } from '../agents/types';
+import { assertStockEntrySource } from './stockEntryPolicy';
 
 export const executionPlanSchema = z.object({
   purpose: z.literal('ENTRY').default('ENTRY'),
@@ -37,6 +38,7 @@ export function authorizePersistedDecision(raw: unknown, signal: TradeSignal, mo
     throw new Error('DECISION_AUTHORITY: stale or unidentified evidence');
   }
   const plan = executionPlanSchema.parse(snapshot.executionPlan);
+  if (plan.market === 'stocks') assertStockEntrySource(snapshot, now);
   if (plan.mode !== mode || plan.market !== signal.market || snapshot.market !== plan.market
     || plan.direction !== signal.direction || decision.finalVote !== plan.direction || decision.signal !== plan.direction
     || plan.entryPrice !== signal.entryPrice || plan.stopLossPrice !== signal.stopLossPrice

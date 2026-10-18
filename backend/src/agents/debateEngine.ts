@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHash, randomUUID } from 'crypto';
+import { assertStockEntrySource } from '../trading/stockEntryPolicy';
 import { prisma } from '../utils/prisma';
 import { logger } from '../utils/logger';
 import { getIO } from '../websocket/server';
@@ -560,6 +561,7 @@ export async function runInvestmentCommitteeDebate(
     || !Number.isFinite(snapshot.timestamp) || snapshot.timestamp > Date.now() + 5000 || Date.now() - snapshot.timestamp > maxSnapshotAgeMs
     || !Number.isFinite(snapshot.price) || snapshot.price <= 0) throw new Error('A fresh, valid market snapshot is required for committee research');
   const decisionMode = getActiveMode();
+  if (snapshot.market === 'stocks' && executionPurpose === 'ENTRY' && !positionReview) assertStockEntrySource(snapshot);
   if (positionReview) {
     const holding = portfolio.positions.find(p => p.id === positionReview.positionId);
     if (positionReview.accountId !== portfolio.accountId || positionReview.brokerMode !== portfolio.brokerMode
@@ -1008,6 +1010,10 @@ export async function runInvestmentCommitteeDebate(
 
   let approved = masterDecision.finalDecision !== 'HOLD';
   let blockReason = masterDecision.blockReason || null;
+  if (snapshot.market === 'stocks' && executionPurpose === 'ENTRY' && !positionReview) {
+    try { assertStockEntrySource(snapshot); }
+    catch { approved = false; blockReason = 'Stock exchange observations expired or unavailable during research'; }
+  }
 
   if (approved) {
     if (!Number.isInteger(minVotes) || minVotes < 1 || minVotes > AGENT_ROSTER.length

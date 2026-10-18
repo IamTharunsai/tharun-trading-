@@ -8,12 +8,17 @@ jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.
 jest.mock('../src/services/marketData', () => ({ getCurrentPrice: jest.fn(), buildMarketSnapshot: jest.fn() }));
 jest.mock('../src/services/portfolio', () => ({ getPortfolioState: jest.fn() }));
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: jest.fn(() => false) }));
-jest.mock('../src/trading/brokerRouter', () => ({ getActiveMode: jest.fn(() => 'paper'), getTradingBroker: jest.fn() }));
+jest.mock('../src/trading/brokerRouter', () => {
+  const mode = jest.fn(() => 'paper');
+  return { getActiveMode: mode, getTradingBroker: jest.fn(), getTradingCredentials: jest.fn(() => ({ mode: mode(), apiKey: 'fixture-paper', secret: 'fixture-secret' })) };
+});
+jest.mock('axios', () => ({ __esModule: true, default: { get: jest.fn(async () => ({ data: { symbol: 'AAPL', quote: { bp: 99.99, ap: 100, t: new Date().toISOString() } } })) } }));
 jest.mock('../src/trading/riskManager', () => ({ validateTradeSignal: jest.fn(async () => ({ approved: true, adjustedSize: 1 })) }));
 import { prisma } from '../src/utils/prisma';
-import { getTradingBroker, getActiveMode } from '../src/trading/brokerRouter';
+import { getTradingBroker, getActiveMode, getTradingCredentials } from '../src/trading/brokerRouter';
 import type { PortfolioState, TradeSignal } from '../src/agents/types';
 import { getPortfolioState } from '../src/services/portfolio';
+import axios from 'axios';
 
 const signal: TradeSignal = { asset: 'AAPL', market: 'stocks', direction: 'BUY', confidence: 80,
   entryPrice: 100, stopLossPrice: 98, takeProfitPrice: 105, positionSizePct: 1,
@@ -33,15 +38,21 @@ afterAll(() => { process.env.DRY_RUN = 'true'; });
 beforeEach(() => {
   jest.clearAllMocks();
   (getActiveMode as jest.Mock).mockReturnValue('paper');
+  (getTradingCredentials as jest.Mock).mockImplementation(() => ({ mode: getActiveMode(), apiKey: 'fixture-paper', secret: 'fixture-secret' }));
+  (axios.get as jest.Mock).mockImplementation(async () => ({ data: { symbol: 'AAPL', quote: { bp: 99.99, ap: 100, t: new Date().toISOString() } } }));
+  jest.requireMock('../src/trading/riskManager').validateTradeSignal.mockResolvedValue({ approved: true, adjustedSize: 1 });
   delete process.env.RELEASE_COMMIT_SHA;
   (getPortfolioState as jest.Mock).mockResolvedValue(portfolio);
   (prisma.strategyQualification.findFirst as jest.Mock).mockResolvedValue(null);
   const now = Date.now();
+  Object.assign(portfolio, { riskDataComplete: true, capitalRisk: { accountId: portfolio.accountId, brokerMode: 'paper', complete: true,
+    asOf: new Date(now).toISOString(), dailyPnlPct: 0, weeklyPnlPct: 0, drawdownPct: 0 } });
   (prisma.agentDecision.findUnique as jest.Mock).mockResolvedValue({
     id: 'current', asset: 'AAPL', executed: false, executionReason: null, timestamp: new Date(now),
     signal: 'BUY', finalVote: 'BUY', totalVotes: 14, goVotes: 14, noGoVotes: 0, avgConfidence: 80,
     agentVotes: Array.from({ length: 14 }, (_, i) => ({ agentId: i + 1, finalVote: 'BUY', confidence: 80, executionEligible: true })),
     marketSnapshot: { asset: 'AAPL', market: 'stocks', timestamp: now, inputFingerprint: 'a'.repeat(64),
+      dataEvidence: { source: 'Alpaca IEX', timeframe: '1Day', completedBars: 250, priceObservedAt: now, quoteObservedAt: now, receivedAt: now },
       executionPlan: { version: 1, approved: true, mode: 'paper', market: 'stocks', direction: 'BUY', confidence: 80,
         entryPrice: 100, stopLossPrice: 98, takeProfitPrice: 105, positionSizePct: 1 } },
   });
@@ -94,7 +105,7 @@ it('permits a live submission only after the registered gates and matching accou
   const decision = await (prisma.agentDecision.findUnique as jest.Mock)();
   decision.marketSnapshot.executionPlan.mode = 'live';
   (prisma.agentDecision.findUnique as jest.Mock).mockResolvedValue(decision);
-  (getPortfolioState as jest.Mock).mockResolvedValue({ ...portfolio, brokerMode: 'live' });
+  (getPortfolioState as jest.Mock).mockResolvedValue({ ...portfolio, brokerMode: 'live', capitalRisk: { ...portfolio.capitalRisk, brokerMode: 'live' } });
   (prisma.strategyQualification.findFirst as jest.Mock).mockResolvedValue({ strategyKey: 'BHISHMA_COUNCIL',
     revision: process.env.RELEASE_COMMIT_SHA, dataHash: 'b'.repeat(64), reportHash: 'c'.repeat(64), trialCount: 80,
     noLeakage: true, dsrProbability: 0.97, walkForwardPassed: true, costsValidated: true, executionValidated: true,
@@ -196,4 +207,70 @@ it('retains an unresolved claim when lookup is unavailable or returns no order',
   await reconcileExecutionIntents();
   expect(broker.createOrder).not.toHaveBeenCalled();
   expect(prisma.trade.create).not.toHaveBeenCalled();
+});
+
+it('refuses an old underlying exchange observation before quote I/O or claim creation', async () => {
+  const saved = await (prisma.agentDecision.findUnique as jest.Mock)();
+  saved.marketSnapshot.dataEvidence.quoteObservedAt = Date.now() - 86400000;
+  expect(await executeTradeSignal(signal, portfolio)).toBe(false);
+  expect(axios.get).not.toHaveBeenCalled(); expect(prisma.executionIntent.create).not.toHaveBeenCalled();
+  expect(broker.createOrder).not.toHaveBeenCalled();
+});
+it('never resubmits when a pending intent already owns the symbol', async () => {
+  (prisma.executionIntent.findFirst as jest.Mock).mockResolvedValueOnce({ id: 'existing-pending' });
+  expect(await executeTradeSignal(signal, portfolio)).toBe(false);
+  expect(prisma.executionIntent.create).not.toHaveBeenCalled(); expect(broker.createOrder).not.toHaveBeenCalled();
+});
+it('reduces quantity to the new observed stop-risk budget without changing the approved plan', async () => {
+  (axios.get as jest.Mock).mockImplementation(async () => ({ data: { symbol: 'AAPL', quote: { bp: 100.19, ap: 100.2, t: new Date().toISOString() } } }));
+  broker.getOrder.mockResolvedValueOnce({ status: 'filled', filled_avg_price: '100.2', filled_qty: '9' });
+  expect(await executeTradeSignal(signal, portfolio)).toBe(true);
+  expect(broker.createOrder).toHaveBeenCalledWith(expect.objectContaining({ qty: 9, stop_loss: { stop_price: 98 }, take_profit: { limit_price: 105 } }));
+  expect(prisma.executionIntent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ referencePrice: 100,
+    executionPlan: expect.objectContaining({ entryPrice: 100, stopLossPrice: 98, takeProfitPrice: 105 }) }) }));
+});
+it('refuses further price drift after claim rather than repricing or increasing the saved quantity', async () => {
+  (axios.get as jest.Mock).mockResolvedValueOnce({ data: { symbol: 'AAPL', quote: { bp: 99.99, ap: 100, t: new Date().toISOString() } } })
+    .mockResolvedValueOnce({ data: { symbol: 'AAPL', quote: { bp: 100.19, ap: 100.2, t: new Date().toISOString() } } });
+  expect(await executeTradeSignal(signal, portfolio)).toBe(false);
+  expect(prisma.executionIntent.create).toHaveBeenCalledTimes(1); expect(broker.createOrder).not.toHaveBeenCalled();
+  expect(prisma.executionIntent.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+    where: { id: 'intent-1', status: 'SUBMITTING', brokerOrderId: null }, data: expect.objectContaining({ status: 'TERMINAL_UNFILLED' }),
+  }));
+});
+it('credential secret rotation during the final quote await is refused before any broker POST', async () => {
+  let reads = 0;
+  (axios.get as jest.Mock).mockImplementation(async () => {
+    if (++reads === 2) (getTradingCredentials as jest.Mock).mockReturnValue({ mode: 'paper', apiKey: 'fixture-paper', secret: 'rotated' });
+    return { data: { symbol: 'AAPL', quote: { bp: 99.99, ap: 100, t: new Date().toISOString() } } };
+  });
+  expect(await executeTradeSignal(signal, portfolio)).toBe(false);
+  expect(reads).toBe(2); expect(broker.createOrder).not.toHaveBeenCalled();
+});
+it('account identity is re-read after claim and cannot silently switch the target account', async () => {
+  broker.getPortfolioSummary.mockResolvedValueOnce({ account_id: 'paper-account-1', cash: 100000 })
+    .mockResolvedValueOnce({ account_id: 'another-account', cash: 100000 });
+  expect(await executeTradeSignal(signal, portfolio)).toBe(false); expect(broker.createOrder).not.toHaveBeenCalled();
+});
+it('new incomplete risk evidence is never covered by a fresh quote', async () => {
+  (getPortfolioState as jest.Mock).mockResolvedValueOnce(portfolio).mockResolvedValueOnce({ ...portfolio, riskDataComplete: false });
+  expect(await executeTradeSignal(signal, portfolio)).toBe(false); expect(broker.createOrder).not.toHaveBeenCalled();
+});
+it('source/decision age is checked after transaction awaits, not only before claiming', async () => {
+  jest.useFakeTimers({ now: Date.now() });
+  try {
+    (prisma.$transaction as jest.Mock).mockImplementationOnce(async work => { const result = await work(prisma); jest.advanceTimersByTime(300001); return result; });
+    expect(await executeTradeSignal(signal, portfolio)).toBe(false);
+    expect(prisma.executionIntent.create).toHaveBeenCalledTimes(1); expect(broker.createOrder).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
+});
+it('a quote that ages during the last asynchronous guard never reaches POST', async () => {
+  jest.useFakeTimers({ now: Date.now() });
+  try {
+    const risk = jest.requireMock('../src/trading/riskManager').validateTradeSignal;
+    risk.mockResolvedValueOnce({ approved: true, adjustedSize: 1 }).mockResolvedValueOnce({ approved: true, adjustedSize: 1 })
+      .mockImplementationOnce(async () => { jest.advanceTimersByTime(3001); return { approved: true, adjustedSize: 1 }; });
+    expect(await executeTradeSignal(signal, portfolio)).toBe(false);
+    expect(broker.createOrder).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
 });
