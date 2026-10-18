@@ -1170,7 +1170,7 @@ export function buildMarketContext(
     `Observed candle-window high: $${ind.week52High.toFixed(2)} | low: $${ind.week52Low.toFixed(2)} | ${ind.distanceFrom52wHigh.toFixed(1)}% from high (not a verified 52-week window)`,
     `Fibonacci: 23.6%=$${ind.fibonacci.r236.toFixed(2)} | 38.2%=$${ind.fibonacci.r382.toFixed(2)} | 50%=$${ind.fibonacci.r500.toFixed(2)} | 61.8%=$${ind.fibonacci.r618.toFixed(2)}`,
     `Trend: Price ${ind.isAboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 | SMA50 ${ind.isSma50AboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 (current ordering; crossover timing unavailable)`,
-    `Volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M | ${ind.volumeRatio.toFixed(2)}x avg (${ind.volumeRatio > 1.5 ? '⚡HIGH — institutional activity' : ind.volumeRatio < 0.7 ? '🔇LOW — weak conviction' : 'Normal'})`,
+    `Provider volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M. Last completed candle volume ratio: ${ind.volumeRatio.toFixed(2)}x its 20-candle average. This ratio does not describe current daily-bar volume or establish institutional activity.`,
     `OBV cumulative level: ${ind.obv}; an OBV slope is not supplied`,
     `── PORTFOLIO ──`,
     `Value: $${portfolio.totalValue.toFixed(2)} | Cash: $${portfolio.cashBalance.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct === null ? 'unavailable' : portfolio.pnlDayPct.toFixed(2) + '%'}`,

@@ -250,7 +250,7 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
       // Analysis reads do not overwrite the independently refreshed exit-price cache.
     }
 
-    const indicators = calculateIndicators(candles, priceData.volume24h);
+    const indicators = calculateIndicators(candles, priceData.volume24h, market === 'stocks' ? priceData.price : undefined);
 
     return {
       asset, market,
@@ -271,7 +271,7 @@ export async function buildMarketSnapshot(asset: string, market: 'crypto' | 'sto
   }
 }
 
-function calculateIndicators(candles: Candle[], volume24h: number): TechnicalIndicators {
+function calculateIndicators(candles: Candle[], volume24h: number, observedPrice?: number): TechnicalIndicators {
   const closes = candles.map(c => c.close);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
@@ -280,7 +280,7 @@ function calculateIndicators(candles: Candle[], volume24h: number): TechnicalInd
   const sma50 = calculateSMA(closes, Math.min(50, closes.length));
   const sma200 = calculateSMA(closes, Math.min(200, closes.length));
   const volumeAvg20 = calculateSMA(volumes, Math.min(20, volumes.length));
-  const currentPrice = closes[closes.length - 1];
+  const currentPrice = observedPrice ?? closes[closes.length - 1];
   const currentVol = volumes[volumes.length - 1];
 
   // 52-week high/low (use all available candles)

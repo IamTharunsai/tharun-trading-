@@ -1,6 +1,5 @@
 import axios from 'axios';
-import { appConfig } from '../utils/config';
-import { isPlaceholderKey } from '../utils/apiKeys';
+import { getTradingCredentials } from '../trading/brokerRouter';
 import type { Candle } from '../agents/types';
 
 const DAY = 86_400_000;
@@ -53,11 +52,9 @@ export function parseStockSnapshot(raw: unknown, now: number) {
 /** Exact-symbol read from the active account's market-data credentials. No orders or cached-price substitute. */
 export async function fetchAlpacaStockSnapshotEvidence(symbol: string, now = Date.now()) {
   if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol)) throw new Error('STOCK_SYMBOL_INVALID');
-  const live = appConfig.ALPACA.activeMode === 'live';
-  const key = live ? appConfig.ALPACA.liveApiKey : appConfig.ALPACA.paperApiKey;
-  const secret = live ? appConfig.ALPACA.liveSecretKey : appConfig.ALPACA.paperSecretKey;
-  if (isPlaceholderKey(key) || isPlaceholderKey(secret)) throw new Error('STOCK_DATA_NOT_CONFIGURED');
-  const headers = { 'APCA-API-KEY-ID': key!, 'APCA-API-SECRET-KEY': secret! };
+  const credentials = getTradingCredentials();
+  if (!credentials) throw new Error('STOCK_DATA_NOT_CONFIGURED');
+  const headers = { 'APCA-API-KEY-ID': credentials.apiKey, 'APCA-API-SECRET-KEY': credentials.secret };
   const signal = AbortSignal.timeout(20_000);
   const request = { headers, timeout: 8000, signal, maxRedirects: 0, maxContentLength: 512_000 };
   const params = { symbols: symbol, timeframe: '1Day', start: new Date(now - 450 * DAY).toISOString(),
@@ -80,7 +77,11 @@ export async function fetchAlpacaStockSnapshotEvidence(symbol: string, now = Dat
     tokens.add(token);
     page = record((await axios.get('https://data.alpaca.markets/v2/stocks/bars', { ...request, params: { ...params, page_token: token } })).data);
   }
-  const candles = parseCompletedStockBars(allBars, now);
-  return { candles, ...parseStockSnapshot(snapshot.data, now), source: 'Alpaca IEX' as const,
-    timeframe: '1Day' as const, receivedAt: Date.now(), requestedAt: now };
+  const receivedAt = Date.now();
+  if (receivedAt < now) throw new Error('STOCK_CLOCK_UNCERTAIN');
+  const current = getTradingCredentials();
+  if (!current || current.mode !== credentials.mode || current.apiKey !== credentials.apiKey || current.secret !== credentials.secret) throw new Error('STOCK_DATA_SCOPE_CHANGED');
+  const candles = parseCompletedStockBars(allBars, receivedAt);
+  return { candles, ...parseStockSnapshot(snapshot.data, receivedAt), source: 'Alpaca IEX' as const,
+    timeframe: '1Day' as const, receivedAt, requestedAt: now };
 }

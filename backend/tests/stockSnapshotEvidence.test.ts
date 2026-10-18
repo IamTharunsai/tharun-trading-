@@ -1,11 +1,15 @@
 jest.mock('axios', () => ({ __esModule: true, default: { get: jest.fn() } }));
 jest.mock('../src/utils/config', () => ({ appConfig: { ALPACA: { activeMode: 'paper',
   paperApiKey: 'fixture-paper', paperSecretKey: 'fixture-paper-secret', liveApiKey: 'fixture-live', liveSecretKey: 'fixture-live-secret' } } }));
+jest.mock('../src/trading/liveGate', () => ({ getAlpacaMode: jest.fn().mockReturnValue('paper') }));
+jest.mock('../src/services/accountManager', () => ({ accountManager: { getAlpacaState: jest.fn().mockReturnValue({ connected: false }) } }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('../src/utils/redis', () => ({ redis: { get: jest.fn(), setex: jest.fn() } }));
 jest.mock('../src/websocket/server', () => ({ getIO: jest.fn() }));
 import axios from 'axios';
 import { appConfig } from '../src/utils/config';
+import { getAlpacaMode } from '../src/trading/liveGate';
+import { accountManager } from '../src/services/accountManager';
 import { logger } from '../src/utils/logger';
 import { fetchAlpacaStockSnapshotEvidence as fetchEvidence, parseCompletedStockBars, parseStockSnapshot } from '../src/services/stockSnapshotEvidence';
 import { buildMarketSnapshot } from '../src/services/marketData';
@@ -21,6 +25,8 @@ const snapshot = () => ({ latestTrade: { p: 402, t: '2026-10-16T19:59:59Z' },
   prevDailyBar: { c: 400, t: '2026-10-15T04:00:00Z' } });
 beforeEach(() => {
   jest.clearAllMocks(); jest.useFakeTimers({ now }); appConfig.ALPACA.activeMode = 'paper';
+  (getAlpacaMode as jest.Mock).mockReturnValue('paper');
+  (accountManager.getAlpacaState as jest.Mock).mockReturnValue({ connected: false });
   (axios.get as jest.Mock).mockImplementation(async (url: string) => ({ data: url.endsWith('/snapshot') ? snapshot() : { bars: { NEW: bars }, next_page_token: null } }));
 });
 afterEach(() => jest.useRealTimers());
@@ -42,10 +48,54 @@ test('newly selected stock obtains actual dated history and quote without cache 
 
 test('market-data authentication follows active mode and never crosses to paper credentials', async () => {
   appConfig.ALPACA.activeMode = 'live';
+  (getAlpacaMode as jest.Mock).mockReturnValue('live');
   await fetchEvidence('NEW', now);
   for (const [, request] of (axios.get as jest.Mock).mock.calls) expect(request.headers).toEqual({
     'APCA-API-KEY-ID': 'fixture-live', 'APCA-API-SECRET-KEY': 'fixture-live-secret',
   });
+});
+
+test('Settings-only paper connection and rotated secret resolve through the same broker credential policy', async () => {
+  const key = appConfig.ALPACA.paperApiKey, secret = appConfig.ALPACA.paperSecretKey;
+  delete appConfig.ALPACA.paperApiKey; delete appConfig.ALPACA.paperSecretKey;
+  const state = { connected: true, paperMode: true, apiKey: 'settings-paper-key', secretKey: 'settings-first-secret' };
+  (accountManager.getAlpacaState as jest.Mock).mockImplementation(() => state);
+  try {
+    await fetchEvidence('NEW', now);
+    expect((axios.get as jest.Mock).mock.calls[0][1].headers).toEqual({ 'APCA-API-KEY-ID': state.apiKey, 'APCA-API-SECRET-KEY': state.secretKey });
+    state.secretKey = 'settings-rotated-secret';
+    await fetchEvidence('NEW', now);
+    expect((axios.get as jest.Mock).mock.calls[2][1].headers['APCA-API-SECRET-KEY']).toBe('settings-rotated-secret');
+  } finally { appConfig.ALPACA.paperApiKey = key; appConfig.ALPACA.paperSecretKey = secret; }
+});
+
+test('credentials changing while provider reads are in flight invalidate that read', async () => {
+  (accountManager.getAlpacaState as jest.Mock).mockReturnValueOnce({ connected: false }).mockReturnValue({
+    connected: true, paperMode: true, apiKey: 'rotated-key', secretKey: 'rotated-secret',
+  });
+  await expect(fetchEvidence('NEW', now)).rejects.toThrow('STOCK_DATA_SCOPE_CHANGED');
+});
+
+test('new quote after request start but before receipt is valid; future relative to receipt is rejected', async () => {
+  (axios.get as jest.Mock).mockImplementation(async (url: string) => {
+    if (!url.endsWith('/snapshot')) return { data: { bars: { NEW: bars } } };
+    jest.setSystemTime(now + 300);
+    return { data: { ...snapshot(), latestTrade: { p: 402, t: new Date(now + 100).toISOString() },
+      latestQuote: { bp: 401, ap: 403, t: new Date(now + 200).toISOString() } } };
+  });
+  const result = await fetchEvidence('NEW', now);
+  expect(result).toMatchObject({ requestedAt: now, receivedAt: now + 300, priceObservedAt: now + 100, quoteObservedAt: now + 200 });
+  expect(() => parseStockSnapshot({ ...snapshot(), latestQuote: { bp: 401, ap: 403, t: new Date(now + 301).toISOString() } }, now + 300)).toThrow('STOCK_OBSERVATION_UNAVAILABLE');
+});
+
+test('current price comparison uses observed latest trade, while volume ratio remains completed-candle evidence', async () => {
+  (axios.get as jest.Mock).mockImplementation(async (url: string) => ({ data: url.endsWith('/snapshot')
+    ? { ...snapshot(), latestTrade: { p: 90, t: '2026-10-16T19:59:59Z' }, latestQuote: { bp: 89, ap: 91, t: '2026-10-16T20:00:00Z' } }
+    : { bars: { NEW: bars } } }));
+  const result = await buildMarketSnapshot('NEW', 'stocks');
+  expect(result!.indicators.isAboveSma50).toBe(false);
+  expect(result!.indicators.isAboveSma200).toBe(false);
+  expect(result!.indicators.volumeRatio).toBeCloseTo(bars[bars.length - 1].v / (bars.slice(-20).reduce((sum, row) => sum + row.v, 0) / 20));
 });
 
 test('historical pagination uses only the fixed official endpoint and verifies continuation', async () => {
