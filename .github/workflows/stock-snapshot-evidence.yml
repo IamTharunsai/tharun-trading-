@@ -54,4 +54,5 @@ jobs:
           grep -q "Received has value: null" /tmp/baseline-result.log;
           grep -q "1 failed" /tmp/baseline-result.log;
           echo Confirmed pinned pre-repair source returned null for an uncached stock with available provider evidence;
-          node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/green-jest --runTestsByPath tests/stockSnapshotEvidence.test.ts tests/marketData.indicators.test.ts tests/debateEngine.technicianGrounding.test.ts tests/debateEngine.regimeLessons.test.ts'
+          cd /tmp;
+          node /source/node_modules/jest/bin/jest.js --config=/source/jest.config.js --runInBand --cacheDirectory=/tmp/green-jest --runTestsByPath /source/tests/stockSnapshotEvidence.test.ts /source/tests/marketData.indicators.test.ts /source/tests/debateEngine.technicianGrounding.test.ts /source/tests/debateEngine.regimeLessons.test.ts'
