@@ -14,6 +14,7 @@
 // The venue is pluggable (services/predictionVenue.ts); only Polymarket US is
 // implemented.
 import { logger } from '../utils/logger';
+import { polymarketScanEvidence } from './polymarketScanEvidence';
 import { prisma } from '../utils/prisma';
 import { getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import * as M from '../trading/predictionMath';
@@ -534,6 +535,7 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
   const summary: EdgeScanSummary = { listed: 0, candidates: 0, estimated: 0, reused: 0, entries: 0, skips: {} };
   if (edgeScanRunning) { summary.entriesBlocked = 'scan already running'; return summary; }
   edgeScanRunning = true;
+  const scanRunId = polymarketScanEvidence.start();
   try {
     const venue = await getVenue(opts.venue);
     const cfg = readEdgeConfig();
@@ -581,7 +583,11 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
       const recentOk = recent && cfg.predictionTtlMin > 0
         && now - new Date(recent.createdAt).getTime() < cfg.predictionTtlMin * 60_000
         && Math.abs(Number(recent.marketMid) - mid) < cfg.repriceThreshold;
-      if (recentOk && (isHeld || recent.decision === 'SKIP')) { summary.reused++; continue; }
+      if (recentOk && (isHeld || recent.decision === 'SKIP')) {
+        summary.reused++;
+        skip(isHeld ? 'already holding (re-estimated for exits)' : 'reused SKIP decision');
+        continue;
+      }
 
       if (!recentOk && llmCalls >= cfg.maxLlmPerScan) { skip('LLM budget for this scan used'); continue; }
       let fair: FairEstimate;
@@ -643,8 +649,11 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
     }
 
     await writeDisplayRows(displayRows);
-    logger.info(`🎯 [PM-EDGE] scan: ${summary.listed} listed, ${summary.candidates} candidates, ${summary.estimated} estimated, ${summary.reused} reused, ${summary.entries} paper entries${summary.entriesBlocked ? ` (entries blocked: ${summary.entriesBlocked})` : ''}`);
+    logger.info('polymarket_scan_completed', polymarketScanEvidence.finish(scanRunId, 'completed', summary));
     return summary;
+  } catch (error) {
+    logger.warn('polymarket_scan_failed', polymarketScanEvidence.finish(scanRunId, 'failed', summary));
+    throw error;
   } finally {
     edgeScanRunning = false;
   }
