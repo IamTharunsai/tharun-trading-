@@ -28,7 +28,8 @@ export function getActiveMode(): BrokerMode {
 
 let cached: { key: string; broker: AlpacaBroker } | null = null;
 
-export function getTradingBroker(): AlpacaBroker | null {
+/** Internal credential resolution shared by market data and order routing. Never serialize or log it. */
+export function getTradingCredentials(): { mode: BrokerMode; apiKey: string; secret: string } | null {
   const mode = getActiveMode();
   let apiKey: string | undefined;
   let secret: string | undefined;
@@ -52,6 +53,14 @@ export function getTradingBroker(): AlpacaBroker | null {
   }
 
   if (isPlaceholderKey(apiKey) || isPlaceholderKey(secret)) return null;
+
+  return { mode, apiKey: apiKey!, secret: secret! };
+}
+
+export function getTradingBroker(): AlpacaBroker | null {
+  const credentials = getTradingCredentials();
+  if (!credentials) return null;
+  const { mode, apiKey, secret } = credentials;
 
   // Include both credentials without retaining another plaintext secret.
   // Rotation of only the secret must replace the authenticated HTTP client.
