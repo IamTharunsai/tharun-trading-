@@ -207,7 +207,7 @@ async function run() {
       visit(app);
       const tools = routes.filter(route => !route.startsWith('/')).map(route => `/${route}`);
       const doors = await page.locator('.bhishma-directory-office li a').evaluateAll(links => links.map(link => link.getAttribute('href')));
-      assert.equal(tools.length, 30, 'existing tool route count must remain intact');
+      assert.equal(tools.length, 29, '29 tool screens plus the separate login route must remain intact');
       assert.deepEqual([...doors].sort(), [...tools].sort(), 'every actual tool route has exactly one office door');
       const offices = await page.locator('.bhishma-directory-office h3 a').evaluateAll(links => links.map(link => ({ name: link.textContent, href: link.getAttribute('href') })));
       assert.equal(offices.length, 7);
