@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useStore } from '../store';
 import { createSessionApi } from './sessionApi';
 import { logoutSession } from './sessionLogout';
+import type { SchedulerEvidence } from '../utils/schedulerPresentation';
 
 const baseURL = `${import.meta.env.VITE_API_URL || ''}/api`;
 const api = createSessionApi(useStore, baseURL);
@@ -169,7 +170,8 @@ export const getUniverseSymbols = (params: UniverseSymbolsParams = {}): Promise<
 export interface LlmTierStatus { provider: string; model: string; healthy: boolean; lastError?: string | null }
 export interface DataProviderStatus { configured: boolean; healthy?: boolean }
 export interface SystemStatus {
-  scheduler: 'online' | 'offline';
+  scheduler: 'online' | 'offline' | 'starting' | 'degraded';
+  schedulerRuntime?: SchedulerEvidence;
   tradingMode: 'paper' | 'live';
   polymarket: { mode: 'paper' | 'live'; usConnected: boolean; usStatus?: string; usConfigured?: boolean;
     liveReadiness?: { ready: boolean; code: string; reason: string } };
