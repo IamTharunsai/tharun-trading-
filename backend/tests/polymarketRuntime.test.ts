@@ -1,4 +1,5 @@
 // Assert the actual status response, not just the helper's constant result.
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('../src/middleware/auth', () => ({
   requireAuth: (_req: any, _res: any, next: any) => next(),
   requireOwner: (_req: any, _res: any, next: any) => next(),

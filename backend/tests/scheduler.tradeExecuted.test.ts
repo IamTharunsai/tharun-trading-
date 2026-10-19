@@ -9,6 +9,7 @@
 // executed" and stopped their scan). `runDebateForAsset` must set
 // `transcript.tradeExecuted` from executeTradeSignal's real return value.
 
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('../src/services/marketData', () => ({
   buildMarketSnapshot: jest.fn().mockResolvedValue({
     price: 100,

@@ -165,6 +165,22 @@ function request([method, url]: Endpoint, token?: string) {
   });
 }
 
+test('owner system status reports the actual uninitialized scheduler, never a hardcoded online label', async () => {
+  const runtime = require('../src/jobs/schedulerRuntime').schedulerRuntime;
+  const snapshot = jest.spyOn(runtime, 'snapshot');
+  const denied = await request(['GET', '/api/system/status'], 'member');
+  expect(denied.statusCode).toBe(403);
+  expect(snapshot).not.toHaveBeenCalled();
+  const response = await request(['GET', '/api/system/status'], 'owner');
+  expect(response.statusCode).toBe(200);
+  expect(response.headers['cache-control']).toContain('no-store');
+  expect(response.payload).toMatchObject({ scheduler: 'offline', schedulerRuntime: {
+    lifecycle: 'not_started', evidenceScope: 'CURRENT_PROCESS', observer: { status: 'not_observed' }, jobs: [],
+  } });
+  expect(snapshot).toHaveBeenCalledTimes(1);
+  snapshot.mockRestore();
+});
+
 describe.each([undefined, 'invalid', 'expired', 'revoked', 'deleted', 'member', 'demoted'])('private boundary for %s', token => {
   test.each([...privateReads, ...ownerMutations])('%s %s denies before protected work', async (method, url) => {
     const response = await request([method, url], token);
