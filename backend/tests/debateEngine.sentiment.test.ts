@@ -51,7 +51,7 @@ const snapshot = () => ({
     isAboveSma200: true, isSma50AboveSma200: true, volumeRatio: 1.1, volumeAvg20: 900, obv: 100,
   },
 }) as any;
-const portfolio = { totalValue: 100000, cashBalance: 60000, invested: 40000, pnlDay: 0, pnlDayPct: 0, pnlWeekPct: 0, pnlTotal: 0, positions: [], dailyLossToday: 0, tradesExecutedToday: 0, drawdownFromPeak: 0 };
+const portfolio = { totalValue: 100000, cashBalance: 60000, invested: 40000, pnlDay: 0, pnlDayPct: 0, pnlWeekPct: 0, pnlTotal: 0, positions: [], dailyLossToday: 0, tradesExecutedToday: 0, drawdownFromPeak: 0, riskDataComplete: true };
 
 describe('real committee behavior with dummy providers', () => {
   beforeEach(() => {
