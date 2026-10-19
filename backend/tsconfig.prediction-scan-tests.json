@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
+  "include": ["src/**/*", "tests/polymarketScanEvidence.test.ts", "tests/polymarketEdge.test.ts", "tests/polymarketRuntime.test.ts", "tests/privateRuntimeRoutes.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

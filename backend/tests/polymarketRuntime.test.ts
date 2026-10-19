@@ -1,4 +1,5 @@
 // Assert the actual status response, not just the helper's constant result.
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('../src/middleware/auth', () => ({
   requireAuth: (_req: any, _res: any, next: any) => next(),
   requireOwner: (_req: any, _res: any, next: any) => next(),
@@ -30,6 +31,7 @@ jest.mock('../src/services/accountManager', () => ({ accountManager: {
 // The legacy route read this permission gate as its actual mode.
 jest.mock('../src/trading/liveGate', () => ({ polymarketLiveAllowed: () => ({ allowed: process.env.TRADING_MODE === 'live' }) }));
 import router from '../src/routes/system';
+import { polymarketScanEvidence } from '../src/services/polymarketScanEvidence';
 
 const names = ['TRADING_MODE', 'LIVE_TRADING_CONFIRMED', 'POLYMARKET_US_LIVE'];
 const savedVariables = Object.fromEntries(names.map(name => [name, process.env[name]]));
@@ -57,6 +59,28 @@ test.each(['paper', 'live'])('status reports the connected paper runtime under g
     polymarket: expect.objectContaining({
       mode: 'paper', usConnected: true,
       liveReadiness: expect.objectContaining({ ready: false, code: 'runtime-not-connected' }),
+      scanEvidence: expect.objectContaining({ scope: 'process-local', previousProcessHistoryAvailable: false, latestRun: null }),
     }),
   }));
+});
+
+test('owner status reads a new completed zero-entry scan without inferring live readiness', async () => {
+  polymarketScanEvidence.finish(polymarketScanEvidence.start()!, 'completed', {
+    listed: 200, candidates: 15, estimated: 0, reused: 5, entries: 0,
+    skips: { 'LLM budget for this scan used': 10, 'reused SKIP decision': 5 },
+  });
+  const response: any = { setHeader: jest.fn() };
+  await new Promise<void>((resolve, reject) => {
+    response.json = jest.fn(() => { resolve(); return response; });
+    (router as any).handle({ method: 'GET', url: '/status', headers: {}, query: {} }, response,
+      (error: unknown) => reject(error || new Error('Fixture status route did not respond')));
+  });
+  expect(response.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ polymarket: expect.objectContaining({
+    mode: 'paper', liveReadiness: expect.objectContaining({ ready: false }),
+    scanEvidence: expect.objectContaining({ latestRun: expect.objectContaining({ status: 'completed',
+      counts: { listed: 200, candidates: 15, estimated: 0, reused: 5, paperEntries: 0 },
+      skipCounts: expect.objectContaining({ llm_budget_exhausted: 10, reused_skip: 5 }),
+    }) }),
+  }) }));
 });
