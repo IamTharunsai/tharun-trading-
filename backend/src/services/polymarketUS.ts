@@ -175,12 +175,35 @@ function levels(raw: any[] | undefined): BookLevel[] {
     .filter((l: BookLevel) => Number.isFinite(l.price) && l.size > 0);
 }
 
+export function classifyPolymarketBookFailure(error: unknown): string {
+  const status = error && typeof error === 'object' ? (error as { status?: unknown }).status : undefined;
+  if (status === 408) return 'timeout';
+  if (status === 429) return 'rate_limited';
+  if (status === 404) return 'market_unavailable';
+  if (status === 401 || status === 403) return 'access_refused';
+  if (typeof status === 'number' && status >= 500 && status <= 599) return 'provider_unavailable';
+  if (status === 0) return 'transport_failure';
+  return 'unclassified_failure';
+}
+
+// Fixed categories only; no market identifiers, provider messages or credentials.
+// At most one log per category/minute per process. A failed logger cannot affect reads.
+const bookFailureLogTimes = new Map<string, number>();
+function recordBookFailure(code: string): void {
+  const now = Date.now(), previous = bookFailureLogTimes.get(code);
+  if (previous !== undefined && now >= previous && now - previous < 60000) return;
+  bookFailureLogTimes.set(code, now);
+  try { logger.warn('polymarket_book_read_failed', { venue: 'polymarket_us', code }); } catch { /* diagnostic only */ }
+}
+
 /** Full YES-side book: bids high→low, asks low→high. */
 export async function getPolymarketUSBook(slug: string): Promise<VenueBook | null> {
+  let received = false;
   try {
     const r: any = await pub().markets.book(slug);
+    received = true;
     const d = r?.marketData ?? r; // gateway wraps the book in { marketData }
-    if (!d) return null;
+    if (!d) { recordBookFailure('response_missing'); return null; }
     return {
       bids: levels(d.bids).sort((a, b) => b.price - a.price),
       asks: levels(d.offers ?? d.asks).sort((a, b) => a.price - b.price),
@@ -192,7 +215,7 @@ export async function getPolymarketUSBook(slug: string): Promise<VenueBook | nul
       fetchedAt: Date.now(),
     };
   } catch (err: any) {
-    logger.debug(`[PM-US] book ${slug} failed: ${err?.message}`);
+    recordBookFailure(received ? 'normalization_failed' : classifyPolymarketBookFailure(err));
     return null;
   }
 }
