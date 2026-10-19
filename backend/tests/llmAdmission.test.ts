@@ -43,7 +43,7 @@ test('canceled queued waiter is removed immediately and never starts', async () 
   const gate = new LlmAdmission(() => policy({ maxActive: 1, intervalMs: 0 }), Date.now), pending = deferred(), controller = new AbortController();
   const first = gate.run('nvidia', signal(), () => pending.promise), operation = jest.fn();
   const second = gate.run('nvidia', controller.signal, operation).catch(error => error);
-  controller.abort(new Error('fixture canceled')); expect((await second).message).toBe('fixture canceled');
+  controller.abort(new Error('fixture canceled')); expect(await second).toMatchObject({ message: 'fixture canceled' });
   expect(gate.snapshot()[0].queued).toBe(0); pending.resolve('done'); await first; expect(operation).not.toHaveBeenCalled(); expect(jest.getTimerCount()).toBe(0);
 });
 test('caller cancellation returns promptly but retains abort-ignoring physical permit', async () => {
@@ -123,6 +123,6 @@ test('retry respects long hints and cancellation without any later attempt', asy
   await expect(retryLlmRateLimit(operation, { deadlineAt: 60000, maxRetries: 3 })).rejects.toMatchObject({ code: 'timeout' }); expect(operation).toHaveBeenCalledTimes(1);
   const controller = new AbortController(), short = jest.fn().mockRejectedValue({ status: 429, retryAfterMs: 0 });
   const result = retryLlmRateLimit(short, { deadlineAt: 60000, maxRetries: 3, signal: controller.signal }).catch(error => error);
-  await jest.advanceTimersByTimeAsync(0); controller.abort(new Error('fixture canceled')); expect((await result).message).toBe('fixture canceled');
+  await jest.advanceTimersByTimeAsync(0); controller.abort(new Error('fixture canceled')); expect(await result).toMatchObject({ message: 'fixture canceled' });
   await jest.advanceTimersByTimeAsync(60000); expect(short).toHaveBeenCalledTimes(1); expect(jest.getTimerCount()).toBe(0);
 });
