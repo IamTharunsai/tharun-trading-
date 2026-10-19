@@ -42,8 +42,8 @@ const defaultReply = (params: any) => {
 const snapshot = () => ({
   asset: 'AAPL', market: 'stocks', price: 100, priceChange24h: 1, priceChangePct24h: 1,
   volume24h: 1000, volumeChange: 1, high24h: 102, low24h: 98, bidPrice: 99.99, askPrice: 100.01, spread: 0.02,
-  timestamp: Date.now(), candles: Array.from({ length: 256 }, (_, i) => ({ open: 100, high: 101, low: 99, close: 100, volume: 1000, timestamp: Date.now() - (256 - i) * 3600000 })),
-  dataEvidence: { source: 'Alpaca IEX', timeframe: '1Day', completedBars: 256, priceObservedAt: Date.now(), quoteObservedAt: Date.now(), receivedAt: Date.now() },
+  timestamp: Date.now(), candles: Array.from({ length: 256 }, (_, i) => ({ open: 100, high: 101, low: 99, close: 100, volume: 1000, timestamp: Date.now() - (256 - i) * 86400000 })),
+  dataEvidence: { source: 'Alpaca IEX', timeframe: '1Day', completedBars: 256, priceObservedAt: Date.now(), quoteObservedAt: Date.now(), receivedAt: Date.now(), historyFirstPeriodAt: Date.now() - 256 * 86400000, historyLastPeriodAt: Date.now() - 86400000, changeWindow: 'latest_trade_vs_previous_daily_close', volumeWindow: 'provider_daily_bar' },
   indicators: {
     rsi14: 55, macd: { value: 0.2, signal: 0.1, histogram: 0.1 }, stochasticK: 60, stochasticD: 58,
     bollingerBands: { upper: 105, middle: 100, lower: 95 }, ema9: 101, ema21: 99, ema200: 90,
@@ -52,7 +52,7 @@ const snapshot = () => ({
     isAboveSma200: true, isSma50AboveSma200: true, volumeRatio: 1.1, volumeAvg20: 900, obv: 100,
   },
 }) as any;
-const portfolio = { totalValue: 100000, cashBalance: 60000, invested: 40000, pnlDay: 0, pnlDayPct: 0, pnlWeekPct: 0, pnlTotal: 0, positions: [], dailyLossToday: 0, tradesExecutedToday: 0, drawdownFromPeak: 0 };
+const portfolio = { totalValue: 100000, cashBalance: 60000, invested: 40000, pnlDay: 0, pnlDayPct: 0, pnlWeekPct: 0, pnlTotal: 0, positions: [], dailyLossToday: 0, tradesExecutedToday: 0, drawdownFromPeak: 0, riskDataComplete: true };
 
 describe('real committee behavior with dummy providers', () => {
   beforeEach(() => {

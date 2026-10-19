@@ -2,6 +2,6 @@
   "extends": "./tsconfig.json",
   "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
   "include": ["src/**/*", "tests/stockEntryEvidence.test.ts", "tests/decisionAuthority.test.ts",
-    "tests/executionAuthority.behavior.test.ts", "tests/committee.behavior.test.ts", "tests/executionEngine.safety.test.ts"],
+    "tests/executionAuthority.behavior.test.ts", "tests/committee.behavior.test.ts", "tests/executionEngine.safety.test.ts", "tests/debateEngine.sentiment.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
