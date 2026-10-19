@@ -119,7 +119,7 @@ it('uses fresh account evidence instead of a caller-supplied equity figure', asy
 });
 it('persists a claim before submitting and atomically records confirmed fill state', async () => {
   expect(await executeTradeSignal(signal, portfolio)).toBe(true);
-  expect(prisma.executionIntent.create.mock.invocationCallOrder[0]).toBeLessThan(broker.createOrder.mock.invocationCallOrder[0]);
+  expect((prisma.executionIntent.create as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(broker.createOrder.mock.invocationCallOrder[0]);
   expect(broker.createOrder).toHaveBeenCalledWith(expect.objectContaining({ client_order_id: expect.stringMatching(/^bh-[a-f0-9]{40}$/), qty: 10, order_class: 'bracket' }));
   expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   expect(prisma.trade.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ entryPrice: 100.2, quantity: 10, brokerOrderId: 'broker-1' }) }));
