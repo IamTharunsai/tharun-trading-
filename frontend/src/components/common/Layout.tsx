@@ -39,7 +39,9 @@ const NAV_GROUPS = [
   {
     group: 'TERMINAL COCKPIT',
     items: [
-      { path: '/', label: 'Overview Cockpit', icon: LayoutDashboard },
+      { path: '/', label: 'Rainlight Commons', icon: LayoutDashboard },
+      { path: '/city', label: 'City & offices', icon: Globe2 },
+      { path: '/dashboard', label: 'Trading dashboard', icon: Activity },
       { path: '/polymarket', label: 'Polymarket Alpha', icon: Zap },
       { path: '/charts', label: 'Live Charts Lab', icon: BarChart2 },
       { path: '/stocks', label: 'Stock Universe', icon: Globe2 },

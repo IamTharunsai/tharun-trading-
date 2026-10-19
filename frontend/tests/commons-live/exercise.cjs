@@ -195,6 +195,37 @@ async function run() {
       await page.getByRole('button', { name: 'Review options' }).click();
       for (const [label, href] of [['Commons', '/'], ['City', '/city'], ['Council office', '/offices/council']]) assert.equal(await page.getByRole('link', { name: label, exact: true }).getAttribute('href'), href);
     });
+    await check('city-links-cover-every-existing-app-tool', async () => {
+      await page.getByRole('link', { name: 'City', exact: true }).click();
+      await page.getByRole('heading', { name: 'A city for your work.' }).waitFor();
+      const app = ts.createSourceFile('App.tsx', fs.readFileSync('/source/frontend/src/App.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const routes = [];
+      function visit(node) {
+        if (ts.isJsxAttribute(node) && node.name.text === 'path' && node.initializer && ts.isStringLiteral(node.initializer)) routes.push(node.initializer.text);
+        ts.forEachChild(node, visit);
+      }
+      visit(app);
+      const tools = routes.filter(route => !route.startsWith('/')).map(route => `/${route}`);
+      const doors = await page.locator('.bhishma-directory-office li a').evaluateAll(links => links.map(link => link.getAttribute('href')));
+      assert.equal(tools.length, 30, 'existing tool route count must remain intact');
+      assert.deepEqual([...doors].sort(), [...tools].sort(), 'every actual tool route has exactly one office door');
+      const offices = await page.locator('.bhishma-directory-office h3 a').evaluateAll(links => links.map(link => ({ name: link.textContent, href: link.getAttribute('href') })));
+      assert.equal(offices.length, 7);
+      await page.screenshot({ path: `${output}/city-desktop.png`, fullPage: true });
+      for (const office of offices) {
+        await page.locator(`a[href="${office.href}"]`).click();
+        await page.getByRole('heading', { level: 1, name: office.name }).waitFor();
+        await page.getByRole('link', { name: 'Back to the city' }).click();
+      }
+      await page.getByRole('searchbox').fill('no-such-office');
+      await page.getByRole('status').filter({ hasText: 'No matching workspace' }).waitFor();
+      await page.getByRole('searchbox').fill('');
+      await page.setViewportSize({ width: 390, height: 844 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'mobile directory must not overflow');
+      await page.screenshot({ path: `${output}/city-mobile.png`, fullPage: true });
+      await page.getByRole('link', { name: 'Commons', exact: true }).click();
+      await state('ready');
+    });
     assert.deepEqual(pageErrors, []);
     assert.ok(requests.every(item => ['/api/agents/sessions', '/api/agents/trigger-debate'].includes(item.path)));
   } finally {
