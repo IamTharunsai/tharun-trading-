@@ -33,8 +33,10 @@ export async function assertPredictionFillsReflected(tx: any, snapshot: PmUsExec
     }
     const remaining = holding ? holding.remainingQuantity : fill.appliedQuantity;
     const p = snapshot.positions[fill.marketSlug];
-    // Absence is consistent only with a linked, corroborated complete reduction;
-    // a missing historical fill without that holding is still a discrepancy.
+    // Holding is a trusted internal projection, atomically derived from durable
+    // linked reduction observations under the grant lock. It is never accepted
+    // from browser/provider account input. Absence without that projection is
+    // still a discrepancy; the separate admission barrier retains loss custody.
     if (!p && remaining === 0) continue;
     const raw = p?.netPositionDecimal ?? p?.netPosition;
     if (typeof raw !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(raw)) throw new Error('Broker positions have not reconciled confirmed local fills');

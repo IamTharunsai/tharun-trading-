@@ -21,7 +21,7 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
   let scopeKey: string;
   const brokerOrders = new Map<string, any>();
   const posted: any[] = [];
-  let loseReply = false, unknownFee = false, partial = false;
+  let loseReply = false, unknownFee = false, partial = false, zeroFill = false;
 
   beforeAll(async () => {
     if (process.env.DATABASE_URL !== 'postgresql://fixture:fixture@127.0.0.1:5432/fixture') throw new Error('Disposable offline CI database required');
@@ -40,7 +40,7 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
       asks: [{ price: .5, size: 100 }], state: 'MARKET_STATE_OPEN', fetchedAt: Date.now() }));
   });
   beforeEach(async () => {
-    killed = false; signedPosition = 0; orderSequence = 0; loseReply = false; unknownFee = false; partial = false;
+    killed = false; signedPosition = 0; orderSequence = 0; loseReply = false; unknownFee = false; partial = false; zeroFill = false;
     brokerOrders.clear(); posted.length = 0; request.mockReset();
     Object.assign(process.env, { TRADING_MODE: 'live', LIVE_TRADING_CONFIRMED: 'I_ACCEPT_REAL_MONEY_RISK', POLYMARKET_US_LIVE: 'true' });
     await prisma.predictionReductionObservation.deleteMany({ where: { reduction: { ownerId } } });
@@ -72,7 +72,7 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
         const id = 'fixture-order-' + (++orderSequence); posted.push({ id, ...body });
         const opening = body.intent.startsWith('ORDER_INTENT_BUY');
         const sign = body.intent.endsWith('LONG') ? 1 : -1;
-        const quantity = opening ? body.quantity : partial ? .5 : body.quantity;
+        const quantity = opening ? body.quantity : zeroFill ? 0 : partial ? .5 : body.quantity;
         // Opening .50 YES/.50 NO. Reduction execution matches explicit YES
         // price: SELL_SHORT .20 YES is .80 economic NO proceeds.
         const avg = opening ? .5 : Number(body.price.value);
@@ -173,5 +173,64 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
     expect(posted).toHaveLength(2);
     expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(1);
+  });
+
+  test('proven terminal zero-fill zero-fee reduction does not manufacture an enduring loss-coverage block', async () => {
+    const opening = await open(); zeroFill = true;
+    const result = await reducePredictionHolding(opening.id, { requestKey: 'unfilled', quantity: 1, sideMinPrice: .3 });
+    expect(result).toMatchObject({ reconciled: true, status: 'TERMINAL', remainingQuantity: opening.appliedQuantity });
+    const row = await prisma.predictionReduction.findUniqueOrThrow({ where: { id: result.id } });
+    expect(row).toMatchObject({ appliedQuantity: 0, appliedProceeds: 0, appliedFees: 0, terminalObserved: true });
+    await expect(prisma.$transaction(tx => assertPredictionRecoveryScope(tx, ownerId, scopeKey))).resolves.toBeUndefined();
+    expect((await prisma.predictionHolding.findUniqueOrThrow({ where: { openingExecutionId: opening.id } })).realizedPnl).toBe(0);
+    expect((await executeLivePrediction('reduction-prediction')).placed).toBe(false); // Actual entry mode and kill gate remain intact.
+    expect(posted).toHaveLength(2);
+  });
+
+  test('owner revocation and a different API grant cannot create reduction authority', async () => {
+    const opening = await open();
+    await prisma.user.update({ where: { id: ownerId }, data: { role: 'USER' } });
+    try {
+      await expect(reducePredictionHolding(opening.id, { requestKey: 'revoked', quantity: 1, sideMinPrice: .3 })).rejects.toThrow('OWNER');
+    } finally { await prisma.user.update({ where: { id: ownerId }, data: { role: 'OWNER' } }); }
+    const keyId = process.env.POLYMARKET_KEY_ID;
+    process.env.POLYMARKET_KEY_ID = '00000000-0000-4000-8000-000000000092';
+    try {
+      await expect(reducePredictionHolding(opening.id, { requestKey: 'rotated', quantity: 1, sideMinPrice: .3 })).rejects.toThrow('GRANT');
+    } finally { process.env.POLYMARKET_KEY_ID = keyId; }
+    expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(0);
+    expect(posted).toHaveLength(1);
+  });
+
+  test('a quote that expires during preparation cannot create or submit a reduction', async () => {
+    const opening = await open(), now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    jest.spyOn(polymarketUSVenue, 'getBook').mockImplementationOnce(async () => {
+      clock.mockReturnValue(now + 6001);
+      return { bids: [{ price: .49, size: 100 }], asks: [{ price: .5, size: 100 }], state: 'MARKET_STATE_OPEN', fetchedAt: now };
+    });
+    try {
+      await expect(reducePredictionHolding(opening.id, { requestKey: 'stale', quantity: 1, sideMinPrice: .3 })).rejects.toThrow('MARKET');
+    } finally { clock.mockRestore(); }
+    expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(0); expect(posted).toHaveLength(1);
+  });
+
+  test('identity changes after durable consumption prevent POST while retaining the uncertain claim', async () => {
+    const opening = await open();
+    const originalTransaction = prisma.$transaction.bind(prisma), secret = process.env.POLYMARKET_SECRET_KEY;
+    const transaction = jest.spyOn(prisma, '$transaction').mockImplementation((async (...args: any[]) => {
+      const result = await (originalTransaction as any)(...args);
+      const consumed = await prisma.predictionReduction.findFirst({ where: { ownerId, status: 'SUBMITTING', brokerOrderId: null } });
+      if (consumed) process.env.POLYMARKET_SECRET_KEY = Buffer.alloc(32, 2).toString('base64');
+      return result;
+    }) as any);
+    try {
+      const result = await reducePredictionHolding(opening.id, { requestKey: 'identity', quantity: 1, sideMinPrice: .3 });
+      expect(result.reconciled).toBe(false);
+      expect(await prisma.predictionReduction.findUniqueOrThrow({ where: { id: result.id } })).toMatchObject({
+        status: 'RECONCILIATION_REQUIRED', brokerOrderId: null, appliedQuantity: 0 });
+    } finally { transaction.mockRestore(); process.env.POLYMARKET_SECRET_KEY = secret; }
+    expect(posted).toHaveLength(1);
+    await expect(prisma.$transaction(tx => assertPredictionRecoveryScope(tx, ownerId, scopeKey))).rejects.toThrow('REDUCTION_LOSS_COVERAGE');
   });
 });
