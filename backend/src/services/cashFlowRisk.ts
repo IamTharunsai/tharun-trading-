@@ -49,9 +49,17 @@ const empty = (reason: string): CashFlowRiskMetrics => ({ accountId: null, broke
  * https://alpaca.markets/sdks/python/api_reference/trading/models.html#alpaca.trading.models.PortfolioHistory
  * Never consume profit_loss/base_value as flow-adjusted evidence. */
 export function parseRiskHistory(history: AlpacaPortfolioHistory, start: Date, end: Date, allowLeadingUnfundedGap = false): RiskPoint[] {
-  if (history?.timeframe !== '5Min' || !Array.isArray(history.timestamp) || !Array.isArray(history.equity)
-    || history.timestamp.length !== history.equity.length || !history.cashflow
-    || typeof history.cashflow !== 'object' || Array.isArray(history.cashflow)) throw new Error('INVALID_RISK_HISTORY');
+  // Fixed reason codes identify the failed contract predicate without exposing
+  // broker fields/values. These do not relax validation or infer absent flows.
+  if (history?.timeframe !== '5Min') {
+    const envelope = !history || typeof history !== 'object' || Array.isArray(history);
+    throw new Error(envelope ? 'INVALID_RISK_HISTORY_ENVELOPE' : 'INVALID_RISK_HISTORY_TIMEFRAME');
+  }
+  if (!Array.isArray(history.timestamp) || !Array.isArray(history.equity)) throw new Error('INVALID_RISK_HISTORY_ARRAYS');
+  if (history.timestamp.length !== history.equity.length) throw new Error('INVALID_RISK_HISTORY_LENGTHS');
+  if (!history.cashflow || typeof history.cashflow !== 'object' || Array.isArray(history.cashflow)) {
+    throw new Error('INVALID_RISK_HISTORY_CASHFLOW_OBJECT');
+  }
   const entries = Object.entries(history.cashflow);
   if (entries.some(([, values]) => !Array.isArray(values) || values.length !== history.timestamp.length
     || values.some(value => typeof value !== 'number' || !Number.isFinite(value)))) throw new Error('INVALID_CASHFLOW_ARRAYS');
