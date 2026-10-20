@@ -44,7 +44,9 @@ export default function CommandPalette({ open, onClose }: Props) {
   }, [navigate, onClose]);
 
   const STATIC_ITEMS: PaletteItem[] = [
-    { id: 'dashboard', type: 'page', label: 'Overview Cockpit', description: 'Main dashboard', icon: BarChart2, action: () => go('/'), keywords: ['home', 'overview', 'dashboard'] },
+    { id: 'commons', type: 'page', label: 'Rainlight Commons', description: 'Observed specialist work', icon: Bot, action: () => go('/'), keywords: ['home', 'workspace'] },
+    { id: 'city', type: 'page', label: 'City & offices', description: 'Explore every workspace', icon: Globe2, action: () => go('/city'), keywords: ['office', 'directory'] },
+    { id: 'dashboard', type: 'page', label: 'Trading dashboard', description: 'Account, positions and runtime', icon: BarChart2, action: () => go('/dashboard'), keywords: ['overview', 'dashboard'] },
     { id: 'charts', type: 'page', label: 'Live Charts Lab', description: 'Real-time candlestick charts', icon: TrendingUp, action: () => go('/charts'), keywords: ['chart', 'candle', 'price'] },
     { id: 'options', type: 'page', label: 'Options Chain', description: 'Strike ladder, IV skew, max pain', icon: Layers, action: () => go('/options'), keywords: ['options', 'puts', 'calls', 'iv', 'delta'] },
     { id: 'tearsheet', type: 'page', label: 'Performance Tearsheet', description: 'Sharpe, drawdown, monthly heatmap', icon: Activity, action: () => go('/tearsheet'), keywords: ['sharpe', 'sortino', 'drawdown', 'performance', 'quantstats'] },

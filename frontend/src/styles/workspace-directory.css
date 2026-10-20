@@ -1,0 +1,43 @@
+.bhishma-directory { min-height: 100svh; background: #f0f3ed; color: #183c32; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.55; }
+.bhishma-directory, .bhishma-directory * { box-sizing: border-box; }
+.bhishma-directory a { color: inherit; text-decoration: none; text-underline-offset: .25em; }
+.bhishma-directory .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.bhishma-directory :focus-visible { outline: 3px solid #297660; outline-offset: 4px; }
+.bhishma-directory ::selection { background: #bed9cb; color: #163b30; }
+.bhishma-directory-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px 5vw; background: #e8eee6; }
+.bhishma-directory-brand { display: flex; align-items: center; gap: 12px; font: 26px 'Alike', serif; }
+.bhishma-directory-brand img { width: 48px; height: 48px; object-fit: contain; }
+.bhishma-directory-brand small { display: block; font: 13px 'IBM Plex Sans', sans-serif; }
+.bhishma-directory-header nav { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.bhishma-directory-header nav a { display: inline-flex; align-items: center; min-height: 44px; }
+.bhishma-directory-header a:hover, .bhishma-directory a[aria-current] { text-decoration: underline; }
+.bhishma-directory-arrival { position: relative; min-height: 360px; display: grid; align-items: end; overflow: hidden; background: #d4e1d1; }
+.bhishma-directory-arrival > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bhishma-directory-arrival > div { position: relative; margin: 36px 5vw; padding: 28px 32px; width: min(680px, 90%); background: #f2f5edee; backdrop-filter: blur(12px); }
+.bhishma-directory-back { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.bhishma-directory h1 { font: clamp(32px, 4vw, 54px)/1.15 'Alike', serif; margin: 14px 0; text-wrap: balance; }
+.bhishma-directory p { max-width: 70ch; }
+.bhishma-directory-content { max-width: 1280px; margin: auto; padding: 40px 5vw 64px; }
+.bhishma-directory-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
+.bhishma-directory h2 { font: 30px 'Alike', serif; }
+.bhishma-directory-heading label { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border: 1px solid #7c9e8c; border-radius: 8px; }
+.bhishma-directory-heading input { background: transparent; color: inherit; border: 0; font: inherit; min-height: 28px; min-width: 0; width: 220px; }
+.bhishma-directory-heading input::placeholder { color: #4c685c; }
+.bhishma-directory-note { margin: 16px 0 36px; color: #496457; }
+.bhishma-directory-office { display: grid; grid-template-columns: minmax(220px, 1fr) 1.4fr; gap: 40px; padding: 32px 0; border-top: 1px solid #b8cbbd; }
+.bhishma-directory-office h3 { font: 25px 'Alike', serif; margin-bottom: 12px; }
+.bhishma-directory-office h3 a, .bhishma-directory footer a { display: flex; align-items: center; gap: 12px; }
+.bhishma-directory-office ul { list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+.bhishma-directory-office li a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 8px 0; }
+.bhishma-directory-office a:hover { color: #17614a; text-decoration: underline; }
+.bhishma-directory footer { border-top: 1px solid #b8cbbd; padding-top: 28px; margin-top: 16px; }
+.bhishma-directory footer p { margin-top: 12px; color: #496457; font-size: 14px; }
+@media (max-width: 700px) {
+  .bhishma-directory-header { align-items: start; flex-direction: column; gap: 12px; }
+  .bhishma-directory-header nav { gap: 4px 18px; font-size: 14px; }
+  .bhishma-directory-arrival > div { padding: 20px; margin: 24px 5vw; width: 90%; }
+  .bhishma-directory-office { grid-template-columns: 1fr; gap: 16px; }
+  .bhishma-directory-office ul { grid-template-columns: 1fr; }
+  .bhishma-directory-heading label { width: 100%; }
+  .bhishma-directory-heading input { width: 100%; }
+}

@@ -1,0 +1,38 @@
+{
+  "region": "atrium-header-east",
+  "operation": "lossless rectangular crop; no resampling, repainting, or upscaling",
+  "authorization": "User explicitly authorized: Yes, crop the generated architecture to fit",
+  "source_path": "C:\\Users\\mrtha\\.codex\\generated_images\\01a13fd7-a5d4-7853-a9a1-b2d30f37e7fd\\exec-16cea981-71af-416e-ae58-57940cf6a000.png",
+  "source_sha256": "53ab56f8b6bed11bf100d0d72ed7a74ab9aff50559e4f39d2a75414b1f314348",
+  "preserved_original_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-header-east-native-original.png",
+  "source_dimensions": [
+    1536,
+    1024
+  ],
+  "crop_xywh": [
+    0,
+    320,
+    1536,
+    384
+  ],
+  "crop_box_exclusive": [
+    0,
+    320,
+    1536,
+    704
+  ],
+  "output_dimensions": [
+    1536,
+    384
+  ],
+  "generation_prompt_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-header-east-prompt.txt",
+  "generation_prompt_sha256": "8c1170ca83d82a4f0eb88bebec7ece75d7fbb2754ed994f6a30417e86494ea1f",
+  "cropped_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-header-east-cropped-01.png",
+  "cropped_sha256": "ebed1066d4aa22475467003debb7ae04cf1637ab00a119d0cd383e5725714d72",
+  "cropped_sha256_before_prompt_embedding": "ca3361da0c1b5eb89b66d853823588d4274ab7c21295f2bc2ef418a6cff9ba53",
+  "selected_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\assets\\plates\\atrium-header-east.png",
+  "selected_sha256": "ebed1066d4aa22475467003debb7ae04cf1637ab00a119d0cd383e5725714d72",
+  "selected_proof_path": "C:\\Users\\mrtha\\Desktop\\tharun trading\\bhishma-rainlight\\.impeccable\\build\\plate-candidates\\atrium-header-east-cropped-01-check.json",
+  "selected_score": 0.4239,
+  "human_approval": "pending; no asset acceptance recorded"
+}

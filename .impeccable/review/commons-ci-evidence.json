@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "isolated-ci-render-record",
+  "sourceHead": "8e5a7c80c5bb8db6620aa8bf6af8faefd07e9a81",
+  "sourceMerge": "2dd2bd9b4539eac38db505c2b5da5827b5a5f83a",
+  "workflowRun": "https://github.com/IamTharunsai/tharun-trading-/actions/runs/38856668642",
+  "artifactId": 12026808709,
+  "screenshotSha256": "5C852986B9B91850D84604D0131770B5F6D07612667F8C93DCE5547C591545E9",
+  "viewport": {
+    "width": 1536,
+    "height": 1024
+  },
+  "cases": [
+    "select-specialist",
+    "unknown-notes",
+    "keyboard-tabs",
+    "previous-specialist",
+    "attributed-history",
+    "review-selection-clears-previous-evidence",
+    "fault-opens-attributable-review"
+  ],
+  "scope": "Isolated fixture interactions, not backend or live trading proof.",
+  "heroAttempts": 3,
+  "heroStatus": "open",
+  "humanReview": "pending",
+  "nativeComponentCaptureVerified": false,
+  "note": "This record is not a native component-review capture receipt or owner approval."
+}
