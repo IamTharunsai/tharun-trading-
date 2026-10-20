@@ -67,10 +67,10 @@
 .rainlight-state--observed > span { background: #597c8d; }
 .rainlight-review-disc { background: rgba(7, 40, 31, .93); border-radius: 50%; z-index: 2; box-shadow: 0 1px 6px #0b251d33; }
 .rainlight-review-asset, .rainlight-review-text { text-align: center; color: #f1f5e8; z-index: 3; }
-.rainlight-review-asset { font-family: 'Alike', serif; font-size: 23px; line-height: 22px; transform: translateY(-1px); color: #f8f8ec; text-align: left; }
+.rainlight-review-asset { --r-review-asset-x: 40.65%; --r-review-asset-w: 9.75%; font-family: 'Alike', serif; font-size: 23px; line-height: 22px; transform: translateY(-1px); color: #f8f8ec; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rainlight-review-text { font-size: 12px; line-height: 14px; font-stretch: 90%; white-space: nowrap; }
-.rainlight-review-text[data-region='review-market'] { font-size: 14px; font-stretch: 100%; transform: translateY(-2px); text-align: left; }
-.rainlight-review-text[data-region='review-stage'] { transform: translateY(-2px); }
+.rainlight-review-text[data-region='review-market'] { --r-review-market-x: 41.34%; --r-review-market-w: 8.66%; font-size: 14px; font-stretch: 100%; transform: translateY(-2px); text-align: center; }
+.rainlight-review-text[data-region='review-stage'] { --r-review-stage-x: 40.65%; --r-review-stage-w: 9.75%; transform: translateY(-2px); overflow: hidden; text-overflow: ellipsis; }
 .rainlight-review-caption { font-size: 12px; line-height: 16px; font-stretch: 81%; }
 .rainlight-inspector-heading { font-size: 14px; line-height: 18px; }
 .rainlight-specialist-name { font-weight: 600; font-size: 17px; line-height: 21px; }
@@ -97,8 +97,8 @@
 .rainlight-request-research button { width: 100%; height: 100%; border: 1px solid #b5cbc1; border-radius: 3px; background: #f8faf4; color: #194c3b; display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 14px; }
 .rainlight-roster-heading { font-size: 13px; line-height: 17px; transform: translateY(-3px); }
 .rainlight-roster-grid, .rainlight-roster-grid-right { display: grid; align-items: center; gap: 5px; }
-.rainlight-roster-grid { grid-template-columns: 100px 73px 93px minmax(0, 1fr) 76px; }
-.rainlight-roster-grid-right { grid-template-columns: minmax(0, 1fr) 90px 80px; }
+.rainlight-roster-grid { grid-template-columns: 100px 110px 93px minmax(0, 1fr) 76px; }
+.rainlight-roster-grid-right { grid-template-columns: minmax(0, 1fr) 110px 80px; }
 .rainlight-roster-head { font-size: 10px; line-height: 13px; color: #354f45; white-space: nowrap; }
 .rainlight-roster-row { border-top: 1px solid #d4e0d8; }
 .rainlight-roster-row--selected { background: #e1eee2; }

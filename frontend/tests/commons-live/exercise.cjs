@@ -90,6 +90,15 @@ async function run() {
     await check('actual-readback-selected-id-observed-not-running', async () => {
       await signIn('owner'); await state('ready');
       assert.equal(await page.locator('[data-region="review-asset"]').textContent(), 'SOURCE-ASSET');
+      assert.ok(await page.evaluate(() => {
+        const asset = document.querySelector('[data-region="review-asset"]');
+        const market = document.querySelector('[data-region="review-market"]');
+        const stage = document.querySelector('[data-region="review-stage"]');
+        return asset.getBoundingClientRect().bottom <= market.getBoundingClientRect().top
+          && market.getBoundingClientRect().bottom <= stage.getBoundingClientRect().top
+          && getComputedStyle(asset).whiteSpace === 'nowrap'
+          && getComputedStyle(asset).overflow === 'hidden';
+      }), 'long instrument names must not wrap over market and stage labels');
       assert.equal(await page.locator('[data-region="specialist-state"]').textContent(), 'Work observed');
       assert.equal(await page.locator('.rainlight-state--running').count(), 0);
       assert.ok(await page.getByText('Observed issue', { exact: true }).count() > 0);

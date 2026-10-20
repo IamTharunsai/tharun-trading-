@@ -114,9 +114,9 @@ export function TeamWorkspaceView({ model, meta, error, research, onRefresh, onR
           <button aria-pressed={selectedSpecialist === agent.id} onClick={() => selectSpecialist(agent.id)}><span className="rainlight-station-name">{agent.id}. {shortName(agent.id)}</span><State observation={review?.specialists[agent.id]} /></button>
         </Region>)}
         <Region id="review-summary" className="rainlight-review-disc" />
-        <Region id="review-asset" className="rainlight-review-asset">{review?.asset ?? '—'}</Region>
+        <Region id="review-asset" className="rainlight-review-asset"><span title={review?.asset}>{review?.asset ?? '—'}</span></Region>
         <Region id="review-market" className="rainlight-review-text">{review?.marketLabel ?? 'No review'}</Region>
-        <Region id="review-stage" className="rainlight-review-text">{review?.stageLabel ?? 'Not observed'}</Region>
+        <Region id="review-stage" className="rainlight-review-text"><span title={review?.stageLabel}>{review?.stageLabel ?? 'Not observed'}</span></Region>
         <Region id="review-caption" className="rainlight-review-text rainlight-review-caption">Fourteen perspectives.<br />A more disciplined decision.</Region>
       </section>
       <section className="rainlight-contents" aria-label="Selected specialist details">
@@ -160,7 +160,7 @@ export function TeamWorkspaceView({ model, meta, error, research, onRefresh, onR
           const item = review?.specialists[agent.id];
           return <Region key={agent.id} id={agent.id <= 7 ? `roster-left-${agent.id}` : `roster-right-${agent.id}`} className={`rainlight-roster-row ${selectedSpecialist === agent.id ? 'rainlight-roster-row--selected' : ''}`}>
             <button className={agent.id <= 7 ? 'rainlight-roster-grid' : 'rainlight-roster-grid-right'} onClick={() => selectSpecialist(agent.id)} aria-pressed={selectedSpecialist === agent.id}>
-              <span>{shortName(agent.id)}</span><State observation={item} /><span>{item?.receiptLabel ?? '—'}</span>
+              <span>{shortName(agent.id)}</span><State observation={item} /><span title={item?.receiptLabel}>{item?.receiptLabel ?? '—'}</span>
               {agent.id <= 7 && <><span>{item?.evidence ?? '—'}</span><span>{review?.handoffs?.find(handoff => handoff.from === agent.id) ? shortName(review.handoffs.find(handoff => handoff.from === agent.id)!.to) : '—'}</span></>}
             </button>
           </Region>;
