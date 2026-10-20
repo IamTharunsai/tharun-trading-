@@ -16,6 +16,7 @@ import courtyardPlate from '../../../assets/plates/atrium-courtyard.png';
 import '../styles/rainlight-layout.css';
 import '../styles/rainlight.css';
 import '../styles/rainlight-interface.css';
+import CompactTeamWorkspace from '../components/workspace/CompactTeamWorkspace';
 
 const shortNames: Record<number, string> = { 3: 'Sentiment', 4: 'Fundamental', 7: 'Volume', 9: 'Macro' };
 const shortName = (id: number) => (shortNames[id]
@@ -176,7 +177,9 @@ export function TeamWorkspaceView({ model, meta, error, research, onRefresh, onR
         <Region id="fault-detail" className="rainlight-footer-fault">{model.faultSummary}</Region>
         <Region id="fault-link" className="rainlight-footer-link"><Link to="/agents/monitor">View</Link></Region>
       </footer>
-    </main>{meta && <WorkspaceReadbackCoverage meta={meta} error={error} reviewId={review?.id} onRefresh={onRefresh} research={research} />}</>
+    </main><CompactTeamWorkspace model={model} review={review} meta={meta} selected={selectedSpecialist} tab={tab} research={research}
+      onSelect={selectSpecialist} onReview={setSelectedReviewId} onTab={setTab} onRefresh={onRefresh} onRequestResearch={onRequestResearch} />
+      {meta && <WorkspaceReadbackCoverage meta={meta} error={error} reviewId={review?.id} onRefresh={onRefresh} research={research} />}</>
   );
 }
 
