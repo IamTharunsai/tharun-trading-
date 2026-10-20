@@ -70,7 +70,7 @@
 .rainlight-review-asset { --r-review-asset-x: 40.65%; --r-review-asset-w: 9.75%; font-family: 'Alike', serif; font-size: 23px; line-height: 22px; transform: translateY(-1px); color: #f8f8ec; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rainlight-review-text { font-size: 12px; line-height: 14px; font-stretch: 90%; white-space: nowrap; }
 .rainlight-review-text[data-region='review-market'] { --r-review-market-x: 41.34%; --r-review-market-w: 8.66%; font-size: 14px; font-stretch: 100%; transform: translateY(-2px); text-align: center; }
-.rainlight-review-text[data-region='review-stage'] { --r-review-stage-x: 40.65%; --r-review-stage-w: 9.75%; transform: translateY(-2px); overflow: hidden; text-overflow: ellipsis; }
+.rainlight-review-text[data-region='review-stage'] { --r-review-stage-y: 45.9%; --r-review-stage-x: 40.65%; --r-review-stage-w: 9.75%; transform: translateY(-2px); overflow: hidden; text-overflow: ellipsis; }
 .rainlight-review-caption { font-size: 12px; line-height: 16px; font-stretch: 81%; }
 .rainlight-inspector-heading { font-size: 14px; line-height: 18px; }
 .rainlight-specialist-name { font-weight: 600; font-size: 17px; line-height: 21px; }
