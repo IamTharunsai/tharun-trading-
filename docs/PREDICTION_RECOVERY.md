@@ -1,0 +1,17 @@
+# Durable prediction read recovery
+
+The scheduler registers a30s recovery job independently of new ENTRY permission, trading mode, kill state and the selected research venue. Startup registers the job without broker I/O; the first cron tick is within30s. Bounded outcomes also feed scheduler evidence. Recovery never creates or automatically cancels an order.
+
+The worker pins a local owner to the first known API grant, using a PostgreSQL owner lock. This is not a stable exchange account ID. An older grant or multiple historical grants requires review; credential rotation cannot erase old reservations or silently reset loss history. Entry claim/submission now checks this barrier. Recovery can still observe known orders in the current grant while new entries are blocked.
+
+Each owner has a persisted60s lease and cursor. A batch visits at most20 claims, moving past unknown-ID claims so they cannot starve later known orders. No saved ACK means uncertainty: retain the reservation and never retry POST. With a saved order ID, the existing strict cumulative order parser owns fill/fee booking and replay protection. Missing commission remains unknown; an ACK, a cancel ACK or a candidate activity match does not establish a fill.
+
+The optional cancellation helper requires a durable claim, matching owner/grant/market/order and a strict fresh order read. It consumes one persisted attempt before issuing the documented cancellation POST. It remains callable while entry is killed or disabled. A lost reply requires read reconciliation; there is no automatic cancellation policy or new HTTP route here. This helper does not close positions.
+
+Optional create-response execution references and bounded activity traversal are retained separately. Exact execution.tradeId/activity.trade.id matches are labeled UNPROVEN_PROVIDER_JOIN. This fixture correspondence does not establish retail historical linkage, finality, fee/rebate semantics, retention completeness or account identity. There is no symbol/time/price heuristic join and these fields never authorize fills, P&L or entry. Activity-enrichment retry for already-terminal orders remains unfinished.
+
+The additive rollout preserves existing claims and reservations. Compatibility SQL creates the recovery table with RLS before db push; the migration tolerates that table already existing. New execution columns are nullable. Offline CI exercises the old schema with a legacy unknown claim, twice-run compatibility, additive migration/schema synchronization, value preservation and table RLS, plus real PostgreSQL recovery/replay/partial-fee/rotation/lease fixtures. Results must be read before release; test definitions alone are not passing evidence.
+
+Official contracts: [cancel order](https://docs.polymarket.us/api-reference/orders/cancel-order), [activities](https://docs.polymarket.us/api-reference/portfolio/get-activities), [create order](https://docs.polymarket.us/api-reference/orders/create-order). Recovery and cancellation use the existing fixed-host signed transport; provider credentials and raw responses are not logged.
+
+This is one part of the live pipeline. Linked reductions, fee/rebate and resolution accounting, complete loss coverage, supported stable authority and a qualified live scanner dispatch still need the full restart/close/settlement vertical fixture described in the delivery plan. No live flags, account credentials or orders are changed by this PR. Offline dummy-provider success does not certify production trading or profitability.

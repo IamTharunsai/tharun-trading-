@@ -1,4 +1,4 @@
-CREATE TABLE "PredictionRecoveryState" (
+CREATE TABLE IF NOT EXISTS "PredictionRecoveryState" (
   "ownerId" TEXT PRIMARY KEY, "boundCredentialScopeKey" TEXT, "cursorId" TEXT,
   "leaseId" TEXT, "leaseUntil" TIMESTAMP(3), "lastStartedAt" TIMESTAMP(3),
   "lastFinishedAt" TIMESTAMP(3), "lastOutcome" TEXT,
@@ -6,5 +6,5 @@ CREATE TABLE "PredictionRecoveryState" (
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL
 );
 ALTER TABLE "PredictionRecoveryState" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "PredictionExecution" ADD COLUMN "executionReferences" JSONB,
-  ADD COLUMN "activityEvidence" JSONB, ADD COLUMN "cancelAttemptedAt" TIMESTAMP(3);
+ALTER TABLE "PredictionExecution" ADD COLUMN IF NOT EXISTS "executionReferences" JSONB,
+  ADD COLUMN IF NOT EXISTS "activityEvidence" JSONB, ADD COLUMN IF NOT EXISTS "cancelAttemptedAt" TIMESTAMP(3);
