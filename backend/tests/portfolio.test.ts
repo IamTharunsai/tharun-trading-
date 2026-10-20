@@ -1,4 +1,6 @@
 jest.mock('../src/services/cashFlowRisk', () => ({ getCashFlowRisk: jest.fn() }));
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn() } }));
+import { logger } from '../src/utils/logger';
 import { getCashFlowRisk } from '../src/services/cashFlowRisk';
 // Regression coverage for the P&L bug a user caught by comparing the live
 // dashboard against the real Alpaca account: Today's P&L and Total P&L only
@@ -49,6 +51,19 @@ describe('getPortfolioState — P&L math', () => {
     // Was previously locked to exactly 0 whenever no trade had closed yet,
     // no matter how much an open position had moved.
     expect(state.pnlTotal).toBeCloseTo(200); // 10 shares * $20
+  });
+
+  it.each(['RISK_HISTORY_COVERAGE_GAP', 'PRIVATE_ACCOUNT_AND_TOKEN'])('logs only a safe readiness reason for %s without changing risk state', async reason => {
+    (getCashFlowRisk as jest.Mock).mockResolvedValue({ complete: false, reason, dailyPnl: null, dailyPnlPct: null });
+    (prisma.position.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.trade.findMany as jest.Mock).mockResolvedValue([]);
+    const result = await getPortfolioState();
+    expect(result.riskDataComplete).toBe(false);
+    expect(result.pnlDay).toBeNull();
+    expect(logger.info).toHaveBeenCalledWith('portfolio_risk_evidence_incomplete', {
+      reason: reason === 'RISK_HISTORY_COVERAGE_GAP' ? reason : 'OTHER_EVIDENCE_FAILURE',
+    });
+    expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toMatch(/PRIVATE_|fixture-account/);
   });
 
   it('adds realized P&L from closed trades on top of unrealized', async () => {

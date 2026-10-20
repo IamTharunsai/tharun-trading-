@@ -3,6 +3,8 @@ import { PortfolioState } from '../agents/types';
 import { getCurrentPrices } from './marketData';
 import { getVerifiedAccountScope } from '../trading/accountScope';
 import { getCashFlowRisk } from './cashFlowRisk';
+import { logger } from '../utils/logger';
+import { operatingReason } from '../trading/operatingDiagnostics';
 
 /** Current account only. Legacy history is not silently assigned to new credentials. */
 export async function getPortfolioState(): Promise<PortfolioState> {
@@ -36,6 +38,10 @@ export async function getPortfolioState(): Promise<PortfolioState> {
   const totalValue = summary.portfolio_value;
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const capitalRisk = await getCashFlowRisk(scope);
+  if (!capitalRisk.complete) {
+    // This is evidence about readiness, not an instruction to relax its guard.
+    try { logger.info('portfolio_risk_evidence_incomplete', { reason: operatingReason(capitalRisk.reason) }); } catch { /* observation only */ }
+  }
   const pnlDay = capitalRisk.dailyPnl;
   const pnlDayPct = capitalRisk.dailyPnlPct;
   const pnlWeekPct = capitalRisk.weeklyPnlPct;
