@@ -125,6 +125,13 @@ test('total deadline aborts a pending transport and releases its timer', async (
   expect(get).toHaveBeenCalledTimes(1); expect(jest.getTimerCount()).toBe(0);
 });
 
+test('time spent validating returned evidence cannot produce a late successful result', async () => {
+  const clock = jest.spyOn(performance, 'now').mockReturnValue(0);
+  const activity = { id: 'slow-validation', get activity_type() { clock.mockReturnValue(25000); return 'FILL'; } };
+  get.mockResolvedValue({ data: [activity] });
+  await expect(broker.listActivitiesVerified(start, '2026-10-02T00:00:00Z')).rejects.toThrow('BROKER_ACTIVITY_DEADLINE_EXCEEDED');
+});
+
 test.each([['invalid', end, 20], [end, start, 20], [start, end, 0], [start, end, 101], [start, end, 1.5]])(
   'invalid interval or request budget rejects before transport: %s %s %s', async (after, until, budget) => {
     await expect(broker.listActivitiesVerified(after as string, until as string, budget as number)).rejects.toThrow('INVALID_BROKER_ACTIVITY_RANGE');

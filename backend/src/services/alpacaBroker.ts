@@ -294,6 +294,7 @@ export class AlpacaBroker {
         if (to === end) break;
         from = to - overlap;
       }
+      remaining(); // Validation/deduplication time also belongs to this read.
       return [...activities.values()];
     } finally { clearTimeout(timer); }
   }
