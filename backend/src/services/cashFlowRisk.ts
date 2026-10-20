@@ -58,7 +58,10 @@ export function parseRiskHistory(history: AlpacaPortfolioHistory, start: Date, e
   if (!Array.isArray(history.timestamp) || !Array.isArray(history.equity)) throw new Error('INVALID_RISK_HISTORY_ARRAYS');
   if (history.timestamp.length !== history.equity.length) throw new Error('INVALID_RISK_HISTORY_LENGTHS');
   if (!history.cashflow || typeof history.cashflow !== 'object' || Array.isArray(history.cashflow)) {
-    throw new Error('INVALID_RISK_HISTORY_CASHFLOW_OBJECT');
+    // Classify only the rejected field's kind. Absence is not zero capital.
+    const kind = history.cashflow === undefined ? 'MISSING' : history.cashflow === null ? 'NULL'
+      : Array.isArray(history.cashflow) ? 'ARRAY' : 'INVALID_TYPE';
+    throw new Error(`INVALID_RISK_HISTORY_CASHFLOW_${kind}`);
   }
   const entries = Object.entries(history.cashflow);
   if (entries.some(([, values]) => !Array.isArray(values) || values.length !== history.timestamp.length

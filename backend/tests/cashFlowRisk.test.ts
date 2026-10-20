@@ -20,10 +20,13 @@ describe('risk history envelope diagnostics without financial assumptions', () =
     [{ ...valid, timestamp: null }, 'ARRAYS'],
     [{ ...valid, equity: 'not an array' }, 'ARRAYS'],
     [{ ...valid, equity: [] }, 'LENGTHS'],
-    [{ timeframe: '5Min', timestamp: [0], equity: [100] }, 'CASHFLOW_OBJECT'],
-    [{ ...valid, cashflow: null }, 'CASHFLOW_OBJECT'],
-    [{ ...valid, cashflow: [] }, 'CASHFLOW_OBJECT'],
-    [{ ...valid, cashflow: 'untrusted response text' }, 'CASHFLOW_OBJECT'],
+    [{ timeframe: '5Min', timestamp: [0], equity: [100] }, 'CASHFLOW_MISSING'],
+    [{ ...valid, cashflow: undefined }, 'CASHFLOW_MISSING'],
+    [{ ...valid, cashflow: null }, 'CASHFLOW_NULL'],
+    [{ ...valid, cashflow: [] }, 'CASHFLOW_ARRAY'],
+    [{ ...valid, cashflow: 'untrusted response text' }, 'CASHFLOW_INVALID_TYPE'],
+    [{ ...valid, cashflow: false }, 'CASHFLOW_INVALID_TYPE'],
+    [{ ...valid, cashflow: 0 }, 'CASHFLOW_INVALID_TYPE'],
   ])('rejects malformed field shape with a fixed exact reason (%#)', (history, suffix) => {
     const reason = `INVALID_RISK_HISTORY_${suffix}`;
     expect(() => parseRiskHistory(history as any, new Date(0), new Date(STEP))).toThrow(new RegExp(`^${reason}$`));
@@ -37,7 +40,7 @@ describe('risk history envelope diagnostics without financial assumptions', () =
   });
   test('retains a supplied empty cashflow object and never normalizes missing evidence', () => {
     expect(parseRiskHistory(valid, new Date(0), new Date(STEP))).toHaveLength(1);
-    expect(() => parseRiskHistory({ ...valid, cashflow: undefined } as any, new Date(0), new Date(STEP))).toThrow(/^INVALID_RISK_HISTORY_CASHFLOW_OBJECT$/);
+    expect(() => parseRiskHistory({ ...valid, cashflow: undefined } as any, new Date(0), new Date(STEP))).toThrow(/^INVALID_RISK_HISTORY_CASHFLOW_MISSING$/);
     expect(operatingReason('INVALID_RISK_HISTORY_TIMEFRAME: account or raw values')).toBe('OTHER_EVIDENCE_FAILURE');
   });
 });
