@@ -19,6 +19,8 @@
 import axios from 'axios';
 import { PolymarketUS } from 'polymarket-us';
 import { logger } from '../utils/logger';
+import { polymarketPublicRead } from './polymarketPublicRead';
+import { LlmAdmissionError } from '../utils/llmAdmission';
 import { isKillSwitchActive } from '../agents/orchestrator';
 import { createHash } from 'crypto';
 import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from '../trading/liveGate';
@@ -110,7 +112,7 @@ export async function getPolymarketUSAccount() {
 }
 
 export async function listPolymarketUSEvents(limit = 20) {
-  const r: any = await pub().events.list({ limit, active: true, closed: false } as any);
+  const r: any = await polymarketPublicRead(() => pub().events.list({ limit, active: true, closed: false } as any));
   return (r?.events ?? []).filter((e: any) => !e.closed);
 }
 
@@ -156,7 +158,7 @@ export async function listPolymarketUSMarkets(max = 200): Promise<VenueMarket[]>
   const out: VenueMarket[] = [];
   const pageSize = 50;
   for (let offset = 0; out.length < max && offset < max * 4; offset += pageSize) {
-    const r: any = await pub().events.list({ limit: pageSize, offset, active: true, closed: false } as any);
+    const r: any = await polymarketPublicRead(() => pub().events.list({ limit: pageSize, offset, active: true, closed: false } as any));
     const events: any[] = r?.events ?? [];
     for (const ev of events) {
       if (ev?.closed) continue;
@@ -178,12 +180,36 @@ function levels(raw: any[] | undefined): BookLevel[] {
     .filter((l: BookLevel) => Number.isFinite(l.price) && l.size > 0);
 }
 
+export function classifyPolymarketBookFailure(error: unknown): string {
+  if (error instanceof LlmAdmissionError && error.code !== 'rate_limited') return 'read_admission_refused';
+  const status = error && typeof error === 'object' ? (error as { status?: unknown }).status : undefined;
+  if (status === 408) return 'timeout';
+  if (status === 429) return 'rate_limited';
+  if (status === 404) return 'market_unavailable';
+  if (status === 401 || status === 403) return 'access_refused';
+  if (typeof status === 'number' && status >= 500 && status <= 599) return 'provider_unavailable';
+  if (status === 0) return 'transport_failure';
+  return 'unclassified_failure';
+}
+
+// Fixed categories only; no market identifiers, provider messages or credentials.
+// At most one log per category/minute per process. A failed logger cannot affect reads.
+const bookFailureLogTimes = new Map<string, number>();
+function recordBookFailure(code: string): void {
+  const now = Date.now(), previous = bookFailureLogTimes.get(code);
+  if (previous !== undefined && now >= previous && now - previous < 60000) return;
+  bookFailureLogTimes.set(code, now);
+  try { logger.warn('polymarket_book_read_failed', { venue: 'polymarket_us', code }); } catch { /* diagnostic only */ }
+}
+
 /** Full YES-side book: bids high→low, asks low→high. */
 export async function getPolymarketUSBook(slug: string): Promise<VenueBook | null> {
+  let received = false;
   try {
-    const r: any = await pub().markets.book(slug);
+    const r: any = await polymarketPublicRead(() => pub().markets.book(slug));
+    received = true;
     const d = r?.marketData ?? r; // gateway wraps the book in { marketData }
-    if (!d) return null;
+    if (!d) { recordBookFailure('response_missing'); return null; }
     return {
       bids: levels(d.bids).sort((a, b) => b.price - a.price),
       asks: levels(d.offers ?? d.asks).sort((a, b) => a.price - b.price),
@@ -195,7 +221,7 @@ export async function getPolymarketUSBook(slug: string): Promise<VenueBook | nul
       fetchedAt: Date.now(),
     };
   } catch (err: any) {
-    logger.debug(`[PM-US] book ${slug} failed: ${err?.message}`);
+    recordBookFailure(received ? 'normalization_failed' : classifyPolymarketBookFailure(err));
     return null;
   }
 }
@@ -207,7 +233,7 @@ export interface PmUsBBO {
 
 export async function getPolymarketUSBBO(slug: string): Promise<PmUsBBO | null> {
   try {
-    const r: any = await pub().markets.bbo(slug);
+    const r: any = await polymarketPublicRead(() => pub().markets.bbo(slug));
     const d = r?.marketData ?? r;
     if (!d) return null;
     return {
@@ -229,7 +255,7 @@ export async function getPolymarketUSPriceHistory(
   slug: string, fixedInterval = 'INTERVAL_1W', fidelity = 180,
 ): Promise<VenuePricePoint[]> {
   try {
-    const r = await axios.get(`${GATEWAY}/v1/price-history`, { params: { symbol: slug, fixedInterval, fidelity }, timeout: 10_000 });
+    const r = await polymarketPublicRead(() => axios.get(`${GATEWAY}/v1/price-history`, { params: { symbol: slug, fixedInterval, fidelity }, timeout: 10_000 }));
     const hist: any[] = Array.isArray(r?.data?.history) ? r.data.history : [];
     return hist
       .map(h => {
@@ -247,7 +273,7 @@ export async function getPolymarketUSPriceHistory(
 /** YES settlement value (0..1) once the market has settled; null otherwise (404 = not settled). */
 export async function getPolymarketUSSettlement(slug: string): Promise<number | null> {
   try {
-    const r: any = await pub().markets.settlement(slug);
+    const r: any = await polymarketPublicRead(() => pub().markets.settlement(slug));
     const v = num(r?.settlement) ?? num(r?.settlementPrice) ?? num(r?.marketData?.settlementPrice);
     return v !== undefined && v >= 0 && v <= 1 ? v : null;
   } catch {

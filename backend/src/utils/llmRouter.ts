@@ -24,6 +24,7 @@ import axios from 'axios';
 import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { logger } from './logger';
+import { AdmissionReceipt, LlmAdmissionError, llmAdmission } from './llmAdmission';
 
 export type LlmTier = 'fast' | 'smart';
 export type LlmProvider = 'anthropic' | 'ollama' | 'nvidia' | 'openai_compat';
@@ -111,6 +112,10 @@ class CompletionError extends Error {
 }
 export interface LlmRequestOptions {
   signal?: AbortSignal;
+  /** Internal monotonic deadline, shared by caller retry attempts; never from HTTP input. */
+  deadlineAt?: number;
+  /** Authoritative caller guard, rechecked after waiting and before each dispatch. */
+  beforeDispatch?: (signal: AbortSignal) => Promise<void> | void;
   structured?: boolean;
   /** The caller's domain schema remains authoritative. Never log thrown details. */
   validateText?: (text: string) => void;
@@ -150,10 +155,12 @@ export function getLlmHealth() {
       completionHealthy: h?.completionHealthy ?? null, structuredHealthy: h?.structuredHealthy ?? null,
       lastError: healthy ? null : h?.lastError || null };
   };
-  return { fast: describe('fast'), smart: describe('smart'), providers: health };
+  return { fast: describe('fast'), smart: describe('smart'), providers: health,
+    admission: { scope: 'process-local' as const, providers: llmAdmission.snapshot() } };
 }
 
 export function describeError(err: any): string {
+  if (err instanceof LlmAdmissionError) return err.code;
   if (err instanceof CompletionError) return err.code;
   if (SAFE_ERROR_CODES.has(err?.code) || ['transport_error', 'timeout', 'aborted'].includes(err?.code)) return err.code;
   if (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT') return 'timeout';
@@ -190,7 +197,7 @@ async function callOpenAiCompat(provider: LlmProvider, model: string, params: an
   if (provider === 'nvidia' && !hasKey(apiKey)) throw new Error('NVIDIA_API_KEY not set');
   const res = await axios.post(`${baseUrl.replace(/\/$/, '')}/chat/completions`, toOpenAiChat(params, model, provider, options.structured), {
     headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-    timeout: requestTimeoutMs(),
+    timeout: Math.max(1, Math.ceil(Math.min(requestTimeoutMs(), (options.deadlineAt ?? Infinity) - performance.now()))),
     signal: options.signal,
   });
   return res.data;
@@ -200,6 +207,8 @@ function requestTimeoutMs(): number {
   const configured = Number(process.env.LLM_TIMEOUT_MS || 60000);
   return Number.isSafeInteger(configured) && configured >= 1 ? Math.min(120000, configured) : 60000;
 }
+export function createLlmDeadline(): number { return performance.now() + requestTimeoutMs(); }
+export interface AnthropicAttemptOptions { signal?: AbortSignal; maxRetries?: number; timeout?: number }
 
 function tokenCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
@@ -274,22 +283,29 @@ export function attemptChain(params: any): Attempt[] {
  * Anthropic-compatible `messages.create` that routes to the configured provider
  * and fails over down the chain. `anthropicCreate` can be injected for tests.
  */
-export async function routedMessagesCreate(params: any, anthropicCreate?: (p: any, options?: { signal?: AbortSignal }) => Promise<any>, options: LlmRequestOptions = {}): Promise<LlmTextResponse> {
+export async function routedMessagesCreate(params: any, anthropicCreate?: (p: any, options?: AnthropicAttemptOptions) => Promise<any>, options: LlmRequestOptions = {}): Promise<LlmTextResponse> {
   options.signal?.throwIfAborted();
   // One deadline covers the existing fallback chain and SDK retry delays. A
   // later provider cannot reset it; caller cancellation still takes precedence.
-  const deadline = AbortSignal.timeout(requestTimeoutMs());
+  if (options.deadlineAt !== undefined && !Number.isFinite(options.deadlineAt)) throw new LlmAdmissionError('admission_config');
+  const deadlineAt = Math.min(createLlmDeadline(), options.deadlineAt ?? Infinity);
+  const remaining = Math.ceil(deadlineAt - performance.now());
+  if (remaining <= 0) throw Object.assign(new Error('All LLM providers failed: timeout'), { code: 'timeout', status: 504 });
+  const deadline = AbortSignal.timeout(remaining);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
   let lastReportedUsage: { model: string; provider: LlmProvider; usage: LlmTextResponse['usage'] } | undefined;
   const timeoutError = () => Object.assign(new Error('All LLM providers failed: timeout'), { code: 'timeout', status: 504, reportedUsage: lastReportedUsage });
   const chain = attemptChain(params);
   const callId = randomUUID();
+  const rateLimitedProviders = new Set<LlmProvider>();
   let lastErr: any;
   for (const [attemptIndex, { provider, model }] of chain.entries()) {
     options.signal?.throwIfAborted();
     if (deadline.aborted) throw timeoutError();
+    if (rateLimitedProviders.has(provider)) continue;
     const started = Date.now();
-    let transported = false, completed = false;
+    let transported = false, completed = false, dispatched = false;
+    let admission: AdmissionReceipt | undefined;
     let completion: ReturnType<typeof completeText> | undefined;
     const context = options.context;
     // Only internally generated debate IDs and enumerated entry points cross
@@ -302,19 +318,27 @@ export async function routedMessagesCreate(params: any, anthropicCreate?: (p: an
     let inputTokens: number | undefined, outputTokens: number | undefined;
     const emit = (validationCode: string, err?: any) => {
       const status = err?.status ?? err?.response?.status;
-      const metadata = { event: validationCode === 'ok' ? 'llm_attempt_completed' : 'llm_attempt_refused', callId, ...correlation,
+      const metadata = { event: !dispatched ? 'llm_admission_refused' : validationCode === 'ok' ? 'llm_attempt_completed' : 'llm_attempt_refused', callId, ...correlation,
         provider, model: NEMOTRON_MODELS.has(model) || ['openai/gpt-oss-20b', 'claude-haiku-4-5-20251001', 'claude-sonnet-5'].includes(model) ? model : 'other',
         attemptIndex, validationCode, latencyMs: Math.max(0, Date.now() - started),
-        httpStatusClass: transported ? '2xx' : Number.isInteger(status) && status >= 100 && status < 600 ? `${Math.floor(status / 100)}xx` : undefined,
+        dispatched, queueWaitMs: admission?.queueWaitMs, active: admission?.active, queued: admission?.queued,
+        httpStatusClass: !dispatched ? undefined : transported ? '2xx' : Number.isInteger(status) && status >= 100 && status < 600 ? `${Math.floor(status / 100)}xx` : undefined,
+        retryAfterMs: err instanceof LlmAdmissionError ? err.retryAfterMs : undefined,
+        retryAfterSource: err instanceof LlmAdmissionError ? err.retryAfterSource : undefined,
         requestedMaxTokens: tokenCount(params.max_tokens), contentCharacters: observedCharacters,
         finishReason: observedFinishReason, inputTokens, outputTokens };
       if (validationCode === 'ok') logger.info('llm_attempt_completed', metadata);
-      else logger.warn('llm_attempt_refused', metadata);
+      else logger.warn(dispatched ? 'llm_attempt_refused' : 'llm_admission_refused', metadata);
     };
     try {
-      const res = provider === 'anthropic'
-        ? await (anthropicCreate || ((p: any, requestOptions?: { signal?: AbortSignal }) => anthropic().messages.create(p, requestOptions)))({ ...params, model }, { signal })
-        : await callOpenAiCompat(provider, model, params, { ...options, signal });
+      const res = await llmAdmission.run(provider, signal, async () => {
+        const result = provider === 'anthropic'
+          ? await (anthropicCreate || ((p: any, requestOptions?: AnthropicAttemptOptions) => anthropic().messages.create(p, requestOptions)))({ ...params, model },
+            { signal, maxRetries: 0, timeout: Math.max(1, Math.ceil(deadlineAt - performance.now())) })
+          : await callOpenAiCompat(provider, model, params, { ...options, signal, deadlineAt });
+        lastReportedUsage = { provider, model, usage: reportedUsage(provider, result) };
+        return result;
+      }, { beforeDispatch: options.beforeDispatch, onDispatch: receipt => { dispatched = true; admission = receipt; } });
       transported = true;
       lastReportedUsage = { provider, model, usage: reportedUsage(provider, res) };
       signal.throwIfAborted();
@@ -344,12 +368,16 @@ export async function routedMessagesCreate(params: any, anthropicCreate?: (p: an
       if (options.signal?.aborted) { emit('aborted'); throw options.signal.reason; }
       if (deadline.aborted) {
         const err = timeoutError();
-        mark(provider, model, false, transported, completed, !!options.validateText, err);
+        if (dispatched) mark(provider, model, false, transported, completed, !!options.validateText, err);
         emit('timeout'); throw err;
       }
-      mark(provider, model, false, transported, completed, !!options.validateText, err);
+      if (dispatched) mark(provider, model, false, transported, completed, !!options.validateText, err);
       emit(describeError(err), err);
       lastErr = err;
+      if (err instanceof LlmAdmissionError) {
+        if (err.code !== 'rate_limited') break;
+        rateLimitedProviders.add(provider);
+      }
       if (!isFailover(err)) break;
     }
   }
@@ -358,6 +386,7 @@ export async function routedMessagesCreate(params: any, anthropicCreate?: (p: an
   // Do not retain the raw HTTP error as cause: it may contain prompts, headers
   // and response bodies and be serialized by caller error logging.
   e.code = describeError(lastErr);
+  if (lastErr instanceof LlmAdmissionError && lastErr.retryAfterMs !== undefined) e.retryAfterMs = lastErr.retryAfterMs;
   // Preserve finite reported usage for callers that previously accounted a
   // returned HTTP-200 response before rejecting its JSON/domain schema.
   e.reportedUsage = lastReportedUsage;
@@ -365,14 +394,14 @@ export async function routedMessagesCreate(params: any, anthropicCreate?: (p: an
 }
 
 /** Convenience: one prompt in, plain text out. */
-export async function llmText(opts: { tier?: LlmTier; system?: string; prompt: string; maxTokens?: number; temperature?: number }): Promise<string> {
+export async function llmText(opts: { tier?: LlmTier; system?: string; prompt: string; maxTokens?: number; temperature?: number; signal?: AbortSignal }): Promise<string> {
   const res = await routedMessagesCreate({
     model: opts.tier === 'fast' ? 'fast' : 'smart',
     max_tokens: opts.maxTokens ?? 800,
     temperature: opts.temperature,
     ...(opts.system ? { system: opts.system } : {}),
     messages: [{ role: 'user', content: opts.prompt }],
-  });
+  }, undefined, { signal: opts.signal });
   const block = (res.content || []).find((c: any) => c.type === 'text');
   return stripReasoning(block?.text || '');
 }
