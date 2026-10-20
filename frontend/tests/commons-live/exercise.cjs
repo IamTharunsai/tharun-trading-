@@ -277,6 +277,42 @@ async function run() {
       assert.deepEqual(pageErrors, []);
       assert.equal(countPosts(), postsBefore, 'navigation must not issue additional research or financial mutations');
     });
+    await check('compact-commons-keeps-team-evidence-and-navigation-usable', async () => {
+      const postsBefore = countPosts();
+      const compact = page.locator('.rainlight-compact');
+      for (const viewport of [{ width: 607, height: 519 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        await compact.getByRole('heading', { name: 'Your team, in view.' }).waitFor();
+        assert.equal(await page.locator('.rainlight-world').isVisible(), false);
+        assert.equal(await compact.locator('.compact-team-grid button').count(), 14);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'compact Commons must not overflow horizontally');
+        assert.ok(await compact.locator('.compact-team-grid button').evaluateAll(buttons => buttons.every(button => button.getBoundingClientRect().height >= 44)), 'specialist cards need usable touch targets');
+        await compact.getByRole('button', { name: 'Select Risk Manager', exact: true }).click();
+        assert.equal(await compact.getByRole('button', { name: 'Select Risk Manager', exact: true }).getAttribute('aria-pressed'), 'true');
+        await compact.getByRole('tab', { name: 'Notes', exact: true }).click();
+        assert.match(await compact.getByRole('tabpanel', { name: 'Notes', exact: true }).textContent(), /No attributable notes/);
+        await compact.getByRole('tab', { name: 'Notes', exact: true }).press('ArrowRight');
+        assert.equal(await compact.getByRole('tab', { name: 'Handoffs', exact: true }).getAttribute('aria-selected'), 'true');
+        assert.equal(await compact.getByRole('tab', { name: 'Handoffs', exact: true }).evaluate(node => node === document.activeElement), true);
+        await compact.getByRole('tab', { name: 'History', exact: true }).click();
+        assert.match(await compact.getByRole('tabpanel', { name: 'History', exact: true }).textContent(), /No specialist history/);
+        await compact.getByRole('combobox', { name: 'Choose observed review', exact: true }).selectOption('research-two');
+        await compact.getByRole('tab', { name: 'Evidence', exact: true }).click();
+        assert.match(await compact.getByRole('tabpanel', { name: 'Evidence', exact: true }).textContent(), /Crypto/);
+        assert.equal(await compact.locator('.compact-issue').count(), 0, 'switching review cannot retain another review issue');
+        await compact.getByRole('combobox', { name: 'Choose observed review', exact: true }).selectOption('research-one');
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.screenshot({ path: `${output}/commons-compact-${viewport.width}.png`, fullPage: false });
+        await compact.locator('.compact-inspector').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${output}/commons-compact-inspector-${viewport.width}.png`, fullPage: false });
+      }
+      await compact.getByRole('link', { name: 'City & offices', exact: true }).click();
+      await page.getByRole('heading', { name: 'A city for your work.' }).waitFor();
+      await page.getByRole('link', { name: 'Commons', exact: true }).click();
+      await compact.getByRole('heading', { name: 'Your team, in view.' }).waitFor();
+      assert.equal(countPosts(), postsBefore);
+      assert.deepEqual(pageErrors, []);
+    });
   } finally {
     fs.writeFileSync(`${output}/mounted-proof.json`, JSON.stringify({ sourceCommit: process.env.SOURCE_COMMIT,
       sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT, cases, pageErrors, requestCount: requests.length,

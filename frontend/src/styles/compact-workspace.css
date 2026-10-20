@@ -1,0 +1,49 @@
+.rainlight-compact { display: none; }
+@media (max-width: 1100px) {
+  .rainlight-world { display: none; }
+  .rainlight-compact { display: block; min-height: 100svh; padding-bottom: 8px; background: #eef3ed; color: #183c32; font: 15px/1.55 'IBM Plex Sans', sans-serif; overflow-wrap: anywhere; }
+  .rainlight-compact, .rainlight-compact * { box-sizing: border-box; min-width: 0; }
+  .rainlight-compact h1, .rainlight-compact h2, .rainlight-compact p { margin: 0; }
+  .rainlight-compact h1 { margin-top: 28px; font: 36px/1.15 'Alike', serif; }
+  .rainlight-compact h2 { font: 24px/1.3 'Alike', serif; }
+  .rainlight-compact a { color: #155f4b; text-underline-offset: .2em; }
+  .rainlight-compact button, .rainlight-compact select { min-height: 44px; font: inherit; color: inherit; border: 1px solid #adc5b7; border-radius: 8px; background: #f7faf5; cursor: pointer; }
+  .rainlight-compact button:disabled, .rainlight-compact select:disabled { opacity: .65; cursor: not-allowed; }
+  .rainlight-compact :focus-visible { outline: 3px solid #246f59; outline-offset: 3px; }
+  .compact-arrival { padding: 24px; background-position: center; background-size: cover; }
+  .compact-brand { display: inline-flex; gap: 12px; align-items: center; text-decoration: none; font: 28px 'Alike', serif; }
+  .compact-brand img { width: 48px; height: 48px; object-fit: contain; }
+  .compact-brand small { display: block; font: 13px 'IBM Plex Sans', sans-serif; }
+  .compact-arrival > p { margin-top: 12px; max-width: 45ch; }
+  .compact-arrival nav { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 20px; }
+  .compact-arrival nav a { display: inline-flex; align-items: center; min-height: 44px; }
+  .compact-section { margin: 16px; padding: 20px; border: 1px solid #ceddd1; border-radius: 14px; background: #f8faf5; }
+  .compact-section > * + * { margin-top: 12px; }
+  .compact-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .compact-section-heading > button, .compact-step-controls button { display: inline-flex; align-items: center; justify-content: center; width: 44px; flex-shrink: 0; }
+  .compact-step-controls { display: flex; gap: 6px; flex-shrink: 0; }
+  .compact-review-label { display: block; font-weight: 500; }
+  .compact-review-label select { display: block; margin-top: 6px; padding: 8px; max-width: 100%; width: 100%; }
+  .compact-muted, .compact-team-grid button span { color: #4b6659; font-size: 13px; }
+  .compact-team-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  .compact-team-grid button { text-align: left; padding: 12px; min-height: 80px; }
+  .compact-team-grid button[aria-pressed='true'] { background: #e0eee2; border: 2px solid #39745d; }
+  .compact-team-grid strong, .compact-team-grid span { display: block; }
+  .compact-team-grid strong { font-size: 14px; }
+  .compact-team-grid span { margin-top: 6px; }
+  .compact-evidence-tabs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 3px; }
+  .compact-evidence-tabs button { border-radius: 0; border-width: 0 0 2px; padding: 4px; font-size: 13px; background: transparent; }
+  .compact-evidence-tabs button[aria-selected='true'] { border-bottom-color: #246f59; font-weight: 600; }
+  #compact-inspector-panel { max-height: 420px; overflow: auto; scrollbar-width: thin; }
+  #compact-inspector-panel p + p { margin-top: 14px; }
+  .compact-inspector dl { margin: 0; }
+  .compact-inspector dt { font-size: 13px; color: #4b6659; }
+  .compact-inspector dd { margin: 3px 0 16px; }
+  .compact-inspector small { display: block; font-size: 12px; color: #4b6659; }
+  .compact-issue { padding: 12px; border-radius: 8px; background: #f8e9e4; color: #84231f; }
+  .compact-primary { display: flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px; border: 1px solid #adc5b7; border-radius: 8px; text-decoration: none; width: 100%; }
+}
+@media (min-width: 740px) and (max-width: 1100px) {
+  .rainlight-compact { max-width: 920px; margin: auto; }
+  .compact-team-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+}
