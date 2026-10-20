@@ -2,7 +2,7 @@ name: Broker evidence accounting
 on:
   pull_request:
   push:
-    branches: [codex/broker-evidence-reconciliation, codex/activity-read-windows]
+    branches: [codex/broker-evidence-reconciliation]
 permissions:
   contents: read
 jobs:
