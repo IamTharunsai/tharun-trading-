@@ -7,6 +7,7 @@ import { getPolymarketUSCredentialScope, getPolymarketUSExecutionSnapshot, getPo
 import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from './liveGate';
 import { validateLiveQualification } from './liveQualification';
 import { parsePredictionOrderEvidence } from './predictionOrderEvidence';
+import { assertPredictionRecoveryScope } from './predictionRecoveryScope';
 import { bestAsk, bestBid, buyLevels, takerFeePerShare, sizeBetUsd } from './predictionMath';
 import type { PmUsExecutionSnapshot } from '../services/polymarketUS';
 import type { VenueMarket, VenueBook } from '../services/predictionVenue';
@@ -175,6 +176,7 @@ export async function executeLivePrediction(predictionId: string) {
     const plan = planLivePrediction(prediction, market, book, snapshot, risk);
     claim = await db.$transaction(async (tx: any) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${snapshot.scopeKey}))`;
+      await assertPredictionRecoveryScope(tx, readiness.ownerId, snapshot.scopeKey);
       if (Date.now() - snapshot.observedAt > 5000) throw new Error('Prediction account snapshot expired while claiming');
       if (await readPredictionGeneration(tx, snapshot.scopeKey) !== generation) throw new Error('Prediction snapshot predates an account mutation');
       const currentRisk = await tx.settings.findUnique({ where: { id: 'settings-1' } });
@@ -199,7 +201,8 @@ export async function executeLivePrediction(predictionId: string) {
     logger.info('prediction_order_acknowledged', { executionId: claim.id, brokerOrderId: acknowledgement.id, credentialScopeKey: claim.credentialScopeKey });
     await db.$transaction(async (tx: any) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${claim.credentialScopeKey}))`;
-      await tx.predictionExecution.update({ where: { id: claim.id }, data: { brokerOrderId: acknowledgement.id, status: 'SUBMITTED' } });
+      await tx.predictionExecution.update({ where: { id: claim.id }, data: { brokerOrderId: acknowledgement.id, status: 'SUBMITTED',
+        executionReferences: acknowledgement.executionReferences ?? { status: 'UNPROVEN_PROVIDER_JOIN', references: [] } } });
       await advancePredictionGeneration(tx, claim.credentialScopeKey);
     });
     const observed = await reconcilePredictionExecution(claim.id);

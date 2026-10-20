@@ -1,11 +1,14 @@
 const request = jest.fn();
-let claim: any, generation: number, qualification: any, risk: any;
+let claim: any, generation: number, qualification: any, risk: any, recoveryState: any;
 const db: any = {
   predictionExecution: { findUnique: jest.fn(async () => claim), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []),
     updateMany: jest.fn(async ({ where, data }: any) => {
-      if (claim.status !== where.status) return { count: 0 }; Object.assign(claim, data); return { count: 1 };
+      if (where.status && claim.status !== where.status) return { count: 0 };
+      if ('cancelAttemptedAt' in where && claim.cancelAttemptedAt !== where.cancelAttemptedAt) return { count: 0 };
+      Object.assign(claim, data); return { count: 1 };
     }) },
   predictionAccountAuthority: { findUnique: jest.fn(async () => ({ generation })), upsert: jest.fn(async () => ({ generation })), update: jest.fn(async () => ({ generation: ++generation })) },
+  predictionRecoveryState: { findUnique: jest.fn(async () => recoveryState), create: jest.fn(async ({ data }: any) => recoveryState = { ...data }) },
   trade: { findMany: jest.fn(async () => []) },
   strategyQualification: { findFirst: jest.fn(async () => qualification) },
   user: { findUnique: jest.fn(async () => ({ role: 'OWNER', email: 'owner@fixture.invalid' })) },
@@ -17,7 +20,7 @@ jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: () => false }));
 jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn() }), { virtual: true });
 jest.mock('../src/services/polymarketUSRest', () => ({ bindPolymarketUSRest: () => request }));
-import { submitPolymarketUSExecution, getPolymarketUSCredentialScope } from '../src/services/polymarketUS';
+import { submitPolymarketUSExecution, getPolymarketUSCredentialScope, getPolymarketUSTradeActivities, cancelPolymarketUSOrder } from '../src/services/polymarketUS';
 import { createHash } from 'crypto';
 const hashRisk = (r: any) => createHash('sha256').update(JSON.stringify([
   r.maxPositionSizePct, r.maxRiskPerTradePct, r.dailyLossLimitPct,
@@ -29,6 +32,7 @@ beforeEach(() => {
     POLYMARKET_SECRET_KEY: Buffer.alloc(32, 1).toString('base64'), OWNER_EMAIL: 'owner@fixture.invalid', RELEASE_COMMIT_SHA: 'a'.repeat(40) };
   delete process.env.RAILWAY_GIT_COMMIT_SHA;
   const scope = getPolymarketUSCredentialScope(); generation = 1;
+  recoveryState = null;
   risk = { maxPositionSizePct: 5, maxRiskPerTradePct: 5, dailyLossLimitPct: 3 };
   qualification = { id: 'q1', strategyKey: 'BHISHMA_POLYMARKET_US', revision: 'a'.repeat(40),
     dataHash: 'b'.repeat(64), reportHash: 'c'.repeat(64), trialCount: 20, noLeakage: true, dsrProbability: .99,
@@ -76,4 +80,54 @@ test('unresolved broker orders prevent POST', async () => {
     .mockResolvedValueOnce({ orders: [{ id: 'unresolved' }] });
   await expect(submitPolymarketUSExecution('claim')).rejects.toThrow();
   expect(request.mock.calls.filter(c => c[0] === 'POST')).toHaveLength(0);
+});
+
+test('a rotated grant is refused by the last writer without resetting the stored owner binding', async () => {
+  recoveryState = { ownerId: 'owner', boundCredentialScopeKey: 'older-grant' };
+  await expect(submitPolymarketUSExecution('claim')).rejects.toThrow();
+  expect(request.mock.calls.filter(c => c[0] === 'POST')).toHaveLength(0);
+  expect(recoveryState.boundCredentialScopeKey).toBe('older-grant');
+});
+
+const tradeActivity = (id: string) => ({ type: 'ACTIVITY_TYPE_TRADE', trade: { id, marketSlug: 'fixture-market', state: 'TRADE_STATE_NEW',
+  qtyDecimal: '0.25', price: { value: '0.5', currency: 'USD' } } });
+test('activity traversal follows cursors and requires explicit complete pagination without inferring historical coverage', async () => {
+  request.mockResolvedValueOnce({ activities: [tradeActivity('t1')], nextCursor: 'next', eof: false })
+    .mockResolvedValueOnce({ activities: [tradeActivity('t2')], eof: true });
+  const result = await getPolymarketUSTradeActivities(getPolymarketUSCredentialScope().scopeKey);
+  expect(result.map(row => row.id)).toEqual(['t1', 't2']);
+  expect(request).toHaveBeenNthCalledWith(2, 'GET', '/v1/portfolio/activities', undefined, expect.objectContaining({ cursor: 'next' }));
+  expect(request.mock.calls.some(call => call[0] === 'POST')).toBe(false);
+});
+test.each([
+  [{ activities: [], eof: false }],
+  [{ activities: [] }],
+  [{ activities: [], nextCursor: 'same' }, { activities: [], nextCursor: 'same' }],
+])('incomplete or repeating activity pagination remains unknown', async (...pages: any[]) => {
+  for (const page of pages) request.mockResolvedValueOnce(page);
+  await expect(getPolymarketUSTradeActivities(getPolymarketUSCredentialScope().scopeKey)).rejects.toThrow();
+});
+
+test('a matching owned claim can cancel once in paper mode with expired entry qualification', async () => {
+  process.env.TRADING_MODE = 'paper'; process.env.POLYMARKET_US_LIVE = 'false';
+  qualification.expiresAt = new Date(0);
+  Object.assign(claim, { brokerOrderId: 'broker-order', status: 'PARTIALLY_FILLED', cancelAttemptedAt: null });
+  const observation = { order: { id: 'broker-order', marketSlug: claim.marketSlug, intent: 'ORDER_INTENT_BUY_LONG', type: 'ORDER_TYPE_LIMIT',
+    quantity: 2, cumQuantity: .25, leavesQuantity: 1.75, state: 'ORDER_STATE_PARTIALLY_FILLED',
+    price: { value: '0.5', currency: 'USD' }, avgPx: { value: '0.5', currency: 'USD' } } };
+  request.mockImplementation(async (method, path) => {
+    if (method === 'GET' && path === '/v1/order/broker-order') return observation;
+    if (method === 'POST' && path === '/v1/order/broker-order/cancel') return {};
+    throw new Error('Unexpected financial request');
+  });
+  expect(await cancelPolymarketUSOrder('broker-order', claim.marketSlug, claim.id)).toBe('CANCEL_ACKNOWLEDGED');
+  expect(await cancelPolymarketUSOrder('broker-order', claim.marketSlug, claim.id)).toBe('ALREADY_ATTEMPTED');
+  expect(request.mock.calls.filter(call => call[0] === 'POST')).toHaveLength(1);
+  expect(claim.status).toBe('PARTIALLY_FILLED'); // Empty cancel response is not zero fills or a terminal state.
+});
+
+test('unbound or wrong-market cancellation cannot call a provider', async () => {
+  await expect(cancelPolymarketUSOrder('broker-order', claim.marketSlug)).rejects.toThrow('disabled');
+  await expect(cancelPolymarketUSOrder('broker-order', 'other-market', claim.id)).rejects.toThrow();
+  expect(request).not.toHaveBeenCalled();
 });

@@ -2,6 +2,7 @@
 const scope = { scopeKey: 'fixture-grant', identity: 'fixture-identity' };
 const records: any[] = [];
 let generation = 0;
+let recoveryState: any = null;
 let lock = Promise.resolve();
 const qualification = { id: 'q1', strategyKey: 'BHISHMA_POLYMARKET_US', revision: 'a'.repeat(40),
   dataHash: 'b'.repeat(64), reportHash: 'c'.repeat(64), trialCount: 20, noLeakage: true, dsrProbability: .99,
@@ -27,6 +28,10 @@ const db: any = {
     findUnique: jest.fn(async () => ({ generation })),
     upsert: jest.fn(async () => ({ generation })),
     update: jest.fn(async () => ({ generation: ++generation })),
+  },
+  predictionRecoveryState: {
+    findUnique: jest.fn(async () => recoveryState),
+    create: jest.fn(async ({ data }: any) => recoveryState = { ...data }),
   },
   predictionExecution: {
     findUnique: jest.fn(async ({ where }: any) => records.find(r => r.id === where.id) ?? null),
@@ -58,6 +63,7 @@ import { executeLivePrediction, reconcilePredictionExecution } from '../src/trad
 import { PredictionSubmissionRefused } from '../src/services/polymarketUS';
 beforeEach(() => {
   jest.clearAllMocks(); records.length = 0; generation = 0; lock = Promise.resolve();
+  recoveryState = null;
   Object.assign(process.env, { OWNER_EMAIL: 'owner@fixture.invalid', RELEASE_COMMIT_SHA: 'a'.repeat(40), TRADING_MODE: 'live',
     LIVE_TRADING_CONFIRMED: 'I_ACCEPT_REAL_MONEY_RISK', POLYMARKET_US_LIVE: 'true', POLYMARKET_US_MAX_ORDER_USD: '5' });
   delete process.env.RAILWAY_GIT_COMMIT_SHA;

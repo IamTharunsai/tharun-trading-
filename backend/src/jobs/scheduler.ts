@@ -156,6 +156,14 @@ async function pickDynamicSymbols(count: number, skip = 0): Promise<string[]> {
 }
 
 export function initScheduler() {
+  // Recovery reads persisted US claims even while entries are disabled, killed,
+  // unqualified or configured for the international research scanner.
+  const recoverPredictionOrders = async () => {
+    const recovery = await import('../trading/predictionRecovery');
+    await recovery.recoverPredictionOrders();
+  };
+  void recoverPredictionOrders().catch(() => logger.warn('prediction_order_recovery_unavailable'));
+  cron.schedule('*/30 * * * * *', recoverPredictionOrders);
   // Research remains server-side and independent of opening a chat. The
   // durable service selects current-account holdings due for specialist review.
   cron.schedule('* * * * *', async () => {

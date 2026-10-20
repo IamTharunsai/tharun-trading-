@@ -1036,6 +1036,9 @@ model PredictionExecution {
   appliedNotional      Float @default(0)
   appliedFees          Float @default(0)
   brokerState          Json?
+  executionReferences  Json?
+  activityEvidence     Json?
+  cancelAttemptedAt    DateTime?
   error                String?
   tradeId              String? @unique
   trade                Trade? @relation(fields: [tradeId], references: [id], onDelete: Restrict)
@@ -1051,6 +1054,23 @@ model PredictionAccountAuthority {
   scopeKey   String @id
   generation Int @default(0)
   updatedAt  DateTime @updatedAt
+}
+
+// An immutable local owner-to-API-grant pin, NOT an exchange account identity.
+// Rotation/ambiguous historical grants require review; never silently merge them.
+model PredictionRecoveryState {
+  ownerId                 String @id
+  boundCredentialScopeKey String?
+  cursorId                String?
+  leaseId                 String?
+  leaseUntil              DateTime?
+  lastStartedAt           DateTime?
+  lastFinishedAt          DateTime?
+  lastOutcome             String?
+  lastProcessed           Int @default(0)
+  lastUnresolved          Int @default(0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 }
 
 // Simulated resting limit orders for Polymarket paper trading. They fill only
