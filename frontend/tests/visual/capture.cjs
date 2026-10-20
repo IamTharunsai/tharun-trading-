@@ -32,7 +32,14 @@ const server = http.createServer((req, res) => {
     page.on('requestfailed', request => failures.push(new URL(request.url()).origin === 'http://127.0.0.1:4173' ? 'local_asset_failed' : 'external_request_blocked'));
     await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
     await page.locator('.rainlight-plate').first().waitFor();
-    await page.waitForFunction(() => document.querySelectorAll('.rainlight-plate').length === 4 && document.images.length === 5 && [...document.images].every(image => image.complete && image.naturalWidth > 0));
+    // The compact workspace has its own crest and is hidden at this viewport.
+    // Qualify the five desktop images without counting another layout's assets.
+    await page.waitForFunction(() => {
+      const world = document.querySelector('.rainlight-world');
+      const images = world ? [...world.querySelectorAll('img')] : [];
+      return world?.querySelectorAll('.rainlight-plate').length === 4 && images.length === 5
+        && images.every(image => image.complete && image.naturalWidth > 0);
+    });
     assert.equal(await page.locator('img.rainlight-crest').count(), 1);
     await page.evaluate(() => document.fonts.ready);
     const regions = await page.locator('.rainlight-plate').evaluateAll(images => images.map(image => {
@@ -88,4 +95,8 @@ const server = http.createServer((req, res) => {
         'attributed-history', 'review-selection-clears-previous-evidence', 'fault-opens-attributable-review'], scope: 'Isolated fixture interactions, not backend or live trading proof.' }, null, 2));
     await context.close();
   } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
-})().catch(() => { process.stderr.write('commons_visual_proof_failed\n'); process.exitCode = 1; });
+})().catch(error => {
+  // This runner serves only isolated public fixtures, never accounts or secrets.
+  process.stderr.write(`commons_visual_proof_failed: ${String(error?.stack ?? error).slice(0, 6000)}\n`);
+  process.exitCode = 1;
+});
