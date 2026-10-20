@@ -10,6 +10,8 @@ const params = { model: 'fast', max_tokens: 700, temperature: 0.3, messages: [{ 
 const response = (content: any = '{"vote":"HOLD"}', reason: any = 'stop', extra: any = {}) => ({ data: { choices: [{ finish_reason: reason, message: { role: 'assistant', content, ...extra } }], usage: { prompt_tokens: 3, completion_tokens: 4 } } });
 beforeEach(() => {
   jest.clearAllMocks(); process.env = { ...originalEnv };
+  // Completion contracts isolate transport timing; pacing is exercised separately.
+  process.env.LLM_ADMISSION_NVIDIA_INTERVAL_MS = '0';
   process.env.LLM_PROVIDER_FAST = 'openai_compat';
   process.env.LLM_MODEL_FAST = `fixture-${expect.getState().currentTestName}`;
   process.env.OPENAI_COMPAT_BASE_URL = 'http://127.0.0.1:9999/fixture';
