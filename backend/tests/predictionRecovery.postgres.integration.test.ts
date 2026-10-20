@@ -39,7 +39,7 @@ suite('durable prediction read recovery', () => {
   afterAll(async () => { process.env = saved; await prisma.$disconnect(); });
   async function seed(id: string, overrides: Record<string, unknown> = {}) {
     await prisma.polymarketPrediction.upsert({ where: { id: 'prediction-' + id }, create: { id: 'prediction-' + id,
-      venue: 'polymarket_us', marketSlug: id, question: 'fixture only', marketMid: .5, rawFair: .7, fairProb: .7, decision: 'YES', side: 'YES' }, update: {} });
+      venue: 'polymarket_us', marketSlug: id, question: 'fixture only', marketMid: .5, rawFair: .7, fairProb: .7, evidenceWeight: 1, decision: 'YES', side: 'YES' }, update: {} });
     return prisma.predictionExecution.create({ data: { id, claimKey: 'claim-' + id, ownerId, credentialScopeKey: scope.scopeKey,
       credentialIdentity: scope.identity, predictionId: 'prediction-' + id, marketSlug: id, side: 'YES', quantity: 5,
       sideLimitPrice: .5, reservedUsd: 2.6, authorityGeneration: 0, planExpiresAt: new Date(0), riskPolicyHash: 'fixture',

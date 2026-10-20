@@ -7,7 +7,7 @@ async function run() {
   if (process.argv[2] === 'seed') {
     await db.user.create({ data: { id: 'legacy-recovery-owner', email: 'legacy@fixture.invalid', passwordHash: 'unused', role: 'OWNER' } });
     await db.polymarketPrediction.create({ data: { id: 'legacy-recovery-prediction', venue: 'polymarket_us', marketSlug: 'legacy-market',
-      question: 'fixture only', marketMid: .5, rawFair: .6, fairProb: .6, decision: 'YES', side: 'YES' } });
+      question: 'fixture only', marketMid: .5, rawFair: .6, fairProb: .6, evidenceWeight: 1, decision: 'YES', side: 'YES' } });
     // Select old columns only: generated client also knows the new nullable columns.
     await db.predictionExecution.create({ select: { id: true }, data: {
       id: 'legacy-recovery-claim', claimKey: 'legacy-recovery-claim', ownerId: 'legacy-recovery-owner',

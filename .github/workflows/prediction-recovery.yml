@@ -2,7 +2,10 @@ name: Prediction order recovery
 on:
   pull_request:
   push:
-    branches: [codex/prediction-order-recovery]
+    branches: [main]
+concurrency:
+  group: prediction-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
