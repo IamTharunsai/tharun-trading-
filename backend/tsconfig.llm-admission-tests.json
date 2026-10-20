@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
-  "include": ["src/**/*", "tests/llmAdmission*.ts", "tests/llmCompletion.test.ts", "tests/llmCancellation.test.ts", "tests/predictionAnalysis.test.ts", "tests/committee.behavior.test.ts", "tests/debateEngine.sentiment.test.ts"],
+  "include": ["src/**/*", "tests/llmAdmission*.ts", "tests/llmCompletion.test.ts", "tests/llmCancellation.test.ts", "tests/predictionAnalysis.test.ts", "tests/predictionCompletion.test.ts", "tests/committee.behavior.test.ts", "tests/debateEngine.sentiment.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
