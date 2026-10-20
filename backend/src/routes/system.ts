@@ -9,6 +9,7 @@ import { appConfig } from '../utils/config';
 import { getLlmHealth } from '../utils/llmRouter';
 import { isPlaceholderKey } from '../utils/apiKeys';
 import { getPolymarketRuntimeStatus } from '../services/polymarketRuntime';
+import { schedulerRuntime } from '../jobs/schedulerRuntime';
 import { getResearchServicesStatus, isResearchService, ResearchServiceError, runResearchService } from '../services/researchServices';
 
 const router = Router();
@@ -35,9 +36,11 @@ router.get('/status', privateResponse, requireOwner, async (_req: Request, res: 
   const spend = getLlmSpendToday();
   const intraday = await getIntradayStatus().catch(() => null);
   const u = universe.status();
+  const scheduler = schedulerRuntime.snapshot();
 
   res.json({
-    scheduler: 'online',
+    scheduler: scheduler.status,
+    schedulerRuntime: scheduler,
     killSwitch: isKillSwitchActive(),
     tradingMode: appConfig.TRADING_MODE,
     polymarket: {

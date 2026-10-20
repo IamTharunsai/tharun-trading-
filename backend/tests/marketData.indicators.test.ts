@@ -1,4 +1,5 @@
 import { calculateMACD, calculateStochastic } from '../src/services/marketData';
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 describe('calculateMACD — real signal line', () => {
   it('signal line is not a fixed 0.2 scalar of the current MACD value', () => {

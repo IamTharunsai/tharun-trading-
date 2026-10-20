@@ -6,6 +6,8 @@ import { connectSocket, disconnectSocket } from './services/socket';
 // Pages
 import LoginPage from './pages/Login';
 import DashboardPage from './pages/Dashboard';
+import TeamWorkspacePage from './pages/TeamWorkspace';
+import WorkspaceDirectoryPage from './pages/WorkspaceDirectory';
 import PortfolioPage from './pages/Portfolio';
 import TradesPage from './pages/Trades';
 import AgentsPage from './pages/Agents';
@@ -56,8 +58,11 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<ProtectedRoute><TeamWorkspacePage /></ProtectedRoute>} />
+        <Route path="/city" element={<ProtectedRoute><WorkspaceDirectoryPage /></ProtectedRoute>} />
+        <Route path="/offices/:officeId" element={<ProtectedRoute><WorkspaceDirectoryPage /></ProtectedRoute>} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route index element={<DashboardPage />} />
+          <Route path="dashboard" element={<DashboardPage />} />
           <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="trades" element={<TradesPage />} />
           <Route path="agents" element={<AgentsPage />} />

@@ -1,0 +1,11 @@
+# Public US gateway pacing
+
+Production deployment119ccd9 recorded46 bounded book rate-limit diagnostics between2026-10-19T15:15Z and2026-10-20T04:45Z. Each means an observed SDK429, not a count of all failed requests. The diagnostics throttle identical categories to once/minute. No private account/order calls were made for this investigation.
+
+All six public adapter call sites (event listing, paged market listing, book, BBO, price history, settlement) now share a separate transport admission instance. Defaults are two physically active reads,16 queued reads,250ms start spacing,5s admission wait and15s caller deadline. This reuses the tested admission primitive without sharing LLM capacity/telemetry. Existing SDK/HTTP timeouts remain10s. A caller deadline does not release an unsettled physical operation's permit.
+
+Observed429 extends the shared cooldown; Retry-After is honored if exposed by the transport, otherwise15s. The current SDK discards response headers, so SDK failures use that fallback. There is no immediate replay. Pending/new calls must satisfy cooldown and queue/deadline bounds. Local admission refusals have a distinct book diagnostic and do not masquerade as a newly observed provider failure. There is no cached or synthesized book fallback.
+
+The [official retail rate-limit contract](https://docs.polymarket.us/api-reference/rate-limits) describes25 requests/s shared by source IP and Cloudflare location, stopping after429, waiting at least1s, backoff, caching reference data and using WebSocket streams. Four starts/s is conservative process policy, not a proven account quota. Other processes/services and private endpoints can share egress counters. This patch cannot prove or reserve their capacity. It does not route around an IP limit or change order/cancel behavior. The [official SDK client](https://github.com/Polymarket/polymarket-us-typescript/blob/main/src/client.ts) routes unauthenticated reads to the gateway and exposes numeric error status without Retry-After headers.
+
+Strict offline CI exercises real pacing/cooldown and the adapter refusal path with dummy operations. Actual post-release scans must prove books are available and record remaining blockers. Live order dispatch/recovery/qualification remains a separate unfinished release requirement; pacing does not activate financial execution.

@@ -58,6 +58,9 @@ jest.mock('../src/services/polymarketUS', () => ({ placePolymarketUSOrder: (...a
 jest.mock('axios');
 import axios from 'axios';
 import * as E from '../src/services/polymarketEdge';
+import { getPolymarketRuntimeStatus } from '../src/services/polymarketRuntime';
+import { logger } from '../src/utils/logger';
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 import type { PredictionVenue, VenueBook, VenueMarket } from '../src/services/predictionVenue';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -169,6 +172,52 @@ describe('planEntry', () => {
 
 // ── scan end-to-end (paper) ─────────────────────────────────────────────────
 describe('runPolymarketEdgeScan', () => {
+  it('publishes actual zero-entry skip evidence and safe structured counts', async () => {
+    llm.mockResolvedValue(null);
+    const v = venueWith([mkt()], { 'mkt-a': bookOf() });
+    await E.runPolymarketEdgeScan({ venue: v });
+    const runtime = getPolymarketRuntimeStatus();
+    expect(runtime).toMatchObject({ mode: 'paper', liveReadiness: { ready: false }, scanEvidence: {
+      latestRun: { status: 'completed', counts: { listed: 1, candidates: 1, estimated: 1, paperEntries: 0 }, skipCounts: { model_unavailable: 1 } },
+    } });
+    expect(logger.info).toHaveBeenCalledWith('polymarket_scan_completed', expect.objectContaining({
+      status: 'completed', counts: expect.objectContaining({ paperEntries: 0 }), skipCounts: expect.objectContaining({ model_unavailable: 1 }),
+    }));
+    await E.runPolymarketEdgeScan({ venue: v });
+    expect(getPolymarketRuntimeStatus().scanEvidence.latestRun).toMatchObject({ counts: { estimated: 0, reused: 1 }, skipCounts: { reused_skip: 1 } });
+  });
+
+  it('retains completed evidence on failure, emits no raw error, and releases the running fence', async () => {
+    await E.runPolymarketEdgeScan({ venue: venueWith([], {}) });
+    const previous = getPolymarketRuntimeStatus().scanEvidence.lastCompleted;
+    const v = venueWith([], {});
+    (v.listMarkets as jest.Mock).mockRejectedValue(new Error('secret provider token and question'));
+    await expect(E.runPolymarketEdgeScan({ venue: v })).rejects.toThrow('secret provider token and question');
+    const evidence = getPolymarketRuntimeStatus().scanEvidence;
+    expect(evidence.latestRun).toMatchObject({ status: 'failed', failureCode: 'scan-failed' });
+    expect(evidence.lastCompleted).toEqual(previous);
+    expect(E.isEdgeScanRunning()).toBe(false);
+    expect(JSON.stringify((logger.warn as jest.Mock).mock.calls)).not.toContain('secret provider');
+    expect(logger.warn).toHaveBeenCalledWith('polymarket_scan_failed', expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('does not replace active scan evidence when another call is already running', async () => {
+    let release!: (markets: VenueMarket[]) => void;
+    let entered!: () => void;
+    const listingStarted = new Promise<void>(resolve => { entered = resolve; });
+    const v = venueWith([], {});
+    (v.listMarkets as jest.Mock).mockImplementation(() => new Promise(resolve => { release = resolve; entered(); }));
+    const pending = E.runPolymarketEdgeScan({ venue: v });
+    // Wait for the known async boundary rather than using a timing delay.
+    await listingStarted;
+    const active = getPolymarketRuntimeStatus().scanEvidence.latestRun;
+    expect(active!.status).toBe('running');
+    expect((await E.runPolymarketEdgeScan({ venue: v })).entriesBlocked).toBe('scan already running');
+    expect(getPolymarketRuntimeStatus().scanEvidence.latestRun).toEqual(active);
+    release([]);
+    await pending;
+  });
+
   it('stores every prediction, rests a PAPER limit order, never sends a real order', async () => {
     const v = venueWith([mkt(), mkt({ id: 'mkt-b', question: 'Will B win?', bestBid: 0.30, bestAsk: 0.45 })], { 'mkt-a': bookOf(0.40, 0.42) });
     const s = await E.runPolymarketEdgeScan({ venue: v });

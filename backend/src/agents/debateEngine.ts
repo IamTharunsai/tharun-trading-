@@ -16,7 +16,8 @@ import { intermarketService } from '../services/intermarketService';
 import { getMacroSnapshot, macroLine } from '../services/fredService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
-import { routedMessagesCreate, providerFor, LlmRequestOptions } from '../utils/llmRouter';
+import { routedMessagesCreate, providerFor, LlmRequestOptions, createLlmDeadline } from '../utils/llmRouter';
+import { retryLlmRateLimit } from '../utils/llmRetry';
 import { openingArgumentSchema, finalVoteSchema, masterDecisionSchema, checkpointArgumentSchema, checkpointEvidenceSchema, exchangeSchema } from './responseSchemas';
 import { getActiveMode } from '../trading/brokerRouter';
 
@@ -102,14 +103,18 @@ function accountReportedUsage(response: { model: string; provider?: string; usag
   spendUsd += estimateCallCostUsd(response.model, response.usage, response.provider);
 }
 async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3, control?: ResearchControl, responseOptions?: LlmRequestOptions): Promise<any> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  const deadlineAt = Math.min(createLlmDeadline(), responseOptions?.deadlineAt ?? Infinity);
+  return retryLlmRateLimit(async () => {
     try {
-      control?.signal.throwIfAborted();
-      await control?.beforeCall?.();
       control?.signal.throwIfAborted();
       assertBudget();
       // Routed: Anthropic by default, or Ollama / NVIDIA NIM per LLM_PROVIDER_FAST/SMART.
-      const response = await routedMessagesCreate(params, (p, options) => anthropic.messages.create(p, options), { ...responseOptions, signal: control?.signal });
+      const response = await routedMessagesCreate(params, (p, options) => anthropic.messages.create(p, options), {
+        ...responseOptions, signal: control?.signal, deadlineAt, beforeDispatch: async signal => {
+          signal.throwIfAborted(); await responseOptions?.beforeDispatch?.(signal); signal.throwIfAborted();
+          await control?.beforeCall?.(); signal.throwIfAborted(); assertBudget();
+        },
+      });
       accountReportedUsage({ model: response.model || params.model, usage: response.usage, provider: response.provider });
       return response;
     } catch (err: any) {
@@ -117,21 +122,10 @@ async function callWithRetry(params: Parameters<typeof anthropic.messages.create
       // Refusing an answer must not make an observed generation disappear from
       // the tally that previously ran before downstream schema rejection.
       if (err?.reportedUsage) accountReportedUsage(err.reportedUsage);
-      if (err?.status === 429 && attempt < maxRetries) {
-        const rawDelay = parseInt(err?.headers?.['retry-after'] || '15');
-        const retryAfter = (Number.isFinite(rawDelay) ? Math.min(60, Math.max(1, rawDelay)) : 15) * 1000;
-        logger.warn(`Rate limited — waiting ${retryAfter / 1000}s before retry (attempt ${attempt + 1})`);
-        await new Promise<void>((resolve, reject) => {
-          const cancel = () => { clearTimeout(timer); control?.signal.removeEventListener('abort', cancel); reject(control?.signal.reason); };
-          const timer = setTimeout(() => { control?.signal.removeEventListener('abort', cancel); resolve(); }, retryAfter + 1000);
-          control?.signal.addEventListener('abort', cancel, { once: true });
-          if (control?.signal.aborted) cancel();
-        });
-      } else {
-        throw err;
-      }
+      throw err;
     }
-  }
+  }, { deadlineAt, signal: control?.signal, maxRetries,
+    onRetry: (attempt, waitMs) => logger.warn('llm_rate_limit_retry_wait', { event: 'llm_rate_limit_retry_wait', attempt, waitMs }) });
 }
 
 // Independent specialist research uses bounded concurrency. Dependent debate stages stay ordered.
@@ -1167,14 +1161,21 @@ export function buildMarketContext(
     `EMA9: $${ind.ema9.toFixed(2)} | EMA21: $${ind.ema21.toFixed(2)} | EMA200: $${ind.ema200.toFixed(2)}`,
     `SMA50: $${ind.sma50.toFixed(2)} | SMA200: $${ind.sma200.toFixed(2)}`,
     `VWAP: $${ind.vwap.toFixed(2)} | ATR(14): $${ind.atr14.toFixed(2)}`,
-    `52W High: $${ind.week52High.toFixed(2)} | 52W Low: $${ind.week52Low.toFixed(2)} | ${ind.distanceFrom52wHigh.toFixed(1)}% from high`,
+    `Observed candle-window high: $${ind.week52High.toFixed(2)} | low: $${ind.week52Low.toFixed(2)} | ${ind.distanceFrom52wHigh.toFixed(1)}% from high (not a verified 52-week window)`,
     `Fibonacci: 23.6%=$${ind.fibonacci.r236.toFixed(2)} | 38.2%=$${ind.fibonacci.r382.toFixed(2)} | 50%=$${ind.fibonacci.r500.toFixed(2)} | 61.8%=$${ind.fibonacci.r618.toFixed(2)}`,
     `Trend: Price ${ind.isAboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 | SMA50 ${ind.isSma50AboveSma200 ? 'ABOVE' : 'BELOW'} SMA200 (current ordering; crossover timing unavailable)`,
-    `Volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M | ${ind.volumeRatio.toFixed(2)}x avg (${ind.volumeRatio > 1.5 ? '⚡HIGH — institutional activity' : ind.volumeRatio < 0.7 ? '🔇LOW — weak conviction' : 'Normal'})`,
+    `Provider volume: ${(snapshot.volume24h / 1e6).toFixed(1)}M. Last completed candle volume ratio: ${ind.volumeRatio.toFixed(2)}x its 20-candle average. This ratio does not describe current daily-bar volume or establish institutional activity.`,
     `OBV cumulative level: ${ind.obv}; an OBV slope is not supplied`,
     `── PORTFOLIO ──`,
     `Value: $${portfolio.totalValue.toFixed(2)} | Cash: $${portfolio.cashBalance.toFixed(2)} | Daily P&L: ${portfolio.pnlDayPct === null ? 'unavailable' : portfolio.pnlDayPct.toFixed(2) + '%'}`,
   ];
+  if (snapshot.dataEvidence) {
+    const evidence = snapshot.dataEvidence;
+    lines.push(`MARKET DATA SOURCE: ${evidence.source}; ${evidence.completedBars} completed ${evidence.timeframe} bars. Bar timestamps identify period starts.`,
+      `History periods: ${new Date(evidence.historyFirstPeriodAt).toISOString()} to ${new Date(evidence.historyLastPeriodAt).toISOString()}.`,
+      `Latest trade observed: ${new Date(evidence.priceObservedAt).toISOString()}; quote observed: ${new Date(evidence.quoteObservedAt).toISOString()}. Receipt time does not make these observations current.`,
+      `Stock change compares latest trade with previous daily close; volume/high/low describe the provider daily bar. These are not rolling 24-hour measurements. No volume-change measurement is supplied.`);
+  }
   if (fundamentals && fundamentals !== 'No fundamental data available yet.') {
     lines.push(`FUNDAMENTALS: ${fundamentals}`);
   }

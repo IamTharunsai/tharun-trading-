@@ -29,3 +29,14 @@ test('provider failure cannot invent keyword-based edge even when legacy heurist
   (llmText as jest.Mock).mockRejectedValue(new Error('fixture provider unavailable'));
   expect(await analyzePolymarketEvent({ ...market, question: 'Will the Fed cut rates?' }, 1000)).toMatchObject({ ourEstimatedProbability: null, confidence: 0, edge: 0, recommendedSide: 'SKIP', betSizeUSD: 0 });
 });
+
+test('the45s research timeout actually cancels routed work and retains unknown probability', async () => {
+  (llmText as jest.Mock).mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  }));
+  const result = analyzePolymarketEvent(market, 1000);
+  await jest.advanceTimersByTimeAsync(45000);
+  expect((llmText as jest.Mock).mock.calls[0][0].signal.aborted).toBe(true);
+  expect(await result).toMatchObject({ ourEstimatedProbability: null, recommendedSide: 'SKIP', betSizeUSD: 0 });
+  expect(jest.getTimerCount()).toBe(0);
+});

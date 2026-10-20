@@ -7,6 +7,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { initWebSocket } from './websocket/server';
 import { initScheduler } from './jobs/scheduler';
+import { schedulerRuntime } from './jobs/schedulerRuntime';
 import { initMarketData } from './services/marketData';
 import { geopoliticalDataService } from './services/geopoliticalDataService';
 import { logger } from './utils/logger';
@@ -160,12 +161,14 @@ export async function boot(port: number = 3000) {
       logger.warn('⚠️ Geopolitical service failed', { error: err instanceof Error ? err.message : String(err) });
     });
   } catch (error) {
+    if (schedulerRuntime.snapshot().lifecycle === 'not_started') schedulerRuntime.fail('BOOT_PREREQUISITE_FAILED');
     logger.error('❌ Boot error handled', { error: error instanceof Error ? error.message : String(error) });
   }
 }
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
+  schedulerRuntime.stop();
   logger.info('SIGTERM received — shutting down gracefully');
   await prisma.$disconnect();
   process.exit(0);

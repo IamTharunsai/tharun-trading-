@@ -1,3 +1,4 @@
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 describe('buildMarketContext — regime-matched lessons section', () => {
   it('includes a REGIME HISTORY section when regimeLessons is provided', () => {
     const { __test__buildMarketContext } = require('../src/agents/debateEngine');
