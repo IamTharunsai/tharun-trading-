@@ -8,10 +8,13 @@ const sdk = {
 jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn().mockImplementation(() => sdk) }), { virtual: true });
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: () => false }));
 jest.mock('axios');
+jest.mock('../src/services/polymarketPublicRead', () => ({ polymarketPublicRead: jest.fn((operation: () => Promise<unknown>) => operation()) }));
 jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 import { logger } from '../src/utils/logger';
 import axios from 'axios';
+import { polymarketPublicRead } from '../src/services/polymarketPublicRead';
+import { LlmAdmissionError } from '../src/utils/llmAdmission';
 import {
   normalizeUSMarket, listPolymarketUSMarkets, getPolymarketUSBook, getPolymarketUSPriceHistory, classifyPolymarketBookFailure,
   getPolymarketUSSettlement, placePolymarketUSOrder, cancelPolymarketUSOrder, toYesOrderPrice, buildPolymarketUSOrder,
@@ -34,6 +37,12 @@ beforeEach(() => {
 });
 
 describe('market data', () => {
+  it('refuses a locally blocked book without dispatching or labeling it a provider outage', async () => {
+    (polymarketPublicRead as jest.Mock).mockRejectedValueOnce(new LlmAdmissionError('queue_timeout'));
+    expect(await getPolymarketUSBook('x')).toBeNull();
+    expect(sdk.markets.book).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('polymarket_book_read_failed', { venue: 'polymarket_us', code: 'read_admission_refused' });
+  });
   it.each([[408, 'timeout'], [429, 'rate_limited'], [404, 'market_unavailable'],
     [401, 'access_refused'], [403, 'access_refused'], [503, 'provider_unavailable'],
     [0, 'transport_failure'], ['429', 'unclassified_failure'], [null, 'unclassified_failure']])(
