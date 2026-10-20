@@ -39,7 +39,7 @@ jobs:
           --workdir /source --entrypoint /usr/bin/env node:22-bookworm
           -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp TMPDIR=/tmp NODE_ENV=test
           DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:5432/fixture
-          /usr/bin/timeout --signal=KILL 300s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.prediction-recovery-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/predictionRecoveryScope.test.ts tests/predictionReductionEvidence.test.ts tests/predictionActivityEvidence.test.ts tests/predictionExecution.authority.test.ts tests/polymarketUSExecution.test.ts'
+          /usr/bin/timeout --signal=KILL 300s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.prediction-recovery-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/predictionRecoveryScope.test.ts tests/predictionReductionEvidence.test.ts tests/predictionHoldingAuthority.test.ts tests/predictionActivityEvidence.test.ts tests/predictionExecution.authority.test.ts tests/polymarketUSExecution.test.ts'
   prediction-recovery-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 12

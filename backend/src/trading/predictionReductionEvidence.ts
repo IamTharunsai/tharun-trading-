@@ -21,7 +21,9 @@ const tolerance = 1e-8;
 const numeric = (raw: string | number) => { const n = Number(raw); if (!Number.isFinite(n) || n < 0 || n > bound) throw new Error('REDUCTION_NUMERIC_BOUND'); return n; };
 
 /** Separate from opening evidence: sales have a minimum proceeds price.
- * https://docs.polymarket.us/api-reference/orders/get-order */
+ * https://docs.polymarket.us/api-reference/orders/get-order
+ * SELL_SHORT uses YES-denominated prices, economic NO proceeds are 1-YES:
+ * https://docs.polymarket.us/api-reference/orders/overview#understanding-price-with-order-intent */
 export function parsePredictionReductionEvidence(raw: unknown, input: PredictionReductionExpectation): PredictionReductionEvidence {
   const expected = expectation.parse(input);
   const row = orderSchema.parse((raw as any)?.order);
@@ -75,6 +77,7 @@ export function projectPredictionHolding(opening: { quantity: number; notional: 
     else fees += nonnegative.parse(reduction.appliedFees);
   }
   if (sold > opening.quantity + tolerance) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
+  sold = Math.min(sold, opening.quantity);
   const remainingQuantity = Math.max(0, opening.quantity - sold);
   const allocatedBasis = (opening.notional + opening.fees) * (sold / opening.quantity);
   return { remainingQuantity, remainingBasis: (opening.notional + opening.fees) - allocatedBasis,

@@ -68,13 +68,14 @@ export async function reducePredictionHolding(openingId: string, input: z.infer<
   const market = (await polymarketUSVenue.listMarkets(500)).find(m => m.id === opening.marketSlug);
   const book = market ? await polymarketUSVenue.getBook(market.id) : null;
   const now = Date.now();
-  if (!market || !market.open || !market.executionMetadataVerified || !Number.isFinite(market.tickSize) || market.tickSize <= 0
+  if (!market || !market.open || !market.executionMetadataVerified || !Number.isFinite(market.tickSize) || market.tickSize < .000001 || market.tickSize > .1
     || !Number.isFinite(market.minQty) || market.minQty <= 0 || plan.quantity < market.minQty
     || Math.abs(plan.quantity / market.minQty - Math.round(plan.quantity / market.minQty)) > 1e-6
     || !book || book.state !== 'MARKET_STATE_OPEN'
     || !Number.isFinite(book.fetchedAt) || now - book.fetchedAt > 5000 || book.fetchedAt > now + 1000) throw new Error('REDUCTION_MARKET_UNAVAILABLE');
   const yesLimit = opening.side === 'YES' ? plan.sideMinPrice : 1 - plan.sideMinPrice;
-  if (Math.abs(yesLimit / market.tickSize - Math.round(yesLimit / market.tickSize)) > 1e-6) throw new Error('REDUCTION_TICK_INVALID');
+  if (Math.abs(yesLimit / market.tickSize - Math.round(yesLimit / market.tickSize)) > 1e-6
+    || Math.abs(Number(yesLimit.toFixed(6)) - yesLimit) > 1e-8) throw new Error('REDUCTION_TICK_INVALID');
   const claim = await db.$transaction(async (tx: any) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scope.scopeKey}))`;
     await ensurePredictionRecoveryScope(tx, opening.ownerId, scope.scopeKey);
