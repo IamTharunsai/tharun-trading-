@@ -1039,6 +1039,7 @@ model PredictionExecution {
   executionReferences  Json?
   activityEvidence     Json?
   cancelAttemptedAt    DateTime?
+  holding              PredictionHolding?
   error                String?
   tradeId              String? @unique
   trade                Trade? @relation(fields: [tradeId], references: [id], onDelete: Restrict)
@@ -1054,6 +1055,65 @@ model PredictionAccountAuthority {
   scopeKey   String @id
   generation Int @default(0)
   updatedAt  DateTime @updatedAt
+}
+
+// Opening evidence is frozen before the first reduction. The original Trade
+// remains opening basis; this projection never overwrites it with sale fills.
+model PredictionHolding {
+  openingExecutionId String @id
+  openingExecution PredictionExecution @relation(fields: [openingExecutionId], references: [id], onDelete: Restrict)
+  ownerId String
+  credentialScopeKey String
+  marketSlug String
+  side String
+  openingQuantity Float
+  openingNotional Float
+  openingFees Float
+  openingQualificationId String
+  remainingQuantity Float
+  remainingBasis Float
+  realizedPnl Float?
+  accountingStatus String @default("LINKED_ORDER_ONLY")
+  reductions PredictionReduction[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([ownerId, credentialScopeKey])
+}
+
+model PredictionReduction {
+  id String @id @default(cuid())
+  claimKey String @unique
+  openingExecutionId String
+  holding PredictionHolding @relation(fields: [openingExecutionId], references: [openingExecutionId], onDelete: Restrict)
+  ownerId String
+  credentialScopeKey String
+  credentialIdentity String
+  marketSlug String
+  side String
+  quantity Float
+  sideMinPrice Float
+  authorityGeneration Int
+  planExpiresAt DateTime
+  status String @default("PREPARING")
+  brokerOrderId String? @unique
+  appliedQuantity Float @default(0)
+  appliedProceeds Float @default(0)
+  appliedFees Float?
+  terminalObserved Boolean @default(false)
+  error String?
+  observations PredictionReductionObservation[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([ownerId, credentialScopeKey, status])
+}
+
+model PredictionReductionObservation {
+  id String @id
+  reductionId String
+  reduction PredictionReduction @relation(fields: [reductionId], references: [id], onDelete: Restrict)
+  evidence Json
+  observedAt DateTime @default(now())
+  @@index([reductionId, observedAt])
 }
 
 // An immutable local owner-to-API-grant pin, NOT an exchange account identity.

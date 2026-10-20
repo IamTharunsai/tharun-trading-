@@ -20,6 +20,8 @@ const prediction = (id: string) => ({ id, marketSlug: id, venue: 'polymarket_us'
 const matches = (row: any, where: any) => Object.entries(where).every(([k, v]: any) =>
   v && typeof v === 'object' && 'in' in v ? v.in.includes(row[k]) : v && typeof v === 'object' && 'not' in v ? row[k] !== v.not : row[k] === v);
 const db: any = {
+  predictionReduction: { findFirst: jest.fn(async () => null) },
+  predictionHolding: { findUnique: jest.fn(async () => null) },
   user: { findUnique: jest.fn(async () => ({ id: 'owner', role: 'OWNER', email: 'owner@fixture.invalid' })) },
   settings: { findUnique: jest.fn(async () => risk) },
   strategyQualification: { findFirst: jest.fn(async () => qualification) },

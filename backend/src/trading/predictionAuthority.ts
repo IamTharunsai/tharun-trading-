@@ -24,11 +24,22 @@ export async function assertPredictionFillsReflected(tx: any, snapshot: PmUsExec
   const fills = await tx.predictionExecution.findMany({ where: { credentialScopeKey: snapshot.scopeKey,
     status: { in: ['FILLED', 'TERMINAL_PARTIAL'] } } });
   for (const fill of fills) {
+    const holding = await tx.predictionHolding.findUnique({ where: { openingExecutionId: fill.id } });
+    if (holding && (holding.ownerId !== fill.ownerId || holding.credentialScopeKey !== fill.credentialScopeKey
+      || holding.marketSlug !== fill.marketSlug || holding.side !== fill.side || holding.openingQuantity !== fill.appliedQuantity
+      || holding.openingNotional !== fill.appliedNotional || holding.openingFees !== fill.appliedFees
+      || !Number.isFinite(holding.remainingQuantity) || holding.remainingQuantity < 0 || holding.remainingQuantity > fill.appliedQuantity)) {
+      throw new Error('Prediction holding basis requires reconciliation');
+    }
+    const remaining = holding ? holding.remainingQuantity : fill.appliedQuantity;
     const p = snapshot.positions[fill.marketSlug];
+    // Absence is consistent only with a linked, corroborated complete reduction;
+    // a missing historical fill without that holding is still a discrepancy.
+    if (!p && remaining === 0) continue;
     const raw = p?.netPositionDecimal ?? p?.netPosition;
     if (typeof raw !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(raw)) throw new Error('Broker positions have not reconciled confirmed local fills');
     const signed = Number(raw);
-    if (!Number.isFinite(signed) || Math.abs(signed - (fill.side === 'YES' ? fill.appliedQuantity : -fill.appliedQuantity)) > 1e-8) {
+    if (!Number.isFinite(signed) || Math.abs(signed - (fill.side === 'YES' ? remaining : -remaining)) > 1e-8) {
       throw new Error('Broker positions have not reconciled confirmed local fills');
     }
   }

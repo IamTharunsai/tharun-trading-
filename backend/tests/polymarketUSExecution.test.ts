@@ -1,6 +1,8 @@
 const request = jest.fn();
 let claim: any, generation: number, qualification: any, risk: any, recoveryState: any;
 const db: any = {
+  predictionReduction: { findFirst: jest.fn(async () => null) },
+  predictionHolding: { findUnique: jest.fn(async () => null) },
   predictionExecution: { findUnique: jest.fn(async () => claim), findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []),
     updateMany: jest.fn(async ({ where, data }: any) => {
       if (where.status && claim.status !== where.status) return { count: 0 };
