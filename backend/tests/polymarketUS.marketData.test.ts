@@ -9,9 +9,11 @@ jest.mock('polymarket-us', () => ({ PolymarketUS: jest.fn().mockImplementation((
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: () => false }));
 jest.mock('axios');
 jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
+import { logger } from '../src/utils/logger';
 import axios from 'axios';
 import {
-  normalizeUSMarket, listPolymarketUSMarkets, getPolymarketUSBook, getPolymarketUSPriceHistory,
+  normalizeUSMarket, listPolymarketUSMarkets, getPolymarketUSBook, getPolymarketUSPriceHistory, classifyPolymarketBookFailure,
   getPolymarketUSSettlement, placePolymarketUSOrder, cancelPolymarketUSOrder, toYesOrderPrice, buildPolymarketUSOrder,
 } from '../src/services/polymarketUS';
 
@@ -32,6 +34,34 @@ beforeEach(() => {
 });
 
 describe('market data', () => {
+  it.each([[408, 'timeout'], [429, 'rate_limited'], [404, 'market_unavailable'],
+    [401, 'access_refused'], [403, 'access_refused'], [503, 'provider_unavailable'],
+    [0, 'transport_failure'], ['429', 'unclassified_failure'], [null, 'unclassified_failure']])(
+    'classifies SDK status %p without copying provider content', (status, code) => {
+      expect(classifyPolymarketBookFailure({ status, message: 'private-provider-content' })).toBe(code);
+    });
+
+  it('bounds repeated failure logs and excludes raw market and error text', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1900000000000);
+    try {
+      sdk.markets.book.mockRejectedValue(Object.assign(new Error('secret-error-body'), { status: 429 }));
+      expect(await getPolymarketUSBook('private-market')).toBeNull();
+      expect(await getPolymarketUSBook('private-market')).toBeNull();
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith('polymarket_book_read_failed', { venue: 'polymarket_us', code: 'rate_limited' });
+      now.mockReturnValue(1900000060000);
+      await getPolymarketUSBook('private-market');
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify((logger.warn as jest.Mock).mock.calls)).not.toMatch(/private-market|secret-error-body/);
+    } finally { now.mockRestore(); sdk.markets.book.mockReset(); }
+  });
+
+  it('distinguishes malformed book data from transport failure', async () => {
+    sdk.markets.book.mockResolvedValueOnce({ marketData: { bids: {}, offers: [] } });
+    expect(await getPolymarketUSBook('x')).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('polymarket_book_read_failed', { venue: 'polymarket_us', code: 'normalization_failed' });
+  });
+
   it('normalizes a gateway market with its event (YES quotes, fee Θ, grouping)', () => {
     const m = normalizeUSMarket(rawMarket(), { slug: 'mlb-nlchamp', title: 'National League Champion' })!;
     expect(m).toMatchObject({

@@ -20,7 +20,7 @@ jest.mock('../src/services/intermarketService', () => ({ intermarketService: { g
 jest.mock('../src/services/fredService', () => ({ getMacroSnapshot: jest.fn().mockResolvedValue({ fixture: true }), macroLine: jest.fn(() => 'Fixture macro observation: policy rate 4%') }));
 jest.mock('../src/services/optionsFlowService', () => ({ optionsFlowService: { analyzeOptionsFlow: jest.fn().mockResolvedValue({ callPutRatio: 1.2, sentiment: 'BULLISH', confidence: 80, callVolume: 200, putVolume: 100, unusualActivity: [] }) } }));
 jest.mock('../src/services/kronosService', () => ({ getForecast: jest.fn() }));
-jest.mock('../src/utils/llmRouter', () => ({ routedMessagesCreate: jest.fn(), providerFor: jest.fn(() => 'ollama') }));
+jest.mock('../src/utils/llmRouter', () => ({ routedMessagesCreate: jest.fn(), providerFor: jest.fn(() => 'ollama'), createLlmDeadline: () => performance.now() + 60000 }));
 // The committee only needs the current mode here; broker clients and network
 // sentiment are separate contracts, not dependencies of these dummy-provider tests.
 jest.mock('../src/trading/brokerRouter', () => ({ getActiveMode: jest.fn(() => 'paper') }));

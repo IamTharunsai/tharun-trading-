@@ -17,7 +17,8 @@ import { intermarketService } from '../services/intermarketService';
 import { getMacroSnapshot, macroLine } from '../services/fredService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
-import { routedMessagesCreate, providerFor, LlmRequestOptions } from '../utils/llmRouter';
+import { routedMessagesCreate, providerFor, LlmRequestOptions, createLlmDeadline } from '../utils/llmRouter';
+import { retryLlmRateLimit } from '../utils/llmRetry';
 import { openingArgumentSchema, finalVoteSchema, masterDecisionSchema, checkpointArgumentSchema, checkpointEvidenceSchema, exchangeSchema } from './responseSchemas';
 import { getActiveMode } from '../trading/brokerRouter';
 
@@ -103,14 +104,18 @@ function accountReportedUsage(response: { model: string; provider?: string; usag
   spendUsd += estimateCallCostUsd(response.model, response.usage, response.provider);
 }
 async function callWithRetry(params: Parameters<typeof anthropic.messages.create>[0], maxRetries = 3, control?: ResearchControl, responseOptions?: LlmRequestOptions): Promise<any> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  const deadlineAt = Math.min(createLlmDeadline(), responseOptions?.deadlineAt ?? Infinity);
+  return retryLlmRateLimit(async () => {
     try {
-      control?.signal.throwIfAborted();
-      await control?.beforeCall?.();
       control?.signal.throwIfAborted();
       assertBudget();
       // Routed: Anthropic by default, or Ollama / NVIDIA NIM per LLM_PROVIDER_FAST/SMART.
-      const response = await routedMessagesCreate(params, (p, options) => anthropic.messages.create(p, options), { ...responseOptions, signal: control?.signal });
+      const response = await routedMessagesCreate(params, (p, options) => anthropic.messages.create(p, options), {
+        ...responseOptions, signal: control?.signal, deadlineAt, beforeDispatch: async signal => {
+          signal.throwIfAborted(); await responseOptions?.beforeDispatch?.(signal); signal.throwIfAborted();
+          await control?.beforeCall?.(); signal.throwIfAborted(); assertBudget();
+        },
+      });
       accountReportedUsage({ model: response.model || params.model, usage: response.usage, provider: response.provider });
       return response;
     } catch (err: any) {
@@ -118,21 +123,10 @@ async function callWithRetry(params: Parameters<typeof anthropic.messages.create
       // Refusing an answer must not make an observed generation disappear from
       // the tally that previously ran before downstream schema rejection.
       if (err?.reportedUsage) accountReportedUsage(err.reportedUsage);
-      if (err?.status === 429 && attempt < maxRetries) {
-        const rawDelay = parseInt(err?.headers?.['retry-after'] || '15');
-        const retryAfter = (Number.isFinite(rawDelay) ? Math.min(60, Math.max(1, rawDelay)) : 15) * 1000;
-        logger.warn(`Rate limited — waiting ${retryAfter / 1000}s before retry (attempt ${attempt + 1})`);
-        await new Promise<void>((resolve, reject) => {
-          const cancel = () => { clearTimeout(timer); control?.signal.removeEventListener('abort', cancel); reject(control?.signal.reason); };
-          const timer = setTimeout(() => { control?.signal.removeEventListener('abort', cancel); resolve(); }, retryAfter + 1000);
-          control?.signal.addEventListener('abort', cancel, { once: true });
-          if (control?.signal.aborted) cancel();
-        });
-      } else {
-        throw err;
-      }
+      throw err;
     }
-  }
+  }, { deadlineAt, signal: control?.signal, maxRetries,
+    onRetry: (attempt, waitMs) => logger.warn('llm_rate_limit_retry_wait', { event: 'llm_rate_limit_retry_wait', attempt, waitMs }) });
 }
 
 // Independent specialist research uses bounded concurrency. Dependent debate stages stay ordered.

@@ -2,7 +2,7 @@ name: Prediction scan evidence
 on:
   pull_request:
   push:
-    branches: [main, codex/prediction-scan-evidence]
+    branches: [main, codex/prediction-scan-evidence, codex/prediction-book-diagnostics]
 permissions:
   contents: read
 jobs:
@@ -36,4 +36,4 @@ jobs:
           --workdir /source --entrypoint /usr/bin/env node:22-bookworm-slim
           -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp TMPDIR=/tmp NODE_ENV=test
           DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:5432/fixture
-          /usr/bin/timeout --signal=KILL 240s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.prediction-scan-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/polymarketScanEvidence.test.ts tests/polymarketEdge.test.ts tests/polymarketRuntime.test.ts tests/privateRuntimeRoutes.test.ts'
+          /usr/bin/timeout --signal=KILL 240s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.prediction-scan-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/polymarketScanEvidence.test.ts tests/polymarketEdge.test.ts tests/polymarketRuntime.test.ts tests/privateRuntimeRoutes.test.ts tests/polymarketUS.marketData.test.ts'
