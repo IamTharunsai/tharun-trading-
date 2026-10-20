@@ -21,7 +21,13 @@ const control = {
 };
 declare global { interface Window { commonsFixture: typeof control } }
 window.commonsFixture = control;
-createRoot(document.getElementById('root')!).render(<MemoryRouter><SessionQueryProvider cache={cache}><Routes>
+const root = createRoot(document.getElementById('root')!);
+if (new URLSearchParams(window.location.search).has('production-app')) {
+  // The real route tree/auth wrapper is exercised separately from fixture routes.
+  Promise.all([import('../../src/App'), import('../../src/index.css')]).then(([{ default: App }]) => {
+    root.render(<SessionQueryProvider cache={cache}><App /></SessionQueryProvider>);
+  });
+} else root.render(<MemoryRouter><SessionQueryProvider cache={cache}><Routes>
   <Route path="/" element={<TeamWorkspacePage />} />
   <Route path="/city" element={<WorkspaceDirectoryPage />} />
   <Route path="/offices/:officeId" element={<WorkspaceDirectoryPage />} />

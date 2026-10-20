@@ -54,7 +54,8 @@ const server = http.createServer(async (req, res) => {
     return send(res, 404, {});
   }
   try {
-    const target = path.resolve(root, `.${url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname)}`);
+    const appRoute = ['/', '/city', '/offices/council', '/dashboard', '/login'].includes(url.pathname);
+    const target = path.resolve(root, `.${appRoute ? '/index.html' : decodeURIComponent(url.pathname)}`);
     if (!target.startsWith(`${root}/`) || !mime[path.extname(target)] || !fs.statSync(target).isFile()) throw Error();
     res.setHeader('Content-Type', mime[path.extname(target)]); fs.createReadStream(target).pipe(res);
   } catch { res.statusCode = 404; res.end(); }
@@ -239,6 +240,34 @@ async function run() {
     });
     assert.deepEqual(pageErrors, []);
     assert.ok(requests.every(item => ['/api/agents/sessions', '/api/agents/trigger-debate'].includes(item.path)));
+    await check('actual-app-protects-commons-city-and-office-and-keeps-dashboard-reachable', async () => {
+      const postsBefore = countPosts();
+      await page.setViewportSize({ width: 1536, height: 1024 });
+      await page.evaluate(() => window.commonsFixture.signOut());
+      for (const route of ['/city', '/offices/council', '/']) {
+        await page.goto(`${origin}${route}?production-app=1`, { waitUntil: 'networkidle' });
+        await page.waitForURL(`${origin}/login`);
+        await page.getByTestId('login-submit').waitFor();
+      }
+      await signIn('owner');
+      await page.goto(`${origin}/?production-app=1`, { waitUntil: 'networkidle' });
+      await state('ready');
+      await page.getByRole('button', { name: 'Review options' }).click();
+      await page.getByRole('link', { name: 'City', exact: true }).click();
+      await page.waitForURL(`${origin}/city`);
+      await page.getByRole('heading', { name: 'A city for your work.' }).waitFor();
+      await page.getByRole('link', { name: 'Council office', exact: true }).click();
+      await page.waitForURL(`${origin}/offices/council`);
+      await page.getByRole('heading', { level: 1, name: 'Council office' }).waitFor();
+      await page.getByRole('link', { name: 'Trading dashboard', exact: true }).click();
+      await page.waitForURL(`${origin}/dashboard`);
+      await page.getByTestId('nav-home').waitFor();
+      assert.equal(await page.getByTestId('nav-home').getAttribute('href'), '/');
+      await page.getByTestId('nav-home').click();
+      await state('ready');
+      assert.deepEqual(pageErrors, []);
+      assert.equal(countPosts(), postsBefore, 'navigation must not issue additional research or financial mutations');
+    });
   } finally {
     fs.writeFileSync(`${output}/mounted-proof.json`, JSON.stringify({ sourceCommit: process.env.SOURCE_COMMIT,
       sourceHeadCommit: process.env.SOURCE_HEAD_COMMIT, cases, pageErrors, requestCount: requests.length,
