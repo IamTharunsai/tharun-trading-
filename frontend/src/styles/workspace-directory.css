@@ -1,4 +1,5 @@
 .bhishma-directory { min-height: 100svh; background: #f0f3ed; color: #183c32; font-family: 'IBM Plex Sans', sans-serif; line-height: 1.55; }
+.bhishma-directory, .bhishma-directory * { box-sizing: border-box; }
 .bhishma-directory a { text-underline-offset: .25em; }
 .bhishma-directory :focus-visible { outline: 3px solid #297660; outline-offset: 4px; }
 .bhishma-directory ::selection { background: #bed9cb; color: #163b30; }

@@ -211,7 +211,12 @@ async function run() {
       assert.deepEqual([...doors].sort(), [...tools].sort(), 'every actual tool route has exactly one office door');
       const offices = await page.locator('.bhishma-directory-office h3 a').evaluateAll(links => links.map(link => ({ name: link.textContent, href: link.getAttribute('href') })));
       assert.equal(offices.length, 7);
-      await page.screenshot({ path: `${output}/city-desktop.png`, fullPage: true });
+      // Match the bounded Commons captures; preserve layout dimensions separately.
+      fs.writeFileSync(`${output}/city-desktop-geometry.json`, JSON.stringify(await page.evaluate(() => ({
+        width: window.innerWidth, height: window.innerHeight,
+        scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
+      })), null, 2));
+      await page.screenshot({ path: `${output}/city-desktop.png`, fullPage: false });
       for (const office of offices) {
         await page.locator(`a[href="${office.href}"]`).click();
         await page.getByRole('heading', { level: 1, name: office.name }).waitFor();
@@ -222,7 +227,13 @@ async function run() {
       await page.getByRole('searchbox').fill('');
       await page.setViewportSize({ width: 390, height: 844 });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'mobile directory must not overflow');
-      await page.screenshot({ path: `${output}/city-mobile.png`, fullPage: true });
+      fs.writeFileSync(`${output}/city-mobile-geometry.json`, JSON.stringify(await page.evaluate(() => ({
+        width: window.innerWidth, height: window.innerHeight,
+        scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
+      })), null, 2));
+      await page.screenshot({ path: `${output}/city-mobile.png`, fullPage: false });
+      await page.locator('.bhishma-directory footer').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${output}/city-mobile-footer.png`, fullPage: false });
       await page.getByRole('link', { name: 'Commons', exact: true }).click();
       await state('ready');
     });
