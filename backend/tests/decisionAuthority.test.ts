@@ -14,7 +14,8 @@ function decision() {
     timestamp: new Date(now), signal: 'BUY', finalVote: 'BUY', avgConfidence: 80,
     totalVotes: 14, goVotes: 10, noGoVotes: 4,
     agentVotes: Array.from({ length: 14 }, (_, i) => ({ agentId: i + 1, finalVote: i < 10 ? 'BUY' : 'HOLD', confidence: 80, executionEligible: true })),
-    marketSnapshot: { asset: 'AAPL', market: 'stocks', timestamp: now, inputFingerprint: 'a'.repeat(64), executionPlan: {
+    marketSnapshot: { asset: 'AAPL', market: 'stocks', timestamp: now, inputFingerprint: 'a'.repeat(64),
+      dataEvidence: { source: 'Alpaca IEX', timeframe: '1Day', completedBars: 250, priceObservedAt: now, quoteObservedAt: now, receivedAt: now }, executionPlan: {
       version: 1, approved: true, mode: 'paper', market: 'stocks', direction: 'BUY', confidence: 80,
       entryPrice: 100, stopLossPrice: 98, takeProfitPrice: 105, positionSizePct: 1,
     } },
@@ -30,6 +31,8 @@ describe('persisted execution authority', () => {
     ['executed', (d: any) => ({ ...d, executed: true })],
     ['blocked', (d: any) => ({ ...d, executionReason: 'risk veto' })],
     ['stale', (d: any) => ({ ...d, marketSnapshot: { ...d.marketSnapshot, timestamp: now - 300001 } })],
+    ['assembly is new but exchange observation is old', (d: any) => ({ ...d, marketSnapshot: { ...d.marketSnapshot, dataEvidence: { ...d.marketSnapshot.dataEvidence, priceObservedAt: now - 300001 } } })],
+    ['legacy snapshot has no exchange provenance', (d: any) => ({ ...d, marketSnapshot: { ...d.marketSnapshot, dataEvidence: undefined } })],
     ['duplicate roster', (d: any) => ({ ...d, agentVotes: d.agentVotes.map((v: any) => ({ ...v, agentId: 1 })) })],
     ['veto', (d: any) => ({ ...d, agentVotes: d.agentVotes.map((v: any) => v.agentId === 5 ? { ...v, finalVote: 'HOLD' } : v) })],
     ['forged tally', (d: any) => ({ ...d, goVotes: 14 })],

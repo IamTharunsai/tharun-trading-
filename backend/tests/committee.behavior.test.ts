@@ -56,7 +56,10 @@ const defaultReply = (params: any) => {
 const snapshot = () => ({
   asset: 'AAPL', market: 'stocks', price: 100, priceChange24h: 1, priceChangePct24h: 1,
   volume24h: 1000, volumeChange: 1, high24h: 102, low24h: 98, bidPrice: 99.99, askPrice: 100.01, spread: 0.02,
-  timestamp: Date.now(), candles: Array.from({ length: 256 }, (_, i) => ({ open: 100, high: 101, low: 99, close: 100, volume: 1000, timestamp: Date.now() - (256 - i) * 3600000 })),
+  timestamp: Date.now(), candles: Array.from({ length: 256 }, (_, i) => ({ open: 100, high: 101, low: 99, close: 100, volume: 1000, timestamp: Date.now() - (256 - i) * 86400000 })),
+  dataEvidence: { source: 'Alpaca IEX', timeframe: '1Day', completedBars: 256, priceObservedAt: Date.now(), quoteObservedAt: Date.now(), receivedAt: Date.now(),
+    historyFirstPeriodAt: Date.now() - 256 * 86400000, historyLastPeriodAt: Date.now() - 86400000,
+    changeWindow: 'latest_trade_vs_previous_daily_close', volumeWindow: 'provider_daily_bar' },
   indicators: {
     rsi14: 55, macd: { value: 0.2, signal: 0.1, histogram: 0.1 }, stochasticK: 60, stochasticD: 58,
     bollingerBands: { upper: 105, middle: 100, lower: 95 }, ema9: 101, ema21: 99, ema200: 90,
@@ -71,6 +74,21 @@ const portfolio = { totalValue: 100000, cashBalance: 60000, invested: 40000, pnl
   riskDataComplete: true };
 
 describe('real committee behavior with dummy providers', () => {
+  it('permits old observed evidence for manual research but never promotes it into ENTRY', async () => {
+    const input = snapshot(); input.dataEvidence.priceObservedAt -= 3 * 86400000; input.dataEvidence.quoteObservedAt -= 3 * 86400000;
+    await expect(runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL')).rejects.toThrow('STOCK_ENTRY_SOURCE');
+    const result = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL', undefined, 'COUNCIL', undefined, undefined, 'RESEARCH');
+    expect(result.executionApproved).toBe(false); expect(result.purpose).toBe('RESEARCH');
+  });
+  it('refuses ENTRY when observation ages out during paid research even though assembly is current', async () => {
+    const input = snapshot();
+    (routedMessagesCreate as jest.Mock).mockImplementation(async (params: any) => {
+      input.dataEvidence.priceObservedAt = Date.now() - 300001;
+      return defaultReply(params);
+    });
+    const result = await runInvestmentCommitteeDebate(input, portfolio, 'TRENDING_BULL');
+    expect(result.executionApproved).toBe(false); expect(result.blockReason).toContain('exchange observations expired');
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.LLM_AGENT_DELAY_MS = '0';

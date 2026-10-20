@@ -34,6 +34,8 @@ import { positionScopeKey, getVerifiedAccountScope, AccountScope } from './accou
 import { requestPositionExit } from './positionExits';
 import { getPortfolioState } from '../services/portfolio';
 import { validateLiveQualification } from './liveQualification';
+import { bindStockQuote, assertStockQuoteBinding, readStockEntryQuote, StockQuoteBinding } from './stockEntryQuote';
+import { assertStockEntryQuote, assertStockEntryBudget, reduceStockEntryQuantity } from './stockEntryPolicy';
 export { buildStockOrder } from './stockOrders';
 
 // ─── Env flags ───────────────────────────────────────────────────────────────
@@ -182,6 +184,8 @@ export async function executeTradeSignal(
 
   const { asset, market, direction, agentDecisionId } = signal;
   let authorityVerified = false;
+  let unsubmittedIntentId: string | null = null;
+  let submissionStarted = false;
   const executionMode = getActiveMode();
   const executionBroker = getTradingBroker();
 
@@ -189,6 +193,8 @@ export async function executeTradeSignal(
     const savedDecision = await prisma.agentDecision.findUnique({ where: { id: agentDecisionId } });
     signal = authorizePersistedDecision(savedDecision, signal, executionMode, Date.now(), Number(process.env.MAX_DECISION_AGE_MS ?? 300000));
     authorityVerified = true;
+    const stockBinding: StockQuoteBinding | null = market === 'stocks' && executionBroker ? bindStockQuote(executionMode, executionBroker) : null;
+    if (market === 'stocks' && !stockBinding) throw new Error('STOCK_ENTRY_ACCOUNT_CHANGED');
     if (direction === 'SELL' && (market !== 'stocks' || process.env.ALLOW_SHORT_SELLING !== 'true')) return false;
     if (executionMode === 'live') {
       const strategyKey = 'BHISHMA_COUNCIL';
@@ -235,14 +241,32 @@ export async function executeTradeSignal(
       return false;
     }
 
-    let quantity = positionValue / price;
-    const prepared = market === 'stocks' ? buildStockOrder(signal, quantity) : market === 'crypto' ? buildCryptoOrder(signal, quantity) : null;
+    const originalStopBudget = positionValue / price * Math.abs(price - signal.stopLossPrice);
+    const firstQuote = stockBinding ? await readStockEntryQuote(asset, stockBinding) : null;
+    const firstQuotePrice = firstQuote ? assertStockEntryQuote(firstQuote, signal) : price;
+    let quantity = firstQuote ? reduceStockEntryQuantity(signal, positionValue, firstQuotePrice) : positionValue / price;
+    let prepared = market === 'stocks' ? buildStockOrder(signal, quantity) : market === 'crypto' ? buildCryptoOrder(signal, quantity) : null;
     if (!prepared) {
       await recordExecutionFailure(agentDecisionId, 'UNSUPPORTED_STOCK_ORDER: invalid quantity or fractional short');
       return false;
     }
     if (prepared) quantity = prepared.payload.qty;
     else quantity = Math.floor(quantity * 1e6) / 1e6;
+    const protectionSignal = () => ({ ...signal,
+      stopLossPrice: prepared?.payload.stop_loss?.stop_price ?? signal.stopLossPrice,
+      takeProfitPrice: prepared?.payload.take_profit?.limit_price ?? signal.takeProfitPrice });
+    if (firstQuote) {
+      assertStockEntryQuote(firstQuote, protectionSignal());
+      // Broker-hosted protection is rounded by the existing order builder.
+      // Budget using those actual levels; never round quantity/risk upward.
+      quantity = Math.min(quantity, positionValue / firstQuotePrice,
+        originalStopBudget / Math.abs(firstQuotePrice - protectionSignal().stopLossPrice));
+      prepared = buildStockOrder(signal, quantity);
+      if (!prepared) throw new Error('STOCK_ENTRY_ORDER_UNAVAILABLE');
+      quantity = prepared.payload.qty;
+      assertStockEntryQuote(firstQuote, protectionSignal());
+      assertStockEntryBudget(protectionSignal(), quantity, firstQuotePrice, positionValue, originalStopBudget);
+    }
     if (DRY_RUN) {
       logger.info(`[EXEC] DRY_RUN: reviewed ${direction} ${quantity} ${asset}; no submission or execution recorded`);
       return false;
@@ -266,6 +290,7 @@ export async function executeTradeSignal(
         protection: prepared?.protection ?? 'APPLICATION_MONITORED', status: 'SUBMITTING',
         } });
       });
+      unsubmittedIntentId = intent.id;
     } catch (error: any) {
       if (error?.code === 'P2002') logger.warn(`[EXEC] Decision ${agentDecisionId} already has a submission claim`);
       else logger.error('[EXEC] Cannot persist submission claim', { error: error?.message });
@@ -273,7 +298,8 @@ export async function executeTradeSignal(
     }
 
     if (isKillSwitchActive() || getActiveMode() !== executionMode) {
-      await prisma.executionIntent.update({ where: { id: intent.id }, data: { status: 'TERMINAL_UNFILLED', error: 'Authority changed before submission' } });
+      await prisma.executionIntent.updateMany({ where: { id: intent.id, status: 'SUBMITTING', brokerOrderId: null },
+        data: { status: 'TERMINAL_UNFILLED', error: 'Authority changed before submission' } });
       return false;
     }
 
@@ -285,6 +311,41 @@ export async function executeTradeSignal(
       await recordExecutionFailure(agentDecisionId, reason);
       return false;
     }
+    if (stockBinding) {
+      // All asynchronous revalidation precedes the final quote. Its observation
+      // age is checked AGAIN with no await between the last guard and POST.
+      const [latestDecision, currentPortfolio, currentAccount, currentQualification] = await Promise.all([
+        prisma.agentDecision.findUnique({ where: { id: agentDecisionId } }),
+        getPortfolioState(), executionBroker!.getPortfolioSummary(),
+        executionMode === 'live' ? prisma.strategyQualification.findFirst({ where: { strategyKey: 'BHISHMA_COUNCIL',
+          revision: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RELEASE_COMMIT_SHA }, orderBy: { createdAt: 'desc' } }) : Promise.resolve(null),
+      ]);
+      signal = authorizePersistedDecision(latestDecision, signal, executionMode, Date.now(), Number(process.env.MAX_DECISION_AGE_MS ?? 300000));
+      const finalRisk = await validateTradeSignal(signal, currentPortfolio);
+      if (!finalRisk.approved || currentPortfolio.accountId !== account.account_id || currentPortfolio.brokerMode !== executionMode
+        || currentAccount?.account_id !== account.account_id || !Number.isFinite(currentAccount.cash) || currentAccount.cash < 0) throw new Error('STOCK_ENTRY_RISK_OR_ACCOUNT_CHANGED');
+      const finalNotionalBudget = Math.min(positionValue, currentPortfolio.totalValue * (finalRisk.adjustedSize ?? signal.positionSizePct) / 100, currentAccount.cash);
+      const finalStopBudget = Math.min(originalStopBudget, finalNotionalBudget / signal.entryPrice * Math.abs(signal.entryPrice - signal.stopLossPrice));
+      const finalQuote = await readStockEntryQuote(asset, stockBinding);
+      const submitRisk = await validateTradeSignal(signal, currentPortfolio);
+      if (!submitRisk.approved || (submitRisk.adjustedSize ?? signal.positionSizePct) < (finalRisk.adjustedSize ?? signal.positionSizePct)) throw new Error('STOCK_ENTRY_RISK_OR_ACCOUNT_CHANGED');
+      const finalQuotePrice = assertStockEntryQuote(finalQuote, protectionSignal());
+      assertStockEntryBudget(protectionSignal(), quantity, finalQuotePrice, finalNotionalBudget, finalStopBudget);
+      authorizePersistedDecision(latestDecision, signal, executionMode, Date.now(), Number(process.env.MAX_DECISION_AGE_MS ?? 300000));
+      assertStockQuoteBinding(stockBinding);
+      if (executionMode === 'live' && !validateLiveQualification(currentQualification, 'BHISHMA_COUNCIL',
+        process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RELEASE_COMMIT_SHA, Number(process.env.LIVE_MIN_DSR_PROBABILITY ?? 0.95)).approved) throw new Error('STOCK_ENTRY_LIVE_QUALIFICATION_CHANGED');
+      const riskEvidence = currentPortfolio.capitalRisk;
+      const riskTime = Date.parse(riskEvidence?.asOf ?? '');
+      if (isKillSwitchActive() || currentPortfolio.riskDataComplete !== true || riskEvidence?.complete !== true
+        || riskEvidence.accountId !== account.account_id || riskEvidence.brokerMode !== executionMode
+        || !Number.isFinite(riskTime) || Date.now() - riskTime >= 390000 || riskTime > Date.now()
+        || currentPortfolio.pnlDayPct !== riskEvidence.dailyPnlPct || currentPortfolio.pnlWeekPct !== riskEvidence.weeklyPnlPct
+        || currentPortfolio.drawdownFromPeak !== riskEvidence.drawdownPct) throw new Error('STOCK_ENTRY_FINAL_GUARD_FAILED');
+      // No await follows these guards before placeBrokerOrder calls createOrder.
+      assertStockEntryQuote(finalQuote, protectionSignal());
+    }
+    submissionStarted = true;
     const order = await placeBrokerOrder(
       asset,
       direction as 'BUY' | 'SELL',
@@ -318,6 +379,10 @@ export async function executeTradeSignal(
     return true;
 
   } catch (err: any) {
+    if (unsubmittedIntentId && !submissionStarted) {
+      await prisma.executionIntent.updateMany({ where: { id: unsubmittedIntentId, status: 'SUBMITTING', brokerOrderId: null },
+        data: { status: 'TERMINAL_UNFILLED', error: 'STOCK_ENTRY_PRE_SUBMIT_REFUSED' } }).catch(() => {});
+    }
     const reason = `EXECUTION_EXCEPTION: ${err?.message || String(err)}`;
     logger.error(`[EXEC] ❌ Exception for ${asset}: ${reason}`);
     if (authorityVerified) await recordExecutionFailure(agentDecisionId, reason);
