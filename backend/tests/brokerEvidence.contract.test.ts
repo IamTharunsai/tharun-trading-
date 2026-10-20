@@ -24,13 +24,13 @@ test('order identity mismatch never becomes valid execution evidence', async () 
 test('activities page by broker ID and preserve late fees rather than only requesting trades', async () => {
   const page = Array.from({ length: 100 }, (_, index) => ({ id: `id-${index}`, activity_type: 'FILL' }));
   get.mockResolvedValueOnce({ data: page }).mockResolvedValueOnce({ data: [{ id: 'late-fee', activity_type: 'CFEE' }] });
-  const rows = await broker.listActivitiesVerified('2026-10-01T00:00:00Z', '2026-10-15T00:00:00Z');
+  const rows = await broker.listActivitiesVerified('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z');
   expect(rows).toHaveLength(101);
   expect(get.mock.calls[1][1].params).toMatchObject({ page_token: 'id-99', page_size: 100, direction: 'asc' });
 });
 test('a bounded or repeated activity page is unavailable evidence rather than an empty successful scan', async () => {
   const page = Array.from({ length: 100 }, (_, index) => ({ id: `id-${index}`, activity_type: 'FILL' }));
   get.mockResolvedValue({ data: page });
-  await expect(broker.listActivitiesVerified('a', 'b', 1)).rejects.toThrow('BOUND_EXCEEDED');
-  await expect(broker.listActivitiesVerified('a', 'b', 2)).rejects.toThrow('ACTIVITY_PAGE');
+  await expect(broker.listActivitiesVerified('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z', 1)).rejects.toThrow('BOUND_EXCEEDED');
+  await expect(broker.listActivitiesVerified('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z', 2)).rejects.toThrow('ACTIVITY_PAGE');
 });

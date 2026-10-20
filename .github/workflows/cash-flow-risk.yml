@@ -2,7 +2,7 @@ name: Cash flow loss accounting
 on:
   pull_request:
   push:
-    branches: [codex/cash-flow-loss-controls]
+    branches: [codex/cash-flow-loss-controls, codex/activity-read-windows]
 permissions:
   contents: read
 jobs:

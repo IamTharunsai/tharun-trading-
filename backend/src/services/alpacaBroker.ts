@@ -5,6 +5,8 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
+import { performance } from 'node:perf_hooks';
+import { isDeepStrictEqual } from 'node:util';
 import { logger } from '../utils/logger';
 import { isPlaceholderKey } from '../utils/apiKeys';
 
@@ -239,24 +241,57 @@ export class AlpacaBroker {
   }
 
   // https://docs.alpaca.markets/us/reference/getaccountactivities-2
-  // Filters use creation time, so callers must overlap scans for late fees.
+  // Filters use creation time, not effective/settlement dates. Short overlapping
+  // windows avoid one expensive month-wide query without assuming inclusive
+  // boundaries. maxPages is the TOTAL HTTP budget, including empty windows.
   async listActivitiesVerified(after: string, until: string, maxPages = 20, orderId?: string): Promise<AlpacaActivity[]> {
-    const activities: AlpacaActivity[] = [];
-    const seen = new Set<string>();
-    let pageToken: string | undefined;
-    for (let page = 0; page < maxPages; page++) {
-      const response = await this.client.get('/v2/account/activities', { params: {
-        after, until, direction: 'asc', page_size: 100, page_token: pageToken, order_id: orderId,
-      } });
-      if (!Array.isArray(response.data)) throw new Error('INVALID_BROKER_ACTIVITIES');
-      for (const activity of response.data) {
-        if (!activity?.id || !activity.activity_type || seen.has(activity.id)) throw new Error('INVALID_BROKER_ACTIVITY_PAGE');
-        seen.add(activity.id); activities.push(activity);
+    const start = Date.parse(after); const end = Date.parse(until);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end
+      || !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) throw new Error('INVALID_BROKER_ACTIVITY_RANGE');
+    const day = 86400000; const overlap = 1000; const maxWindows = 32;
+    if (Math.ceil((end - start - overlap) / (day - overlap)) > maxWindows) throw new Error('BROKER_ACTIVITY_WINDOW_BOUND_EXCEEDED');
+    const activities = new Map<string, AlpacaActivity>();
+    let requests = 0; let windows = 0;
+    const deadline = performance.now() + 25000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000); timer.unref();
+    const remaining = () => {
+      const ms = Math.floor(deadline - performance.now());
+      if (ms <= 0 || controller.signal.aborted) throw new Error('BROKER_ACTIVITY_DEADLINE_EXCEEDED');
+      return ms;
+    };
+    try {
+      for (let from = start; from < end;) {
+        if (++windows > maxWindows) throw new Error('BROKER_ACTIVITY_WINDOW_BOUND_EXCEEDED');
+        const to = Math.min(from + day, end);
+        const seen = new Set<string>();
+        let pageToken: string | undefined;
+        for (;;) {
+          if (requests++ >= maxPages) throw new Error('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED');
+          const response = await this.client.get('/v2/account/activities', {
+            params: { after: new Date(from).toISOString(), until: new Date(to).toISOString(),
+              direction: 'asc', page_size: 100, page_token: pageToken, order_id: orderId },
+            timeout: Math.min(10000, remaining()), signal: controller.signal,
+          });
+          remaining();
+          if (!Array.isArray(response.data) || response.data.length > 100) throw new Error('INVALID_BROKER_ACTIVITIES');
+          for (const activity of response.data) {
+            if (typeof activity?.id !== 'string' || !activity.id || typeof activity.activity_type !== 'string'
+              || !activity.activity_type || seen.has(activity.id)) throw new Error('INVALID_BROKER_ACTIVITY_PAGE');
+            seen.add(activity.id);
+            const previous = activities.get(activity.id);
+            if (previous && !isDeepStrictEqual(previous, activity)) throw new Error('BROKER_ACTIVITY_CONFLICT');
+            activities.set(activity.id, activity);
+            if (activities.size > 10000) throw new Error('BROKER_ACTIVITY_RECORD_BOUND_EXCEEDED');
+          }
+          if (response.data.length < 100) break;
+          pageToken = response.data[response.data.length - 1].id;
+        }
+        if (to === end) break;
+        from = to - overlap;
       }
-      if (response.data.length < 100) return activities;
-      pageToken = response.data[response.data.length - 1].id;
-    }
-    throw new Error('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED');
+      return [...activities.values()];
+    } finally { clearTimeout(timer); }
   }
 
   // https://docs.alpaca.markets/us/reference/getaccountportfoliohistory-1

@@ -1,6 +1,9 @@
 // Actual PG persistence/locking; broker responses below are fixtures only.
 // No provider implementation, credential or live account is reachable in CI.
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
+jest.mock('axios', () => ({ __esModule: true, default: { create: jest.fn() } }));
+import axios from 'axios';
+import { AlpacaBroker } from '../src/services/alpacaBroker';
 import { prisma } from '../src/utils/prisma';
 import { getCashFlowRisk, readCashFlowRisk, recordPortfolioObservation, RISK_STEP_MS as STEP } from '../src/services/cashFlowRisk';
 import type { PortfolioState } from '../src/agents/types';
@@ -120,6 +123,32 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     broker.listActivitiesVerified.mockRejectedValue(new Error('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED'));
     expect(await getCashFlowRisk(scope, new Date(baseNow.getTime() + 2 * STEP))).toMatchObject({ complete: false, reason: 'BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED', dailyPnlPct: null });
     expect(await prisma.capitalRiskObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
+  }, 25000);
+  test('actual adapter failure in a later daily window preserves cursor, recorded loss, and immutable evidence', async () => {
+    event('CSW', -10000); equityChanges.push({ at: Date.parse('2026-10-16T11:00:00Z'), amount: -4000 });
+    expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000, equity: 86000 });
+    const snapshot = await recordPortfolioObservation({ accountId: scope.accountId, brokerMode: scope.mode,
+      totalValue: 86000, cashBalance: 86000, invested: 0, pnlTotal: -100 } as PortfolioState, baseNow);
+    const before = await prisma.capitalRiskState.findFirstOrThrow({ where: { accountId: scope.accountId } });
+    const http = jest.fn().mockResolvedValueOnce({ data: [{ id: 'partial-late-fee', activity_type: 'CFEE', net_amount: '-1', date: '2026-10-01' }] })
+      .mockRejectedValueOnce(Object.assign(new Error('private-provider-timeout'), { code: 'ECONNABORTED' }));
+    (axios.create as jest.Mock).mockReturnValue({ get: http });
+    scope = { ...scope, broker: new AlpacaBroker('fixture-not-a-credential', 'fixture-not-a-secret', true) };
+    expect(await getCashFlowRisk(scope, new Date(baseNow.getTime() + STEP))).toMatchObject({
+      complete: false, reason: 'CAPITAL_EVIDENCE_UNAVAILABLE', equity: 86000, dailyPnl: null, dailyPnlPct: null });
+    expect(http).toHaveBeenCalledTimes(2);
+    http.mock.calls.forEach(([path, config]) => {
+      expect(path).toBe('/v2/account/activities');
+      expect(Date.parse(config.params.until) - Date.parse(config.params.after)).toBeLessThanOrEqual(86400000);
+    });
+    const after = await prisma.capitalRiskState.findFirstOrThrow({ where: { accountId: scope.accountId } });
+    expect(after).toMatchObject({ status: 'UNVERIFIED', revision: before.revision,
+      activityThrough: before.activityThrough, coveredThrough: before.coveredThrough });
+    expect(await prisma.capitalRiskObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
+    expect(await prisma.capitalRiskActivity.findFirst({ where: { accountId: scope.accountId, brokerActivityId: 'partial-late-fee' } })).toBeNull();
+    const retained = await prisma.portfolioSnapshot.findUniqueOrThrow({ where: { id: snapshot.id } });
+    expect(retained).toMatchObject({ totalValue: 86000, pnlTotal: -100, pnlDay: -4000,
+      riskDataComplete: false, adjustedDailyPnl: null, riskRevision: before.revision });
   }, 25000);
   test('legacy raw NAV and recorded realized losses retain ownership and values without verified risk defaults', async () => {
     const snapshot = await prisma.portfolioSnapshot.create({ data: { totalValue: 90000, cashBalance: 90000, invested: 0, pnlDay: -10000, pnlDayPct: -10 } });

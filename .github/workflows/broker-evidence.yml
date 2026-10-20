@@ -2,7 +2,7 @@ name: Broker evidence accounting
 on:
   pull_request:
   push:
-    branches: [codex/broker-evidence-reconciliation]
+    branches: [codex/broker-evidence-reconciliation, codex/activity-read-windows]
 permissions:
   contents: read
 jobs:
@@ -36,7 +36,7 @@ jobs:
           --workdir /source --entrypoint /usr/bin/env node:22-bookworm
           -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp TMPDIR=/tmp NODE_ENV=test
           DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:5432/fixture
-          /usr/bin/timeout --signal=KILL 300s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.broker-evidence-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/brokerEvidence.test.ts tests/brokerEvidence.contract.test.ts tests/positionExits.behavior.test.ts tests/brokerSync.evidence.test.ts tests/portfolio.evidence.test.ts tests/portfolio.test.ts tests/portfolio.weeklyPnl.test.ts'
+          /usr/bin/timeout --signal=KILL 300s /bin/sh -c 'node node_modules/typescript/bin/tsc -p tsconfig.broker-evidence-tests.json && node node_modules/jest/bin/jest.js --runInBand --cacheDirectory=/tmp/jest --runTestsByPath tests/activityReadWindows.contract.test.ts tests/brokerEvidence.test.ts tests/brokerEvidence.contract.test.ts tests/positionExits.behavior.test.ts tests/brokerSync.evidence.test.ts tests/portfolio.evidence.test.ts tests/portfolio.test.ts tests/portfolio.weeklyPnl.test.ts'
   evidence-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 12

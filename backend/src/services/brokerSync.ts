@@ -40,7 +40,10 @@ export async function syncBrokerPositions(suppliedScope?: AccountScope): Promise
   // Overlap creation-time scans for delayed fees. This bounded scan is explicitly
   // not proof of complete historical activity or fee finality.
   try {
-    await retainBrokerActivities(scope, await scope.broker.listActivitiesVerified(new Date(Date.now() - 30 * 86400000).toISOString(), new Date().toISOString()));
+    const until = new Date();
+    // 30 days require 31 overlapping daily windows even for an empty account.
+    // 64 is a total request budget, not 64 pages per window.
+    await retainBrokerActivities(scope, await scope.broker.listActivitiesVerified(new Date(until.getTime() - 30 * 86400000).toISOString(), until.toISOString(), 64));
     result.activityEvidence = 'RECENT_ACTIVITY_RETAINED_HISTORY_NOT_CERTIFIED';
   } catch (error) { result.activityEvidence = 'ACTIVITY_EVIDENCE_UNAVAILABLE'; activityFailureReason = operatingError(error); }
   const dbOpen = await prisma.position.findMany({ where: { accountId: scope.accountId, brokerMode: scope.mode, status: 'OPEN' } });
