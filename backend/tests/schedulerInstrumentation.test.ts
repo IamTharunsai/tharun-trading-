@@ -25,6 +25,7 @@ jest.mock('../src/services/brokerSync', () => ({ syncBrokerPositions: jest.fn().
 jest.mock('../src/trading/killLiquidation', () => ({ liquidateCurrentAccount: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/services/polymarketEdge', () => ({ isEdgeScanRunning: jest.fn().mockReturnValue(false), runPolymarketEdgeScan: jest.fn().mockResolvedValue({}), processPaperOrders: jest.fn(), managePolymarketPositions: jest.fn(), resolvePolymarketPredictions: jest.fn(), logScorecardSummary: jest.fn() }));
 jest.mock('../src/services/polymarketUS', () => ({ polymarketUSVenue: {} }));
+jest.mock('../src/trading/predictionRecovery', () => ({ recoverPredictionOrders: jest.fn().mockResolvedValue({ outcome: 'NO_PENDING_ORDERS', unresolved: 0 }) }));
 jest.mock('../src/services/universeService', () => ({ universe: { swingCandidates: jest.fn().mockReturnValue([]) } }));
 
 type Runtime = import('../src/jobs/schedulerRuntime').SchedulerRuntime;
@@ -55,6 +56,7 @@ const last = (id: string) => runtime.snapshot().jobs.find(job => job.id === id)!
 test('registers original business schedules/timezones exactly once, without invoking them at boot', () => {
   init(); init();
   const expected: Array<[string, string, string?]> = [
+    ['prediction_order_recovery', '*/30 * * * * *'],
     ['held_position_research', '* * * * *'], ['swing_market_open', '35 9 * * 1-5', 'America/New_York'],
     ['swing_late_morning', '0 11 * * 1-5', 'America/New_York'], ['swing_midday', '0 13 * * 1-5', 'America/New_York'],
     ['intraday_scan', '*/2 9-15 * * 1-5', 'America/New_York'], ['intraday_exits', '* 9-15 * * 1-5', 'America/New_York'],
@@ -70,10 +72,10 @@ test('registers original business schedules/timezones exactly once, without invo
     expect(schedule.mock.calls[index][0]).toBe(expression);
     expect(schedule.mock.calls[index][2]).toEqual(timezone ? { timezone } : undefined);
   });
-  expect(schedule).toHaveBeenCalledTimes(25);
+  expect(schedule).toHaveBeenCalledTimes(26);
   expect(runtime.snapshot()).toMatchObject({ lifecycle: 'registered', status: 'starting' });
   expect(runtime.snapshot().jobs.every(job => job.started === 0)).toBe(true);
-  schedule.mock.calls[24][1](); expect(runtime.snapshot().observer.status).toBe('recent');
+  schedule.mock.calls[25][1](); expect(runtime.snapshot().observer.status).toBe('recent');
   expect(require('../src/trading/executionEngine').executeTradeSignal).not.toHaveBeenCalled();
 });
 
@@ -146,6 +148,18 @@ test('missing snapshots in a crypto mini-batch are failures, with no invented or
 test('international mode preserves dynamic prediction cadence and has no US-only callbacks', () => {
   process.env.POLYMARKET_VENUE = 'intl'; process.env.POLYMARKET_SCAN_EVERY_MIN = '20'; init();
   expect(last('prediction_scan').expression).toBe('*/20 * * * *');
-  expect(runtime.snapshot().jobs).toHaveLength(21);
+  expect(runtime.snapshot().jobs).toHaveLength(22);
   expect(runtime.snapshot().jobs.some(job => job.id === 'prediction_paper_upkeep')).toBe(false);
+});
+
+test('prediction recovery stays registered in international mode and runs while ENTRY is killed', async () => {
+  process.env.POLYMARKET_VENUE = 'intl'; init();
+  require('../src/agents/orchestrator').isKillSwitchActive.mockReturnValue(true);
+  await callback('prediction_order_recovery')();
+  const recovery = require('../src/trading/predictionRecovery').recoverPredictionOrders;
+  expect(recovery).toHaveBeenCalledTimes(1);
+  expect(last('prediction_order_recovery').lastOutcome).toBe('callback_returned');
+  recovery.mockResolvedValueOnce({ outcome: 'RECOVERY_INCOMPLETE', unresolved: 1 });
+  await callback('prediction_order_recovery')();
+  expect(last('prediction_order_recovery').lastReason).toBe('BROKER_RECONCILIATION_INCOMPLETE');
 });

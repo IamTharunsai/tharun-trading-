@@ -165,6 +165,16 @@ export function initScheduler() {
     return cron.schedule(expression, observed, options);
   };
   try {
+  // Recovery is observed independently of ENTRY flags, kill state and venue.
+  // First cron tick after startup is at most30s away; boot does not perform I/O.
+  schedule('prediction_order_recovery', '*/30 * * * * *', async () => {
+    try {
+      const { recoverPredictionOrders } = await import('../trading/predictionRecovery');
+      const result = await recoverPredictionOrders();
+      if (result.outcome === 'RECOVERY_UNAVAILABLE' || result.outcome === 'OWNER_UNAVAILABLE') markSchedulerFailure('BROKER_EVIDENCE_UNAVAILABLE');
+      else if (result.unresolved > 0 || result.outcome === 'GRANT_REVIEW_REQUIRED') markSchedulerFailure('BROKER_RECONCILIATION_INCOMPLETE');
+    } catch { markSchedulerFailure('BROKER_EVIDENCE_UNAVAILABLE'); logger.warn('prediction_order_recovery_unavailable'); }
+  });
   // Research remains server-side and independent of opening a chat. The
   // durable service selects current-account holdings due for specialist review.
   schedule('held_position_research', '* * * * *', async () => {

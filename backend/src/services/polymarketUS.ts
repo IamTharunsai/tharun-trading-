@@ -27,6 +27,9 @@ import { polymarketLiveAllowed, getPolymarketMaxOrderUsd } from '../trading/live
 import type { BookLevel } from '../trading/predictionMath';
 import type { PredictionVenue, VenueBook, VenueMarket, VenuePricePoint } from './predictionVenue';
 import { prisma } from '../utils/prisma';
+import { assertPredictionRecoveryScope } from '../trading/predictionRecoveryScope';
+import { parseExecutionTradeReferences, parseTradeActivityPage, TradeActivity } from '../trading/predictionActivityEvidence';
+import { parsePredictionOrderEvidence } from '../trading/predictionOrderEvidence';
 import { validateLiveQualification } from '../trading/liveQualification';
 import { bindPolymarketUSRest } from './polymarketUSRest';
 import { predictionPendingStates, predictionRiskPolicyHash, readPredictionGeneration, advancePredictionGeneration,
@@ -360,6 +363,28 @@ export async function getPolymarketUSOrder(orderId: string, scopeKey: string): P
   return result;
 }
 
+/** A complete bounded traversal is not proof of account identity, historical
+ * retention, fee finality, or order/activity linkage. No symbol/time joins. */
+export async function getPolymarketUSTradeActivities(scopeKey: string): Promise<TradeActivity[]> {
+  const scope = getPolymarketUSCredentialScope();
+  if (scope.scopeKey !== scopeKey) throw new Error('Prediction activity grant changed');
+  const request = bindPolymarketUSRest(process.env.POLYMARKET_KEY_ID!, process.env.POLYMARKET_SECRET_KEY!);
+  const startedAt = Date.now(); const seen = new Set<string>(); const trades: TradeActivity[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page++) {
+    if (Date.now() - startedAt > 10000) throw new Error('Prediction activity traversal deadline exceeded');
+    const result = parseTradeActivityPage(await request('GET', '/v1/portfolio/activities', undefined,
+      { limit: 100, sortOrder: 'SORT_ORDER_DESCENDING', ...(cursor ? { cursor } : {}) }));
+    if (scope.identity !== getPolymarketUSCredentialScope().identity || Date.now() - startedAt > 10000) throw new Error('Prediction activity authority changed or expired');
+    trades.push(...result.trades);
+    if (result.eof === true) return trades;
+    // Require explicit EOF: an omitted cursor alone cannot certify coverage.
+    if (!result.nextCursor || seen.has(result.nextCursor)) throw new Error('Prediction activity traversal incomplete');
+    seen.add(result.nextCursor); cursor = result.nextCursor;
+  }
+  throw new Error('Prediction activity pagination bound exceeded');
+}
+
 function assertLiveAllowed() {
   // Same rule as every other live path: TRADING_MODE=live + LIVE_TRADING_CONFIRMED
   // phrase + POLYMARKET_US_LIVE=true + kill switch off.
@@ -421,6 +446,7 @@ export async function submitPolymarketUSExecution(claimId: string) {
     const revision = process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RELEASE_COMMIT_SHA;
     const authorization = await db.$transaction(async (tx: any) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scope.scopeKey}))`;
+      await assertPredictionRecoveryScope(tx, claim.ownerId, scope.scopeKey);
       const current = await tx.predictionExecution.findUnique({ where: { id: claimId } });
       if (!current || current.status !== 'PREPARING' || current.credentialScopeKey !== scope.scopeKey || current.credentialIdentity !== scope.identity
         || await readPredictionGeneration(tx, scope.scopeKey) !== current.authorityGeneration
@@ -464,7 +490,14 @@ export async function submitPolymarketUSExecution(claimId: string) {
     posting = true;
     const acknowledgement = await request('POST', '/v1/orders', payload);
     if (typeof acknowledgement?.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(acknowledgement.id)) throw new Error('Prediction acknowledgement has no valid broker identity');
-    return { id: acknowledgement.id };
+    let executionReferences: ReturnType<typeof parseExecutionTradeReferences> = [];
+    let referenceStatus = 'UNPROVEN_PROVIDER_JOIN';
+    try { executionReferences = parseExecutionTradeReferences(acknowledgement, {
+      orderId: acknowledgement.id, marketSlug: claim.marketSlug, side: claim.side, quantity: claim.quantity, sideLimitPrice: claim.sideLimitPrice,
+    }); } catch { referenceStatus = 'EXECUTION_REFERENCES_INVALID'; }
+    // Preserve the valid ACK identity even when optional execution details are
+    // unavailable/inconsistent. Strict cumulative GET still owns fill booking.
+    return { id: acknowledgement.id, executionReferences: { status: referenceStatus, references: executionReferences } };
   } catch (error) {
     if (!posting) throw new PredictionSubmissionRefused();
     throw error;
@@ -480,8 +513,41 @@ export async function placePolymarketUSOrder(_req: PmUsOrderRequest): Promise<ne
   throw new Error('Polymarket US direct orders disabled; use durable prediction execution');
 }
 
-/** Cancel a resting order (same live gate; cancelling never adds risk but still touches the real account). */
-export async function cancelPolymarketUSOrder(orderId: string, marketSlug: string): Promise<void> {
-  assertLiveAllowed();
-  await authed().orders.cancel(orderId, { marketSlug });
+/** Risk-reducing cancellation requires a durable, owned, matching-grant claim;
+ * it does not require entry permission, an active strategy or the kill switch
+ * to be off. The old unbound two-argument writer remains disabled. */
+export async function cancelPolymarketUSOrder(orderId: string, marketSlug: string, executionId?: string) {
+  if (!executionId) throw new Error('Direct cancellation disabled without a durable claim');
+  const db = prisma as any; const scope = getPolymarketUSCredentialScope();
+  const claim = await db.predictionExecution.findUnique({ where: { id: executionId } });
+  if (!claim || claim.brokerOrderId !== orderId || claim.marketSlug !== marketSlug || claim.credentialScopeKey !== scope.scopeKey) throw new Error('Prediction cancellation authority unavailable');
+  const owner = await db.user.findUnique({ where: { id: claim.ownerId }, select: { role: true, email: true } });
+  if (owner?.role !== 'OWNER' || owner.email !== process.env.OWNER_EMAIL?.trim().toLowerCase()) throw new Error('Prediction cancellation owner unavailable');
+  const observed = parsePredictionOrderEvidence(await getPolymarketUSOrder(orderId, scope.scopeKey), {
+    orderId, marketSlug, side: claim.side, quantity: claim.quantity, sideLimitPrice: claim.sideLimitPrice,
+  });
+  if (observed.terminal) return 'TERMINAL_OBSERVED' as const;
+  const consumed = await db.$transaction(async (tx: any) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scope.scopeKey}))`;
+    const current = await tx.predictionExecution.findUnique({ where: { id: executionId } });
+    const currentOwner = current ? await tx.user.findUnique({ where: { id: current.ownerId }, select: { role: true, email: true } }) : null;
+    if (!current || current.ownerId !== claim.ownerId || current.brokerOrderId !== orderId || current.marketSlug !== marketSlug
+      || current.credentialScopeKey !== scope.scopeKey || current.side !== claim.side || current.quantity !== claim.quantity
+      || current.sideLimitPrice !== claim.sideLimitPrice || currentOwner?.role !== 'OWNER'
+      || currentOwner.email !== process.env.OWNER_EMAIL?.trim().toLowerCase()) throw new Error('Prediction cancellation authority changed');
+    // One cancel attempt only. A lost cancel reply is recovered through GET;
+    // neither an empty response nor cancellation intent establishes zero fills.
+    return tx.predictionExecution.updateMany({ where: { id: executionId, brokerOrderId: orderId,
+      credentialScopeKey: scope.scopeKey, marketSlug, cancelAttemptedAt: null }, data: { cancelAttemptedAt: new Date() } });
+  });
+  if (consumed.count !== 1) return 'ALREADY_ATTEMPTED' as const;
+  if (scope.identity !== getPolymarketUSCredentialScope().identity) throw new Error('Prediction cancellation grant changed');
+  const request = bindPolymarketUSRest(process.env.POLYMARKET_KEY_ID!, process.env.POLYMARKET_SECRET_KEY!);
+  try { await request('POST', `/v1/order/${orderId}/cancel`, { marketSlug }); }
+  catch {
+    await db.predictionExecution.updateMany({ where: { id: executionId, credentialScopeKey: scope.scopeKey },
+      data: { status: 'RECONCILIATION_REQUIRED', error: 'Cancellation outcome uncertain; read recovery required' } });
+    throw new Error('Prediction cancellation outcome uncertain; read recovery required');
+  }
+  return 'CANCEL_ACKNOWLEDGED' as const;
 }
