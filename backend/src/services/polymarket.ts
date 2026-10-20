@@ -252,15 +252,13 @@ EVENT: "${input.question}"
 RESOLUTION DATE: ${input.endDate ?? 'unknown'}${daysToResolution != null ? ` (${daysToResolution} days from now)` : ''}
 MARKET PRICE: YES trading at ${(input.yesPrice * 100).toFixed(1)} cents = market says ${(input.yesPrice * 100).toFixed(1)}% chance of YES
 ${volLine}${rules}${headlineBlock}
-Respond ONLY in valid JSON:
+Respond ONLY in one compact JSON object. Use the fields below exactly. Keep reasoning to at most 2 short sentences and riskFactors to at most 2 short strings. Do not include calculations, markdown, or additional fields:
 {
   "ourProbabilityYes": <0.0 to 1.0>,
   "confidence": <0 to 100>,
-  "edge": <our probability minus market implied>,
   "recommendedSide": "YES" | "NO" | "SKIP",
-  "reasoning": "<2-3 sentences explaining your estimate>",
-  "riskFactors": ["<risk1>", "<risk2>"],
-  "kellyFraction": <0 to 0.1>
+  "reasoning": "<1-2 short sentences explaining your estimate>",
+  "riskFactors": ["<risk1>", "<risk2>"]
 }`;
 
   let parsed: AnalysisResponse | null = null;
@@ -294,11 +292,27 @@ Respond ONLY in valid JSON:
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45_000);
     try {
-      const { llmText, parseJsonLoose } = await import('../utils/llmRouter');
-      const text = await llmText({ tier: 'smart', prompt, maxTokens: 700, temperature: 0.2, signal: controller.signal });
-      parsed = parsePredictionAssessment(parseJsonLoose<unknown>(text));
-    } catch {
-      // no LLM available
+      const { routedMessagesCreate } = await import('../utils/llmRouter');
+      await routedMessagesCreate({
+        model: 'smart', max_tokens: 700, temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }, undefined, {
+        signal: controller.signal, structured: true,
+        validateText: text => {
+          const assessment = parsePredictionAssessment(JSON.parse(text));
+          if (!assessment) throw new Error('schema_invalid');
+          parsed = assessment;
+        },
+      });
+      logger.info('prediction_estimate_completed', { event: 'prediction_estimate_completed', source: 'routed', validationCode: 'ok' });
+    } catch (error: any) {
+      // Keep unavailable, incomplete and schema-invalid probabilities unknown.
+      parsed = null;
+      const allowed = new Set(['truncated', 'refused', 'unexpected_tools', 'malformed_envelope', 'empty',
+        'incomplete_reasoning', 'invalid_json', 'schema_invalid', 'timeout', 'aborted', 'rate_limited',
+        'queue_full', 'queue_timeout', 'admission_config', 'admission_guard', 'transport_error']);
+      const validationCode = controller.signal.aborted ? 'timeout' : allowed.has(error?.code) ? error.code : 'transport_error';
+      logger.warn('prediction_estimate_refused', { event: 'prediction_estimate_refused', source: 'routed', validationCode });
     } finally { clearTimeout(timeout); }
   }
 
