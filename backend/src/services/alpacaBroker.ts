@@ -241,15 +241,19 @@ export class AlpacaBroker {
   }
 
   // https://docs.alpaca.markets/us/reference/getaccountactivities-2
-  // Filters use creation time, not effective/settlement dates. Short overlapping
-  // windows avoid one expensive month-wide query without assuming inclusive
-  // boundaries. maxPages is the TOTAL HTTP budget, including empty windows.
+  // Filters use creation time, not effective/settlement dates. Unfiltered scans
+  // target daily overlapping windows, widening for older ranges within the
+  // request budget. Order-filtered recovery preserves its original interval.
+  // maxPages is the TOTAL HTTP budget, including empty windows.
   async listActivitiesVerified(after: string, until: string, maxPages = 20, orderId?: string): Promise<AlpacaActivity[]> {
     const start = Date.parse(after); const end = Date.parse(until);
     if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end
       || !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) throw new Error('INVALID_BROKER_ACTIVITY_RANGE');
     const day = 86400000; const overlap = 1000; const maxWindows = 32;
-    if (Math.ceil((end - start - overlap) / (day - overlap)) > maxWindows) throw new Error('BROKER_ACTIVITY_WINDOW_BOUND_EXCEEDED');
+    const windowBudget = orderId ? 1 : Math.min(maxWindows, maxPages);
+    // width*N - overlap*(N-1) >= requested span, so sparse old ranges
+    // remain readable without an unconditional maximum lookback date.
+    const width = Math.max(day, Math.ceil((end - start + (windowBudget - 1) * overlap) / windowBudget));
     const activities = new Map<string, AlpacaActivity>();
     let requests = 0; let windows = 0;
     const deadline = performance.now() + 25000;
@@ -263,7 +267,7 @@ export class AlpacaBroker {
     try {
       for (let from = start; from < end;) {
         if (++windows > maxWindows) throw new Error('BROKER_ACTIVITY_WINDOW_BOUND_EXCEEDED');
-        const to = Math.min(from + day, end);
+        const to = Math.min(from + width, end);
         const seen = new Set<string>();
         let pageToken: string | undefined;
         for (;;) {

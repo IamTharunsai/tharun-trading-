@@ -30,14 +30,14 @@ test('exclusive creation-time boundaries overlap, dedupe equal evidence, and ret
   expect(get.mock.calls[2][1].params.until).toBe('2026-10-03T00:00:00.000Z');
 });
 
-test('paginates every window completely, resets cursor between windows, and keeps order_id on every page', async () => {
+test('paginates every unfiltered window completely and resets cursor between windows', async () => {
   let n = 0;
   get.mockImplementation(async (_path, { params }) => ({ data: params.page_token ? []
     : Array.from({ length: 100 }, () => ({ id: `fill-${++n}`, activity_type: 'FILL' })) }));
-  expect(await broker.listActivitiesVerified(start, end, 6, 'order-fixture')).toHaveLength(300);
+  expect(await broker.listActivitiesVerified(start, end, 6)).toHaveLength(300);
   expect(get).toHaveBeenCalledTimes(6);
   get.mock.calls.forEach(([, config], i) => {
-    expect(config.params).toMatchObject({ order_id: 'order-fixture', page_size: 100, direction: 'asc' });
+    expect(config.params).toMatchObject({ order_id: undefined, page_size: 100, direction: 'asc' });
     expect(config.params.page_token).toBe(i % 2 ? `fill-${(i + 1) / 2 * 100}` : undefined);
   });
 });
@@ -57,16 +57,44 @@ test('object key order alone is equal evidence, and repeated cursor pages still 
   await expect(broker.listActivitiesVerified(start, end)).rejects.toThrow('INVALID_BROKER_ACTIVITY_PAGE');
 });
 
-test('total HTTP budget includes empty windows; thirty days need an explicit larger caller budget', async () => {
+test('total HTTP budget includes all window pages; thirty days with64 requests retain daily windows', async () => {
   get.mockResolvedValue({ data: [] });
-  await expect(broker.listActivitiesVerified(start, '2026-10-31T00:00:00Z')).rejects.toThrow('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED');
+  expect(await broker.listActivitiesVerified(start, '2026-10-31T00:00:00Z')).toEqual([]);
   expect(get).toHaveBeenCalledTimes(20);
+  expect(get.mock.calls[0][1].params.until).toBe('2026-10-02T12:00:00.950Z');
   get.mockClear();
   expect(await broker.listActivitiesVerified(start, '2026-10-31T00:00:00Z', 64)).toEqual([]);
   expect(get).toHaveBeenCalledTimes(31);
-  get.mockClear();
-  await expect(broker.listActivitiesVerified(start, '2026-12-01T00:00:00Z', 100)).rejects.toThrow('BROKER_ACTIVITY_WINDOW_BOUND_EXCEEDED');
-  expect(get).not.toHaveBeenCalled();
+  get.mock.calls.forEach(([, { params }]) => expect(Date.parse(params.until) - Date.parse(params.after)).toBeLessThanOrEqual(86400000));
+  const full = Array.from({ length: 100 }, (_, i) => ({ id: `fill-${i}`, activity_type: 'FILL' }));
+  get.mockReset().mockResolvedValueOnce({ data: full }).mockResolvedValue({ data: [] });
+  await expect(broker.listActivitiesVerified(start, end, 3)).rejects.toThrow('BROKER_ACTIVITY_SCAN_BOUND_EXCEEDED');
+  expect(get).toHaveBeenCalledTimes(3); // full+terminal page, empty second window, no budget for third
+});
+
+test.each([90, 365])('older sparse %s-day unfiltered ranges widen windows and cover the full fixed interval', async days => {
+  const until = new Date(Date.parse(start) + days * 86400000).toISOString();
+  get.mockResolvedValue({ data: [] });
+  expect(await broker.listActivitiesVerified(start, until, 100)).toEqual([]);
+  expect(get).toHaveBeenCalledTimes(32);
+  expect(get.mock.calls[0][1].params.after).toBe(new Date(start).toISOString());
+  expect(get.mock.calls[31][1].params.until).toBe(until);
+  get.mock.calls.forEach(([, { params }], i) => {
+    expect(Date.parse(params.until) - Date.parse(params.after)).toBeGreaterThan(86400000);
+    if (i) expect(Date.parse(params.after)).toBe(Date.parse(get.mock.calls[i - 1][1].params.until) - 1000);
+  });
+});
+
+test('365-day order-filtered recovery preserves one original interval and order_id on every page', async () => {
+  const until = '2027-10-01T00:00:00Z';
+  const full = Array.from({ length: 100 }, (_, i) => ({ id: `fill-${i}`, activity_type: 'FILL' }));
+  get.mockResolvedValueOnce({ data: full }).mockResolvedValueOnce({ data: [] });
+  expect(await broker.listActivitiesVerified(start, until, 20, 'order-fixture')).toHaveLength(100);
+  expect(get).toHaveBeenCalledTimes(2);
+  get.mock.calls.forEach(([, { params }], i) => expect(params).toMatchObject({
+    after: new Date(start).toISOString(), until: new Date(until).toISOString(), order_id: 'order-fixture',
+    page_token: i ? 'fill-99' : undefined,
+  }));
 });
 
 test('later-window timeout rejects all earlier rows and preserves the safe timeout classification', async () => {
