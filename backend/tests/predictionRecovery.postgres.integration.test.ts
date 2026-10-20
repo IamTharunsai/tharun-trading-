@@ -52,6 +52,50 @@ suite('durable prediction read recovery', () => {
       ...(fee === undefined ? {} : { commissionNotionalTotalCollected: { value: fee, currency: 'USD' } }) } };
   }
 
+  function anotherWorker(): typeof recoverPredictionOrders {
+    let recover!: typeof recoverPredictionOrders;
+    // Independent module-level running flag; same disposable database, just as
+    // separate processes share PostgreSQL rather than their in-memory mutex.
+    jest.isolateModules(() => {
+      jest.doMock('../src/utils/prisma', () => ({ prisma }));
+      recover = require('../src/trading/predictionRecovery').recoverPredictionOrders;
+    });
+    jest.dontMock('../src/utils/prisma');
+    return recover;
+  }
+
+  test('two independent workers honor the persisted lease during an in-flight broker read', async () => {
+    await seed('E'); const secondWorker = anotherWorker();
+    let entered!: () => void, release!: (value: unknown) => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    const held = new Promise(resolve => { release = resolve; });
+    readOrder.mockImplementationOnce(() => { entered(); return held; });
+    const first = recoverPredictionOrders(); await reading;
+    try {
+      expect(await secondWorker()).toMatchObject({ outcome: 'LEASE_ACTIVE', processed: 0 });
+      expect(readOrder).toHaveBeenCalledTimes(1);
+    } finally { release(observation('broker-E', 'E', 5, 'ORDER_STATE_FILLED', '0.10')); await first; }
+    expect(await prisma.trade.count({ where: { accountId: scope.scopeKey } })).toBe(1);
+  });
+
+  test('lease expiry mid-read permits recovery while cumulative booking remains exactly once', async () => {
+    await seed('F'); const secondWorker = anotherWorker();
+    let entered!: () => void, release!: (value: unknown) => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    const held = new Promise(resolve => { release = resolve; });
+    readOrder.mockImplementationOnce(() => { entered(); return held; });
+    const first = recoverPredictionOrders(); await reading;
+    try {
+      await prisma.predictionRecoveryState.update({ where: { ownerId }, data: { leaseUntil: new Date(0) } });
+      expect(await secondWorker()).toMatchObject({ processed: 1, unresolved: 0 });
+      expect(readOrder).toHaveBeenCalledTimes(2);
+    } finally { release(observation('broker-F', 'F', 5, 'ORDER_STATE_FILLED', '0.10')); await first; }
+    const row = await prisma.predictionExecution.findUniqueOrThrow({ where: { id: 'F' } });
+    expect(row).toMatchObject({ status: 'FILLED', appliedQuantity: 5, appliedFees: .1, reservedUsd: 0 });
+    expect(await prisma.trade.count({ where: { accountId: scope.scopeKey } })).toBe(1);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   test('expired plans, paper entry mode and kill state do not prevent actual-shaped cumulative read recovery', async () => {
     await seed('A');
     const result = await recoverPredictionOrders();
