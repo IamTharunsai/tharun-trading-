@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": true, "rootDir": ".", "types": ["node", "jest"] },
-  "include": ["src/**/*.ts", "tests/brokerEvidence.test.ts", "tests/brokerEvidence.postgres.integration.test.ts", "tests/positionExits.behavior.test.ts", "tests/brokerEvidence.contract.test.ts", "tests/brokerSync.evidence.test.ts", "tests/portfolio.evidence.test.ts", "tests/portfolio.test.ts", "tests/portfolio.weeklyPnl.test.ts"]
+  "include": ["src/**/*.ts", "tests/activityReadWindows.contract.test.ts", "tests/brokerEvidence.test.ts", "tests/brokerEvidence.postgres.integration.test.ts", "tests/positionExits.behavior.test.ts", "tests/brokerEvidence.contract.test.ts", "tests/brokerSync.evidence.test.ts", "tests/portfolio.evidence.test.ts", "tests/portfolio.test.ts", "tests/portfolio.weeklyPnl.test.ts"]
 }

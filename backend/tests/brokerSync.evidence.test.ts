@@ -37,6 +37,9 @@ beforeEach(() => {
 });
 test('a reduced broker holding remains a distinct observation and cannot rewrite known inventory/basis', async () => {
   const result = await syncBrokerPositions(scope);
+  const [after, until, budget] = broker.listActivitiesVerified.mock.calls[0];
+  expect(Date.parse(until) - Date.parse(after)).toBe(30 * 86400000);
+  expect(budget).toBe(64);
   const update = (prisma.position.upsert as jest.Mock).mock.calls[0][0].update;
   expect(update).toMatchObject({ brokerObservedQuantity: 6, brokerObservedEntryPrice: 101 });
   expect(update).not.toHaveProperty('quantity'); expect(update).not.toHaveProperty('entryPrice');
