@@ -344,6 +344,22 @@ export class AlpacaBroker {
     return response.data;
   }
 
+  // https://docs.alpaca.markets/us/docs/crypto-trading
+  // Return only actual active/tradable USD pairs from this authenticated broker.
+  // Account/jurisdiction, order precision and execution authority remain separate.
+  async listTradableCryptoAssetsVerified(): Promise<string[]> {
+    const response = await this.client.get('/v2/assets', { params: { status: 'active', asset_class: 'crypto' } });
+    if (!Array.isArray(response.data) || response.data.length > 5000) throw new Error('CRYPTO_ASSETS_UNAVAILABLE');
+    const assets = new Set<string>();
+    for (const row of response.data) {
+      if (!row || typeof row.symbol !== 'string' || typeof row.tradable !== 'boolean'
+        || typeof row.status !== 'string' || typeof row.class !== 'string') throw new Error('CRYPTO_ASSETS_UNAVAILABLE');
+      const match = /^([A-Z0-9]{1,20})\/USD$/.exec(row.symbol);
+      if (row.class === 'crypto' && row.status === 'active' && row.tradable && match) assets.add(match[1]);
+    }
+    return [...assets].sort();
+  }
+
   async listOrdersVerified(status: 'open' | 'closed' | 'all' = 'open', limit = 500): Promise<AlpacaOrder[]> {
     const response = await this.client.get('/v2/orders', { params: { status, limit, nested: true } });
     if (!Array.isArray(response.data)) throw new Error('Broker orders response is not an array');
