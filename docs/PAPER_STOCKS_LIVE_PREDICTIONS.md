@@ -2,8 +2,14 @@
 
 Alpaca stock/crypto routing can be explicitly restricted to paper with
 `ALPACA_TRADING_MODE=paper`. This remains paper even if the shared live mode is
-confirmed and stock live credentials are subsequently configured. Account
-bootstrap and the trading broker both consult the same gate.
+confirmed and stock live credentials are subsequently configured. The
+environment-account bootstrap and trading broker consult the same gate.
+
+Account-manager display/synchronization is a separate existing path: it can
+restore a saved connection's account mode, and its generic environment keys can
+differ from the dedicated paper credentials selected for trading. The paper pin
+restricts order routing; it does not certify that every saved connection read or
+account-manager display is using the trading account.
 
 The override is an additional restriction. Setting it to `live` still requires
 all existing global mode, exact confirmation and Alpaca live credential checks.
