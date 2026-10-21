@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "rootDir": ".", "types": ["node", "jest"], "noEmit": true },
-  "include": ["src/**/*", "tests/predictionRecovery*.ts", "tests/predictionReduction*.ts", "tests/predictionHoldingAuthority.test.ts", "tests/predictionActivityEvidence.test.ts", "tests/predictionExecution.authority.test.ts", "tests/polymarketUSExecution.test.ts"],
+  "include": ["src/**/*", "tests/predictionRecovery*.ts", "tests/predictionReduction*.ts", "tests/predictionHolding*.ts", "tests/predictionActivityEvidence.test.ts", "tests/predictionExecution.authority.test.ts", "tests/polymarketUSExecution.test.ts"],
   "exclude": ["node_modules", "dist"]
 }

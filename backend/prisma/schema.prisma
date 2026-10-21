@@ -1094,6 +1094,7 @@ model PredictionReduction {
   sideMinPrice Float
   authorityGeneration Int
   planExpiresAt DateTime
+  policyEvidence Json?
   status String @default("PREPARING")
   brokerOrderId String? @unique
   appliedQuantity Float @default(0)
@@ -1122,6 +1123,7 @@ model PredictionRecoveryState {
   ownerId                 String @id
   boundCredentialScopeKey String?
   cursorId                String?
+  holdingCursorId         String?
   leaseId                 String?
   leaseUntil              DateTime?
   lastStartedAt           DateTime?

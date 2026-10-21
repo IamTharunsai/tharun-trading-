@@ -19,6 +19,9 @@ import { prisma } from '../utils/prisma';
 import { getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import * as M from '../trading/predictionMath';
 import type { PredictionVenue, VenueBook, VenueMarket } from './predictionVenue';
+import { decideExit } from '../trading/predictionExitDecision';
+export { decideExit } from '../trading/predictionExitDecision';
+export type { ExitDecision } from '../trading/predictionExitDecision';
 
 const db = prisma as any;
 const VENUE_TAG = 'polymarket_us';
@@ -447,21 +450,6 @@ export async function processPaperOrders(venue: PredictionVenue, cfg = readEdgeC
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
-
-export type ExitDecision = { exit: false } | { exit: true; reason: 'tp_converged' | 'edge_flipped' | 'evidence_changed' };
-
-/** Pure exit rules for one position. */
-export function decideExit(args: {
-  side: M.Side; entryPrice: number; exitPrice: number; fairNowYes: number | null; fairAtEntrySide: number | null; cfg: EdgeConfig;
-}): ExitDecision {
-  if (args.fairNowYes == null) return { exit: false };
-  const fairSide = args.side === 'YES' ? args.fairNowYes : 1 - args.fairNowYes;
-  // Thesis checks first, so a collapse in fair value is labelled as such.
-  if (fairSide < args.entryPrice - args.cfg.exitEdge) return { exit: true, reason: 'edge_flipped' };
-  if (args.fairAtEntrySide != null && fairSide < args.fairAtEntrySide - args.cfg.evidenceShift) return { exit: true, reason: 'evidence_changed' };
-  if (args.exitPrice >= fairSide - args.cfg.tpBuffer) return { exit: true, reason: 'tp_converged' };
-  return { exit: false };
-}
 
 async function closeTrade(t: any, exitPrice: number, exitFee: number, reason: string) {
   const qty = Number(t.quantity) || 0;

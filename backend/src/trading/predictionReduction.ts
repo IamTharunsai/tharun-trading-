@@ -1,17 +1,20 @@
 import { createHash } from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../utils/prisma';
-import { getPolymarketUSCredentialScope, getPolymarketUSExecutionSnapshot, getPolymarketUSOrder, polymarketUSVenue } from '../services/polymarketUS';
+import { getPolymarketUSCredentialScope, getPolymarketUSExecutionSnapshot, getPolymarketUSOrder, getPolymarketUSMarket, polymarketUSVenue } from '../services/polymarketUS';
 import { bindPolymarketUSRest } from '../services/polymarketUSRest';
 import { readPredictionGeneration, advancePredictionGeneration, predictionPendingStates } from './predictionAuthority';
 import { ensurePredictionRecoveryScope } from './predictionRecoveryScope';
 import { parsePredictionReductionEvidence, assertReductionProgress, projectPredictionHolding } from './predictionReductionEvidence';
+import { holdingPolicyEvidenceSchema, assertPredictionHoldingPolicy, predictionMarketPolicyFingerprint } from './predictionHoldingPolicy';
 
 const db = prisma as any;
 const pending = ['PREPARING', 'SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED'];
 const requestSchema = z.object({ requestKey: z.string().min(1).max(128), quantity: z.number().finite().positive().max(Number.MAX_SAFE_INTEGER / 100),
-  sideMinPrice: z.number().finite().min(.01).max(.99) });
+  sideMinPrice: z.number().finite().min(.01).max(.99), policyEvidence: holdingPolicyEvidenceSchema.optional() });
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+export const predictionReductionClaimKey = (ownerId: string, scopeKey: string, openingId: string, requestKey: string) =>
+  hash([ownerId, scopeKey, openingId, requestKey]);
 
 async function assertOwner(tx: any, ownerId: string) {
   const owner = await tx.user.findUnique({ where: { id: ownerId }, select: { role: true, email: true } });
@@ -60,7 +63,7 @@ async function loadHolding(tx: any, openingId: string) {
     remainingBasis: opening.appliedNotional + opening.appliedFees, realizedPnl: 0 } });
 }
 
-/** Explicit service capability only; no route or automatic policy calls it.
+/** Explicit service capability; an unscheduled holding runner can invoke it.
  * Entry flags/qualification expiry do not authorize or prevent reduction. */
 export async function reducePredictionHolding(openingId: string, input: z.infer<typeof requestSchema>) {
   const plan = requestSchema.parse(input), scope = getPolymarketUSCredentialScope();
@@ -68,7 +71,8 @@ export async function reducePredictionHolding(openingId: string, input: z.infer<
   if (!opening || opening.credentialScopeKey !== scope.scopeKey) throw new Error('REDUCTION_GRANT_UNAVAILABLE');
   const generation = await readPredictionGeneration(db, scope.scopeKey);
   const snapshot = await getPolymarketUSExecutionSnapshot();
-  const market = (await polymarketUSVenue.listMarkets(500)).find(m => m.id === opening.marketSlug);
+  const market = plan.policyEvidence ? await getPolymarketUSMarket(opening.marketSlug)
+    : (await polymarketUSVenue.listMarkets(500)).find(m => m.id === opening.marketSlug);
   const book = market ? await polymarketUSVenue.getBook(market.id) : null;
   const now = Date.now();
   if (!market || !market.open || !market.executionMetadataVerified || !Number.isFinite(market.tickSize) || market.tickSize < .000001 || market.tickSize > .1
@@ -89,11 +93,13 @@ export async function reducePredictionHolding(openingId: string, input: z.infer<
     const holding = await loadHolding(tx, openingId);
     const available = assertPosition(snapshot, holding);
     if (plan.quantity > available) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
+    await assertPredictionHoldingPolicy(tx, plan.policyEvidence, opening, holding, plan, predictionMarketPolicyFingerprint(market));
     const authorityGeneration = await advancePredictionGeneration(tx, scope.scopeKey);
-    return tx.predictionReduction.create({ data: { claimKey: hash([opening.ownerId, scope.scopeKey, openingId, plan.requestKey]),
+    return tx.predictionReduction.create({ data: { claimKey: predictionReductionClaimKey(opening.ownerId, scope.scopeKey, openingId, plan.requestKey),
       openingExecutionId: openingId, ownerId: opening.ownerId, credentialScopeKey: scope.scopeKey, credentialIdentity: scope.identity,
       marketSlug: holding.marketSlug, side: holding.side, quantity: plan.quantity, sideMinPrice: plan.sideMinPrice,
-      authorityGeneration, planExpiresAt: new Date(Math.min(snapshot.observedAt, book.fetchedAt) + 5000) } });
+      authorityGeneration, ...(plan.policyEvidence ? { policyEvidence: plan.policyEvidence } : {}),
+      planExpiresAt: new Date(Math.min(Math.min(snapshot.observedAt, book.fetchedAt) + 5000, plan.policyEvidence?.expiresAt ?? Infinity)) } });
   });
   return submitPredictionReduction(claim.id);
 }
@@ -106,14 +112,18 @@ async function submitPredictionReduction(id: string) {
     if (!claim || claim.status !== 'PREPARING' || claim.credentialScopeKey !== scope.scopeKey || claim.credentialIdentity !== scope.identity) throw new Error('REDUCTION_CLAIM_UNAVAILABLE');
     const request = bindPolymarketUSRest(process.env.POLYMARKET_KEY_ID!, process.env.POLYMARKET_SECRET_KEY!);
     const snapshot = await getPolymarketUSExecutionSnapshot();
+    // Policy-backed reductions recheck actual market metadata as well as the
+    // stored original forecast/quote expiry. Explicit existing calls retain
+    // their existing submission path.
+    const market = claim.policyEvidence ? await getPolymarketUSMarket(claim.marketSlug) : null;
     await db.$transaction(async (tx: any) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scope.scopeKey}))`;
       await ensurePredictionRecoveryScope(tx, claim.ownerId, scope.scopeKey);
       await assertOwner(tx, claim.ownerId);
       const current = await tx.predictionReduction.findUnique({ where: { id } });
       if (!current || current.status !== 'PREPARING' || hash([current.openingExecutionId, current.quantity, current.sideMinPrice, current.side, current.marketSlug,
-        current.ownerId, current.credentialScopeKey, current.credentialIdentity, current.authorityGeneration, current.planExpiresAt]) !== hash([claim.openingExecutionId,
-        claim.quantity, claim.sideMinPrice, claim.side, claim.marketSlug, claim.ownerId, claim.credentialScopeKey, claim.credentialIdentity, claim.authorityGeneration, claim.planExpiresAt])
+        current.ownerId, current.credentialScopeKey, current.credentialIdentity, current.authorityGeneration, current.planExpiresAt, current.policyEvidence]) !== hash([claim.openingExecutionId,
+        claim.quantity, claim.sideMinPrice, claim.side, claim.marketSlug, claim.ownerId, claim.credentialScopeKey, claim.credentialIdentity, claim.authorityGeneration, claim.planExpiresAt, claim.policyEvidence])
         || await readPredictionGeneration(tx, scope.scopeKey) !== claim.authorityGeneration
         || snapshot.identity !== scope.identity || new Date(claim.planExpiresAt).getTime() <= Date.now()) throw new Error('REDUCTION_AUTHORITY_CHANGED');
       if (await tx.predictionExecution.findFirst({ where: { credentialScopeKey: scope.scopeKey, status: { in: predictionPendingStates } } })
@@ -121,6 +131,11 @@ async function submitPredictionReduction(id: string) {
       const holding = await loadHolding(tx, claim.openingExecutionId);
       const available = assertPosition(snapshot, holding);
       if (claim.quantity > available) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
+      if (claim.policyEvidence) {
+        if (!market) throw new Error('HOLDING_POLICY_MARKET_UNAVAILABLE');
+        const opening = await tx.predictionExecution.findUnique({ where: { id: claim.openingExecutionId } });
+        await assertPredictionHoldingPolicy(tx, claim.policyEvidence, opening, holding, claim, predictionMarketPolicyFingerprint(market));
+      }
       const taken = await tx.predictionReduction.updateMany({ where: { id, status: 'PREPARING' }, data: { status: 'SUBMITTING' } });
       if (taken.count !== 1) throw new Error('REDUCTION_ALREADY_CONSUMED');
       await advancePredictionGeneration(tx, scope.scopeKey);
