@@ -4,6 +4,7 @@ import { AccountScope, getVerifiedAccountScope, positionScopeKey } from '../trad
 import { reconcileExecutionIntents } from '../trading/executionEngine';
 import { reconcilePositionExits, verifyPositionInventory } from '../trading/positionExits';
 import { markAccountingUnknown, reconcileProtectionEvidence, retainBrokerActivities } from '../trading/brokerEvidence';
+import { operatingError } from '../trading/operatingDiagnostics';
 
 export interface BrokerSyncResult { imported: string[]; updated: string[]; closed: string[]; unresolved?: string[]; skipped?: string; activityEvidence?: string; }
 let lastResult: BrokerSyncResult & { at?: string } = { imported: [], updated: [], closed: [] };
@@ -22,6 +23,8 @@ export async function syncBrokerPositions(suppliedScope?: AccountScope): Promise
     return lastResult = { imported: [], updated: [], closed: [], skipped: 'Broker account evidence unavailable' };
   }
   const result: BrokerSyncResult = { imported: [], updated: [], closed: [], unresolved: [] };
+  let activityFailureReason: string | null = null;
+  const unresolvedReasonCounts: Record<string, number> = {};
   const held = new Map<string, { asset: string; market: string; quantity: number; entryPrice: number; currentPrice: number; side: string; brokerPositionId: string }>();
   for (const observation of observations) {
     if (!['us_equity', 'crypto'].includes(observation.asset_class)) return lastResult = { ...result, skipped: 'Unsupported broker asset class' };
@@ -37,9 +40,12 @@ export async function syncBrokerPositions(suppliedScope?: AccountScope): Promise
   // Overlap creation-time scans for delayed fees. This bounded scan is explicitly
   // not proof of complete historical activity or fee finality.
   try {
-    await retainBrokerActivities(scope, await scope.broker.listActivitiesVerified(new Date(Date.now() - 30 * 86400000).toISOString(), new Date().toISOString()));
+    const until = new Date();
+    // 30 days require 31 overlapping daily windows even for an empty account.
+    // 64 is a total request budget, not 64 pages per window.
+    await retainBrokerActivities(scope, await scope.broker.listActivitiesVerified(new Date(until.getTime() - 30 * 86400000).toISOString(), until.toISOString(), 64));
     result.activityEvidence = 'RECENT_ACTIVITY_RETAINED_HISTORY_NOT_CERTIFIED';
-  } catch { result.activityEvidence = 'ACTIVITY_EVIDENCE_UNAVAILABLE'; }
+  } catch (error) { result.activityEvidence = 'ACTIVITY_EVIDENCE_UNAVAILABLE'; activityFailureReason = operatingError(error); }
   const dbOpen = await prisma.position.findMany({ where: { accountId: scope.accountId, brokerMode: scope.mode, status: 'OPEN' } });
   const positionIds = new Set(dbOpen.map(position => position.id));
   for (const [asset, observation] of held) {
@@ -92,11 +98,14 @@ export async function syncBrokerPositions(suppliedScope?: AccountScope): Promise
       const verified = await verifyPositionInventory(positionId, scope);
       if (verified.quantity === 0) result.closed.push(position.asset);
     } catch (error: any) {
+      const reason = operatingError(error);
+      unresolvedReasonCounts[reason] = Math.min(1000000, (unresolvedReasonCounts[reason] ?? 0) + 1);
       result.unresolved!.push(position.asset);
       await markAccountingUnknown(positionId, error?.message || 'BROKER_EVIDENCE_UNAVAILABLE');
     }
   }
   lastResult = { ...result, at: new Date().toISOString() };
-  logger.info('Broker observations and execution inventory reconciled', { mode: scope.mode, unresolved: result.unresolved?.length });
+  logger.info('broker_reconciliation_observed', { mode: scope.mode, unresolved: Math.min(1000000, result.unresolved?.length ?? 0),
+    activityEvidence: result.activityEvidence, activityFailureReason, unresolvedReasonCounts });
   return lastResult;
 }

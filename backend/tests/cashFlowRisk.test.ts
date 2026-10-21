@@ -6,7 +6,44 @@ import { Prisma } from '@prisma/client';
 import { RISK_STEP_MS as STEP, RiskPoint, parseRiskHistory, computeCashFlowRisk, capitalCoverage, activityEvidence } from '../src/services/cashFlowRisk';
 import { validateTradeSignal } from '../src/trading/riskManager';
 import type { PortfolioState, TradeSignal } from '../src/agents/types';
+import { operatingError, operatingReason } from '../src/trading/operatingDiagnostics';
 const D = Prisma.Decimal;
+describe('risk history envelope diagnostics without financial assumptions', () => {
+  const valid = { timeframe: '5Min', timestamp: [0], equity: [100], cashflow: {} };
+  test.each([
+    [null, 'ENVELOPE'],
+    [undefined, 'ENVELOPE'],
+    [[], 'ENVELOPE'],
+    ['untrusted response text', 'ENVELOPE'],
+    [{}, 'TIMEFRAME'],
+    [{ ...valid, timeframe: '5min' }, 'TIMEFRAME'],
+    [{ ...valid, timestamp: null }, 'ARRAYS'],
+    [{ ...valid, equity: 'not an array' }, 'ARRAYS'],
+    [{ ...valid, equity: [] }, 'LENGTHS'],
+    [{ timeframe: '5Min', timestamp: [0], equity: [100] }, 'CASHFLOW_MISSING'],
+    [{ ...valid, cashflow: undefined }, 'CASHFLOW_MISSING'],
+    [{ ...valid, cashflow: null }, 'CASHFLOW_NULL'],
+    [{ ...valid, cashflow: [] }, 'CASHFLOW_ARRAY'],
+    [{ ...valid, cashflow: 'untrusted response text' }, 'CASHFLOW_INVALID_TYPE'],
+    [{ ...valid, cashflow: false }, 'CASHFLOW_INVALID_TYPE'],
+    [{ ...valid, cashflow: 0 }, 'CASHFLOW_INVALID_TYPE'],
+  ])('rejects malformed field shape with a fixed exact reason (%#)', (history, suffix) => {
+    const reason = `INVALID_RISK_HISTORY_${suffix}`;
+    expect(() => parseRiskHistory(history as any, new Date(0), new Date(STEP))).toThrow(new RegExp(`^${reason}$`));
+    expect(operatingReason(reason)).toBe(reason);
+    expect(operatingError(new Error(reason))).toBe(reason);
+  });
+  test('keeps array contents and coverage validation separate from envelope errors', () => {
+    expect(() => parseRiskHistory({ ...valid, cashflow: { CSD: [] } }, new Date(0), new Date(STEP))).toThrow(/^INVALID_CASHFLOW_ARRAYS$/);
+    expect(() => parseRiskHistory({ ...valid, equity: [NaN] }, new Date(0), new Date(STEP))).toThrow(/^INVALID_RISK_EQUITY$/);
+    expect(() => parseRiskHistory({ ...valid, timestamp: [], equity: [] }, new Date(0), new Date(STEP))).toThrow(/^RISK_HISTORY_COVERAGE_GAP$/);
+  });
+  test('retains a supplied empty cashflow object and never normalizes missing evidence', () => {
+    expect(parseRiskHistory(valid, new Date(0), new Date(STEP))).toHaveLength(1);
+    expect(() => parseRiskHistory({ ...valid, cashflow: undefined } as any, new Date(0), new Date(STEP))).toThrow(/^INVALID_RISK_HISTORY_CASHFLOW_MISSING$/);
+    expect(operatingReason('INVALID_RISK_HISTORY_TIMEFRAME: account or raw values')).toBe('OTHER_EVIDENCE_FAILURE');
+  });
+});
 const reference = new Date('2026-10-08T00:00:00Z');
 const asOf = new Date('2026-10-16T12:00:00Z');
 const now = new Date(asOf.getTime() + 30_000);

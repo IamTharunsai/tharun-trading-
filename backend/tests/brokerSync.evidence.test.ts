@@ -12,6 +12,7 @@ import { syncBrokerPositions } from '../src/services/brokerSync';
 import { verifyPositionInventory } from '../src/trading/positionExits';
 import { markAccountingUnknown } from '../src/trading/brokerEvidence';
 import type { AccountScope } from '../src/trading/accountScope';
+import { logger } from '../src/utils/logger';
 const broker = { listPositionsVerified: jest.fn(), listActivitiesVerified: jest.fn(), createOrder: jest.fn() };
 const scope = { broker, accountId: 'fixture', mode: 'paper' } as unknown as AccountScope;
 let position: any; let importedPosition: any;
@@ -36,6 +37,9 @@ beforeEach(() => {
 });
 test('a reduced broker holding remains a distinct observation and cannot rewrite known inventory/basis', async () => {
   const result = await syncBrokerPositions(scope);
+  const [after, until, budget] = broker.listActivitiesVerified.mock.calls[0];
+  expect(Date.parse(until) - Date.parse(after)).toBe(30 * 86400000);
+  expect(budget).toBe(64);
   const update = (prisma.position.upsert as jest.Mock).mock.calls[0][0].update;
   expect(update).toMatchObject({ brokerObservedQuantity: 6, brokerObservedEntryPrice: 101 });
   expect(update).not.toHaveProperty('quantity'); expect(update).not.toHaveProperty('entryPrice');
@@ -48,6 +52,28 @@ test('broker-flat without known execution evidence retains unknown attribution a
   const result = await syncBrokerPositions(scope);
   expect(result.unresolved).toContain('AAPL'); expect(broker.createOrder).not.toHaveBeenCalled();
   expect(prisma.position.upsert).not.toHaveBeenCalled();
+});
+
+test('distinguishes activity transport failure from unresolved inventory without leaking broker text', async () => {
+  broker.listActivitiesVerified.mockRejectedValueOnce(Object.assign(new Error('PRIVATE_ACCOUNT_AND_TOKEN'), { code: 'ECONNABORTED' }));
+  const result = await syncBrokerPositions(scope);
+  expect(result.activityEvidence).toBe('ACTIVITY_EVIDENCE_UNAVAILABLE');
+  expect(logger.info).toHaveBeenCalledWith('broker_reconciliation_observed', {
+    mode: 'paper', unresolved: 1, activityEvidence: 'ACTIVITY_EVIDENCE_UNAVAILABLE',
+    activityFailureReason: 'TRANSPORT_TIMEOUT_OR_CANCEL',
+    unresolvedReasonCounts: { BROKER_INVENTORY_AND_EXECUTION_LOTS_DISAGREE: 1 },
+  });
+  expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toMatch(/PRIVATE_|AAPL|fixture/);
+  expect(broker.createOrder).not.toHaveBeenCalled();
+});
+
+test('unknown per-position errors remain unresolved and cannot enter diagnostic logs', async () => {
+  (verifyPositionInventory as jest.Mock).mockRejectedValueOnce(new Error('PRIVATE_ACCOUNT_AND_TOKEN'));
+  expect((await syncBrokerPositions(scope)).unresolved).toEqual(['AAPL']);
+  expect(logger.info).toHaveBeenCalledWith('broker_reconciliation_observed', expect.objectContaining({
+    activityFailureReason: null, unresolvedReasonCounts: { OTHER_EVIDENCE_FAILURE: 1 },
+  }));
+  expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toContain('PRIVATE_');
 });
 test('an unmatched holding gets a visible OPEN opening balance while its closed historical cycle stays preserved', async () => {
   position.status = 'CLOSED';

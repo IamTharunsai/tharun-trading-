@@ -16,3 +16,4 @@ test('unknown weekly coverage remains null while NAV is still available', async 
   (getCashFlowRisk as jest.Mock).mockResolvedValue({ complete: false, dailyPnl: null, dailyPnlPct: null, weeklyPnlPct: null, drawdownPct: null });
   expect(await getPortfolioState()).toMatchObject({ totalValue: 106000, pnlWeekPct: null, riskDataComplete: false });
 });
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn() } }));

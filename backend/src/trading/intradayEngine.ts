@@ -10,7 +10,7 @@ import { appConfig } from '../utils/config';
 import { universe } from '../services/universeService';
 import { routedMessagesCreate, parseJsonLoose, stripReasoning } from '../utils/llmRouter';
 import { closePosition } from './riskManager';
-import { getVerifiedAccountScope } from './accountScope';
+import { getVerifiedAccountScope, AccountScope } from './accountScope';
 import { isKillSwitchActive } from '../agents/orchestrator';
 
 // ── configuration (all overridable from Railway env) ──────────────────────────
@@ -219,9 +219,9 @@ function startOfEtDay(): Date {
   return new Date(et.getTime() + offsetMs);
 }
 
-async function intradayTradesToday() {
+async function intradayTradesToday(scope: AccountScope) {
   const trades = await prisma.trade.findMany({
-    where: { openedAt: { gte: startOfEtDay() }, market: 'stocks' },
+    where: { accountId: scope.accountId, brokerMode: scope.mode, openedAt: { gte: startOfEtDay() }, market: 'stocks' },
     select: { status: true, pnl: true, metadata: true },
   });
   const lane = trades.filter((t: any) => (t.metadata as any)?.lane === 'INTRADAY');
@@ -233,7 +233,10 @@ async function intradayTradesToday() {
 
 export async function getIntradayStatus() {
   const cfg = intradayConfig();
-  const today = await intradayTradesToday().catch(() => ({ count: 0, realizedPnl: 0 }));
+  // The owner status route already treats failed evidence as unavailable.
+  // Do not label another account's history, or a failed read, as zero activity.
+  const scope = await getVerifiedAccountScope();
+  const today = await intradayTradesToday(scope);
   return { enabled: cfg.enabled, tradesToday: today.count, maxPerDay: cfg.maxTradesPerDay, realizedPnlToday: today.realizedPnl, notionalUsd: cfg.notionalUsd, lastScan };
 }
 
@@ -260,12 +263,13 @@ export async function runIntradayScan(opts: { force?: boolean } = {}) {
     const minutes = etNow.getHours() * 60 + etNow.getMinutes();
     if (!opts.force && (minutes < 9 * 60 + 40 || minutes > 15 * 60 + 30)) { lastScan = { at: new Date().toISOString(), candidates: 0, scored: 0, passed: 0, entered: [], note: 'outside entry window (9:40–15:30 ET)' }; return lastScan; }
 
-    const today = await intradayTradesToday();
+    const scope = await getVerifiedAccountScope();
+    const today = await intradayTradesToday(scope);
     if (today.count >= cfg.maxTradesPerDay) { lastScan = { at: new Date().toISOString(), candidates: 0, scored: 0, passed: 0, entered: [], note: `daily cap ${cfg.maxTradesPerDay} reached` }; return lastScan; }
     if (today.realizedPnl <= -cfg.maxDailyLossUsd) { lastScan = { at: new Date().toISOString(), candidates: 0, scored: 0, passed: 0, entered: [], note: `intraday daily loss limit -$${cfg.maxDailyLossUsd} hit` }; return lastScan; }
 
-    const open = await prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true } });
-    const openIntraday = await prisma.trade.count({ where: { status: 'OPEN', openedAt: { gte: startOfEtDay() }, metadata: { path: ['lane'], equals: 'INTRADAY' } } }).catch(() => 0);
+    const open = await prisma.position.findMany({ where: { accountId: scope.accountId, brokerMode: scope.mode, status: 'OPEN' }, select: { asset: true } });
+    const openIntraday = await prisma.trade.count({ where: { accountId: scope.accountId, brokerMode: scope.mode, status: 'OPEN', openedAt: { gte: startOfEtDay() }, metadata: { path: ['lane'], equals: 'INTRADAY' } } });
     const slots = Math.min(cfg.entriesPerScan, cfg.maxOpen - openIntraday, cfg.maxTradesPerDay - today.count);
     if (slots <= 0) { lastScan = { at: new Date().toISOString(), candidates: 0, scored: 0, passed: 0, entered: [], note: `max open intraday positions (${cfg.maxOpen})` }; return lastScan; }
 
