@@ -25,4 +25,13 @@ export async function assertPredictionRecoveryScope(tx: any, ownerId: string, sc
       'PREPARING', 'SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED',
     ] } } });
   if (other) throw new Error('OTHER_GRANT_REQUIRES_RECONCILIATION');
+  // Local reduction proceeds are not account-wide loss/settlement coverage.
+  // Do not let a newly zero broker position erase the retained opening basis
+  // or make a closed position look like a loss-free account for another entry.
+  const reduction = await tx.predictionReduction.findFirst({ where: { ownerId, OR: [
+    { status: { notIn: ['ABORTED', 'TERMINAL'] } },
+    { appliedQuantity: { not: 0 } }, { appliedProceeds: { not: 0 } },
+    { status: 'TERMINAL', OR: [{ appliedFees: null }, { appliedFees: { not: 0 } }, { terminalObserved: false }] },
+  ] } });
+  if (reduction) throw new Error('REDUCTION_LOSS_COVERAGE_REQUIRES_RECONCILIATION');
 }

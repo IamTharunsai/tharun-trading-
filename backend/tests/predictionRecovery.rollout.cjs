@@ -23,6 +23,12 @@ async function run() {
     assert.equal(row.executionReferences, null); assert.equal(row.activityEvidence, null); assert.equal(row.cancelAttemptedAt, null);
     const security = await db.$queryRaw`SELECT relrowsecurity FROM pg_class WHERE relname = 'PredictionRecoveryState'`;
     assert.equal(security[0].relrowsecurity, true);
+    for (const name of ['PredictionHolding', 'PredictionReduction', 'PredictionReductionObservation']) {
+      const tables = await db.$queryRaw`SELECT relrowsecurity FROM pg_class WHERE relname = ${name}`;
+      assert.equal(tables[0].relrowsecurity, true);
+    }
+    assert.equal(await db.predictionHolding.count(), 0);
+    assert.equal(await db.predictionReduction.count(), 0);
   } else throw Error('Unknown rollout fixture stage');
   process.stdout.write('prediction recovery rollout ' + process.argv[2] + ' passed\n');
 }

@@ -6,6 +6,7 @@ import { reconcilePredictionExecution } from './predictionExecution';
 import { predictionPendingStates } from './predictionAuthority';
 import { ensurePredictionRecoveryScope } from './predictionRecoveryScope';
 import { candidateExecutionActivityJoin, parseStoredExecutionReferences } from './predictionActivityEvidence';
+import { recoverPredictionReductions } from './predictionReduction';
 
 const db = prisma as any;
 let running = false;
@@ -68,10 +69,18 @@ export async function recoverPredictionOrders() {
         }
       } catch { unresolved++; }
     }
+    // Extend only the lease we still own before the separate bounded reduction
+    // read phase. No reduction submitter is called by recovery.
+    const renewed = await db.predictionRecoveryState.updateMany({ where: { ownerId: owner.id, leaseId },
+      data: { leaseUntil: new Date(Date.now() + 60000) } });
+    if (renewed.count === 1) unresolved += await recoverPredictionReductions(owner.id, scope.scopeKey);
+    const reductionPending = await db.predictionReduction.count({ where: { ownerId: owner.id, status: { in: [
+      'PREPARING', 'SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'RECONCILIATION_REQUIRED',
+    ] } } });
     const otherGrantPending = await db.predictionExecution.count({ where: { ownerId: owner.id,
       credentialScopeKey: { not: scope.scopeKey }, status: { in: predictionPendingStates } } });
     const pendingCount = await db.predictionExecution.count({ where: { ownerId: owner.id, status: { in: predictionPendingStates } } });
-    unresolved = Math.min(1000000, Math.max(unresolved, pendingCount));
+    unresolved = Math.min(1000000, Math.max(unresolved, pendingCount + reductionPending));
     const outcome = !acquired.allowed || otherGrantPending ? 'GRANT_REVIEW_REQUIRED'
       : unresolved ? 'RECOVERY_INCOMPLETE' : processed ? 'KNOWN_ORDERS_OBSERVED' : 'NO_PENDING_ORDERS';
     await db.predictionRecoveryState.updateMany({ where: { ownerId: owner.id, leaseId }, data: {
