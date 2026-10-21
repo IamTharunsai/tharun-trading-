@@ -2,6 +2,30 @@ jest.mock('axios', () => ({ __esModule: true, default: { create: jest.fn() } }))
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 import axios from 'axios';
 import { AlpacaBroker } from '../src/services/alpacaBroker';
+
+test('finite activity read uses verified account origin, fixed cutoff and complete HTTP SSE', async () => {
+  const stream = Object.assign((async function* () { yield Buffer.from(': heartbeat\n\n'); })(), { complete: true, destroy: jest.fn() });
+  const get = jest.fn().mockResolvedValue({ status: 200, headers: { 'content-type': 'text/event-stream' }, data: stream });
+  (axios.create as jest.Mock).mockReturnValue({ get });
+  const broker = new AlpacaBroker('dummy', 'dummy', true);
+  jest.spyOn(broker, 'getAccount').mockResolvedValue({ id: 'fixture', currency: 'USD', created_at: '2026-03-01T00:00:01Z' } as any);
+  expect(await broker.getActivityHistoryVerified('fixture', '2026-10-16T12:00:00Z')).toMatchObject({ accountId: 'fixture', events: [], transportComplete: true });
+  expect(get).toHaveBeenCalledWith('/v2beta1/events/activities', expect.objectContaining({
+    params: { since: '2026-03-01T00:00:00.000Z', until: '2026-10-16T12:00:00Z' }, responseType: 'stream',
+    maxRedirects: 0, decompress: false, signal: expect.anything(),
+  }));
+  expect(stream.destroy).toHaveBeenCalled();
+});
+
+test('activity transport without complete HTTP message cannot certify capital coverage', async () => {
+  const stream = Object.assign((async function* () {})(), { complete: false, destroy: jest.fn() });
+  const get = jest.fn().mockResolvedValue({ status: 200, headers: { 'content-type': 'text/event-stream' }, data: stream });
+  (axios.create as jest.Mock).mockReturnValue({ get });
+  const broker = new AlpacaBroker('dummy', 'dummy', true);
+  jest.spyOn(broker, 'getAccount').mockResolvedValue({ id: 'fixture', currency: 'USD', created_at: '2026-03-01T00:00:01Z' } as any);
+  await expect(broker.getActivityHistoryVerified('fixture', '2026-10-16T12:00:00Z')).rejects.toThrow('ACTIVITY_HISTORY_HTTP_INCOMPLETE');
+  expect(stream.destroy).toHaveBeenCalled();
+});
 test('history explicitly requests all cashflows and continuous fixed completed bins', async () => {
   const get = jest.fn().mockResolvedValue({ data: { timeframe: '5Min', timestamp: [], equity: [], cashflow: {} } });
   (axios.create as jest.Mock).mockReturnValue({ get });

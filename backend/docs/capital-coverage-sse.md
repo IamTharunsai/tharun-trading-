@@ -1,0 +1,14 @@
+# Missing cashflow: corroborated no-capital evidence
+
+The Trading API finite activity stream is documented at
+https://docs.alpaca.markets/us/reference/subscribetoactivitiessse . Its normal completed HTTP response to an explicit since/until query is used as query completion; status 200 without complete transport is insufficient. Error/drop comments, truncated frames, unknown comments, non-UTF8 data, account mismatch, unknown event shapes and resource bounds reject evidence.
+
+https://docs.alpaca.markets/us/docs/activity-sse documents financial activity history booked after February 11, 2026, business-time `at` filtering, and late backfills. This implementation narrows eligibility to accounts created after that documented origin and queries from one second before verified creation through one fixed observation cutoff. It does not claim older account lifetime retention. The 4 MiB / 10,000 event / 30 second limits can intentionally leave a busy account unavailable.
+
+Only an omitted raw portfolio-history cashflow field invokes this fallback. An explicit cashflow object follows the existing path. Null, array and scalar fields remain rejected. The parser receives a derived empty object only after finite, account-bound SSE evidence corroborates no possible external capital during the entire retained risk horizon. The original response is not mutated; its stored history envelope links to the append-only coverage observation. Unknown types/statuses/currencies block corroboration. External CSD/CSW/ACATC events block if their conservative union of business timestamp, execution timestamp and settlement-date uncertainty can overlap that horizon. Nonzero flows are never allocated to a guessed bucket.
+
+Every new missing-cashflow refresh reads a new full-origin observation. A late old-effective capital event therefore invalidates verification, including retained portfolio snapshot risk metrics; prior source responses/coverage observations remain available. The policy reference and recorded losses are not reset. A subsequent explicit broker cashflow object can use the pre-existing revision/correction path.
+
+This is conditional observed coverage, not a promise against future corrections or provider defects. Accounts predating documented coverage, new accounts without the retained reference horizon, uncertain effects, endpoint errors and exceeded bounds remain blocked. No source call places orders or manually activates trading.
+
+Verification: host target execution is prohibited for this task. Pure SSE/parser and mocked adapter regressions are included in the existing read-only, empty-environment, network-none accounting CI container. Disposable PostgreSQL CI adds a migration and tests omitted raw response retention, unchanged real loss, append-only observations and late capital invalidation. CI must pass before claiming runtime correctness. No private provider endpoint was tested during implementation.

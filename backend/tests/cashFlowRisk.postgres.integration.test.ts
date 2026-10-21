@@ -39,6 +39,31 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     flows.push({ type, amount, at }); equityChanges.push({ amount, at });
     activities.push({ id: `capital-${activities.length}`, activity_type: type, net_amount: String(amount), date: new Date(at).toISOString().slice(0, 10) });
   };
+  test('omission-only finite coverage retains raw response and old losses; late capital invalidates instead of rewriting zero', async () => {
+    equityChanges.push({ at: Date.parse('2026-10-16T10:00:00Z'), amount: -4000 });
+    broker.getPortfolioHistoryVerified.mockImplementation(async (start: string, end: string) => {
+      const { cashflow: _omitted, ...raw } = history(start, end); return raw;
+    });
+    broker.getActivityHistoryVerified = jest.fn(async (_account: string, until: string) => ({
+      accountId: scope.accountId, accountCreatedAt: '2026-03-01T00:00:01Z', since: '2026-03-01T00:00:00Z', until,
+      events: [], digest: 'fixture-digest', transportComplete: true,
+    }));
+    expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000, dailyPnlPct: -4, drawdownPct: 4 });
+    const retained = await prisma.capitalRiskObservation.findFirstOrThrow({ where: { accountId: scope.accountId } });
+    const first = (retained.history as any[])[0];
+    expect(first.response).not.toHaveProperty('cashflow'); expect(first.capitalCoverageObservationId).toBeTruthy();
+    expect(await prisma.capitalActivityCoverageObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
+    broker.getActivityHistoryVerified.mockImplementation(async (_account: string, until: string) => ({
+      accountId: scope.accountId, accountCreatedAt: '2026-03-01T00:00:01Z', since: '2026-03-01T00:00:00Z', until,
+      events: [{ account_id: scope.accountId, activity_type: 'CSW', currency: 'USD', status: 'executed',
+        at: '2026-10-12T10:00:00Z', executed_at: '2026-10-20T10:00:00Z', settle_date: '2026-10-12' }],
+      digest: 'late-fixture-digest', transportComplete: true,
+    }));
+    expect(await getCashFlowRisk(scope, new Date(baseNow.getTime() + STEP))).toMatchObject({ complete: false, reason: 'CAPITAL_ACTIVITY_COVERAGE_UNAVAILABLE' });
+    expect(await prisma.capitalActivityCoverageObservation.count({ where: { accountId: scope.accountId } })).toBe(2);
+    expect((await prisma.capitalRiskObservation.findUniqueOrThrow({ where: { id: retained.id } })).history).toEqual(retained.history);
+  }, 30000);
+
   test('concurrent withdrawal refresh and replay apply absolute capital once, retain a single revision', async () => {
     event('CSW', -10000);
     let arrivals = 0; let release!: () => void; const fetched = new Promise<void>(resolve => { release = resolve; });

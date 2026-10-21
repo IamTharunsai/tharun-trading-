@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma';
 import type { AccountScope } from '../trading/accountScope';
 import type { AlpacaActivity, AlpacaPortfolioHistory } from './alpacaBroker';
 import type { PortfolioState } from '../agents/types';
+import { ActivityHistoryObservation, corroboratesNoCapital } from './capitalActivityHistory';
 
 export const RISK_STEP_MS = 300_000;
 const DAY = 86_400_000;
@@ -321,14 +322,37 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
       if (previous && request.from <= previous.to) previous.to = Math.max(previous.to, request.to);
       else ranges.push({ ...request });
     }
-    const history: { start: string; end: string; response: AlpacaPortfolioHistory }[] = [];
+    const history: { start: string; end: string; response: AlpacaPortfolioHistory; capitalCoverageObservationId?: string }[] = [];
+    let capitalObservation: ActivityHistoryObservation | undefined;
+    let capitalObservationId: string | undefined;
     const points: RiskPoint[] = [];
     for (const range of ranges) for (let start = range.from; start < range.to;) {
       if (history.length >= 16) throw new Error('RISK_BACKFILL_BOUND_EXCEEDED');
       const until = Math.min(start + 29 * DAY, range.to);
       const response = await scope.broker.getPortfolioHistoryVerified(new Date(start).toISOString(), new Date(until).toISOString());
-      points.push(...parseRiskHistory(response, new Date(start), new Date(until), before.revision === 0 && history.length === 0));
-      history.push({ start: new Date(start).toISOString(), end: new Date(until).toISOString(), response });
+      let parsedResponse = response;
+      if (response && response.cashflow === undefined) {
+        if (!capitalObservation) {
+          capitalObservation = await scope.broker.getActivityHistoryVerified(scope.accountId, now.toISOString());
+          const stored = await prisma.capitalActivityCoverageObservation.create({ data: {
+            ...where, accountCreatedAt: new Date(capitalObservation.accountCreatedAt),
+            since: new Date(capitalObservation.since), until: new Date(capitalObservation.until), observedAt: now,
+            digest: capitalObservation.digest, events: capitalObservation.events as unknown as Prisma.InputJsonValue,
+            transportComplete: capitalObservation.transportComplete,
+          } });
+          capitalObservationId = stored.id;
+        }
+        // Check the entire retained risk horizon, not merely a recent request:
+        // a newly delivered old capital event must invalidate prior zero proof.
+        if (!corroboratesNoCapital(capitalObservation, scope.accountId, new Date(evidenceStart), end)) {
+          throw new Error('CAPITAL_ACTIVITY_COVERAGE_UNAVAILABLE');
+        }
+        // Raw response remains untouched and retained below with its proof link.
+        parsedResponse = { ...response, cashflow: {} };
+      }
+      points.push(...parseRiskHistory(parsedResponse, new Date(start), new Date(until), before.revision === 0 && history.length === 0));
+      history.push({ start: new Date(start).toISOString(), end: new Date(until).toISOString(), response,
+        ...(response && response.cashflow === undefined ? { capitalCoverageObservationId: capitalObservationId } : {}) });
       start = until;
     }
     const account = await scope.broker.getPortfolioSummary();
