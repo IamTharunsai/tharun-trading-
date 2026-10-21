@@ -1,7 +1,8 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS"
+    "builder": "NIXPACKS",
+    "watchPatterns": ["/kronos-service/**"]
   },
   "deploy": {
     "startCommand": "/opt/venv/bin/python app.py",
