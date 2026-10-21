@@ -37,6 +37,11 @@ successor. A successful shared-path execution stops the current tick. The next
 tick continues with the next asset rather than repeatedly selecting the first
 ten. Before every candidate the account, mode and broker object are reverified;
 a change aborts the old tick and resets rotation for the next current scope.
+The scanner also passes that expected scope into the shared debate function.
+Broker/mode binding is checked before its reads, and the returned account/mode
+is checked after both the initial and pre-committee portfolio awaits. A newly
+selected account cannot inherit the old broker's instrument eligibility during
+that handoff. Other debate callers retain their existing behavior.
 Only one scope/cursor is retained in process memory. Restart resets cadence and
 rotation; there is no cross-process scan lease.
 

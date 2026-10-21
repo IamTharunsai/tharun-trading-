@@ -11,7 +11,7 @@ jest.mock('../src/services/regimeDetector', () => ({ detectMarketRegime: jest.fn
 jest.mock('../src/trading/executionEngine', () => ({ executeTradeSignal: jest.fn(), markToMarketOpenPositions: jest.fn().mockResolvedValue(undefined), reconcileExecutionIntents: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/trading/riskManager', () => ({ validateTradeSignal: jest.fn(), checkStopLosses: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/services/selfLearning', () => ({ runPostTradeAnalysis: jest.fn(), generateWeeklyReport: jest.fn().mockResolvedValue(undefined) }));
-jest.mock('../src/services/portfolio', () => ({ getPortfolioState: jest.fn().mockResolvedValue({ positions: [], riskDataComplete: true }) }));
+jest.mock('../src/services/portfolio', () => ({ getPortfolioState: jest.fn().mockResolvedValue({ accountId: 'scope-fixture', brokerMode: 'paper', positions: [], riskDataComplete: true }) }));
 jest.mock('../src/services/cashFlowRisk', () => ({ recordPortfolioObservation: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/trading/positionExits', () => ({ reconcilePositionExits: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/services/journalGenerator', () => ({ generateDailyJournal: jest.fn().mockResolvedValue(undefined) }));
@@ -28,10 +28,15 @@ jest.mock('../src/services/polymarketUS', () => ({ polymarketUSVenue: {} }));
 jest.mock('../src/trading/predictionRecovery', () => ({ recoverPredictionOrders: jest.fn().mockResolvedValue({ outcome: 'NO_PENDING_ORDERS', unresolved: 0 }) }));
 jest.mock('../src/services/universeService', () => ({ universe: { swingCandidates: jest.fn().mockReturnValue([]) } }));
 jest.mock('../src/services/sentimentService', () => ({ isSentimentEnabled: () => false }));
-jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: jest.fn().mockResolvedValue({
-  accountId: 'scope-fixture', mode: 'paper', broker: { listTradableCryptoAssetsVerified: jest.fn().mockResolvedValue(
-    Array.from({ length: 15 }, (_, i) => `C${String(i).padStart(2, '0')}`)) },
-}) }));
+jest.mock('../src/trading/accountScope', () => {
+  const fixtureScope = { accountId: 'scope-fixture', mode: 'paper', broker: { listTradableCryptoAssetsVerified: jest.fn().mockResolvedValue(
+    Array.from({ length: 15 }, (_, i) => `C${String(i).padStart(2, '0')}`)) } };
+  return { fixtureScope, getVerifiedAccountScope: jest.fn().mockResolvedValue(fixtureScope) };
+});
+jest.mock('../src/trading/brokerRouter', () => ({
+  getActiveMode: jest.fn(() => require('../src/trading/accountScope').fixtureScope.mode),
+  getTradingBroker: jest.fn(() => require('../src/trading/accountScope').fixtureScope.broker),
+}));
 
 type Runtime = import('../src/jobs/schedulerRuntime').SchedulerRuntime;
 let runtime: Runtime;
@@ -231,8 +236,31 @@ test.each(['account', 'mode', 'broker'])('%s switch aborts the old tick and rese
   const snapshot = require('../src/services/marketData').buildMarketSnapshot;
   expect(snapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00']);
   expect(last('crypto_scan').lastReason).toBe('ACCOUNT_SCOPE_CHANGED');
+  require('../src/trading/brokerRouter').getActiveMode.mockReturnValue(next.mode);
+  require('../src/trading/brokerRouter').getTradingBroker.mockReturnValue(next.broker);
+  require('../src/services/portfolio').getPortfolioState.mockResolvedValue({ accountId: next.accountId, brokerMode: next.mode, positions: [] });
   await jest.advanceTimersByTimeAsync(15 * 60000); await callback('crypto_scan')();
   expect(snapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00', 'C00', 'C01']);
+});
+
+test.each(['initial', 'committee'])('scope flip during the %s portfolio await cannot reuse old instrument eligibility', async stage => {
+  process.env.CRYPTO_DEBATES_PER_SCAN = '1'; init();
+  const portfolio = require('../src/services/portfolio').getPortfolioState;
+  const current = { accountId: 'scope-fixture', brokerMode: 'paper', positions: [] };
+  const changed = { ...current, accountId: 'different-account' };
+  if (stage === 'initial') portfolio.mockResolvedValueOnce(changed);
+  else {
+    portfolio.mockResolvedValueOnce(current).mockResolvedValueOnce(changed);
+    require('../src/services/marketData').buildMarketSnapshot.mockResolvedValue({ price: 100,
+      indicators: { bollingerBands: { upper: 110, lower: 90, middle: 100 }, macd: {} } });
+    require('../src/trading/preDebateGate').preDebateGate.mockReturnValue({ pass: true });
+    require('../src/services/regimeDetector').detectMarketRegime.mockResolvedValue({ regime: 'TRENDING_BULL' });
+  }
+  await callback('crypto_scan')();
+  if (stage === 'initial') expect(require('../src/services/marketData').buildMarketSnapshot).not.toHaveBeenCalled();
+  expect(require('../src/agents/debateEngine').runInvestmentCommitteeDebate).not.toHaveBeenCalled();
+  expect(require('../src/trading/executionEngine').executeTradeSignal).not.toHaveBeenCalled();
+  expect(last('crypto_scan').lastReason).toBe('ACCOUNT_SCOPE_CHANGED');
 });
 
 test('actual crypto callback reaches shared committee and real unknown-risk gate blocks execution', async () => {

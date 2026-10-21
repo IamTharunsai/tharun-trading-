@@ -5,7 +5,7 @@ type Dependencies = {
   scope: () => Promise<AccountScope>;
   killed: () => boolean;
   supportedAssets: readonly string[];
-  debate: (asset: string) => Promise<{ tradeExecuted?: boolean } | null | undefined>;
+  debate: (asset: string, expectedScope: AccountScope) => Promise<{ tradeExecuted?: boolean } | null | undefined>;
   skip: (reason: SchedulerReason) => void;
   failure: (reason: SchedulerReason) => void;
   observe: (counts: { eligible: number; attempted: number; failed: number; executed: number }) => void;
@@ -62,7 +62,7 @@ export function createContinuousCryptoScan(deps: Dependencies): () => Promise<vo
         lastAsset = asset; // HOLD, failure and a trade all advance fair rotation.
         counts.attempted++;
         try {
-          const transcript = await deps.debate(asset);
+          const transcript = await deps.debate(asset, scope);
           if (transcript?.tradeExecuted === true) { counts.executed++; break; }
         } catch { counts.failed++; deps.failure('CAUGHT_DEPENDENCY_FAILURE'); }
       }

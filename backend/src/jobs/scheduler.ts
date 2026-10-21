@@ -1,7 +1,8 @@
 import cron from 'node-cron';
 import { schedulerRuntime, markSchedulerFailure, markSchedulerSkip } from './schedulerRuntime';
 import { createContinuousCryptoScan } from './cryptoScan';
-import { getVerifiedAccountScope } from '../trading/accountScope';
+import { AccountScope, getVerifiedAccountScope } from '../trading/accountScope';
+import { getActiveMode, getTradingBroker } from '../trading/brokerRouter';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount, refreshOpenPositionStockPrices } from '../services/marketData';
 import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
@@ -27,15 +28,20 @@ const analyzedTradeIds = new Set<string>();
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
 
-export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY'; purpose?: 'ENTRY' | 'RESEARCH' } = {}) {
+export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY'; purpose?: 'ENTRY' | 'RESEARCH'; expectedScope?: AccountScope } = {}) {
   const purpose = opts.purpose ?? 'ENTRY';
   if (purpose !== 'ENTRY' && purpose !== 'RESEARCH') throw new Error('Invalid debate execution purpose');
   if (isKillSwitchActive()) { markSchedulerSkip('KILL_SWITCH_ACTIVE'); return; }
+  const currentBinding = () => !opts.expectedScope || (getActiveMode() === opts.expectedScope.mode && getTradingBroker() === opts.expectedScope.broker);
+  const currentScope = (portfolio: Awaited<ReturnType<typeof getPortfolioState>>) => currentBinding()
+    && (!opts.expectedScope || (portfolio.accountId === opts.expectedScope.accountId && portfolio.brokerMode === opts.expectedScope.mode));
+  if (!currentBinding()) { markSchedulerSkip('ACCOUNT_SCOPE_CHANGED'); return; }
   const lockKey = `${asset}:${market}`;
   if (debateLocks.has(lockKey)) { markSchedulerSkip('ALREADY_RUNNING'); return; }
 
   // Skip if open position already exists for this asset
   const currentPortfolio = await getPortfolioState();
+  if (!currentScope(currentPortfolio)) { markSchedulerSkip('ACCOUNT_SCOPE_CHANGED'); return; }
   const openPos = currentPortfolio.positions.find(position => position.asset === asset);
   if (openPos) {
     markSchedulerSkip('POSITION_ALREADY_OPEN');
@@ -75,6 +81,7 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       volumeAvg20: snapshot.indicators.volumeAvg20, atr14: snapshot.indicators.atr14,
     });
     const portfolio = await getPortfolioState();
+    if (!currentScope(portfolio)) { markSchedulerSkip('ACCOUNT_SCOPE_CHANGED'); return; }
     const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime, opts.executionLane ?? 'COUNCIL', undefined, undefined, purpose);
     // Research is blocked before risk/execution, independently of the returned vote.
     if (purpose === 'RESEARCH') {
@@ -292,7 +299,7 @@ export function initScheduler() {
   // remain authoritative. One-minute ticks also support e.g. seven-minute cadence.
   schedule('crypto_scan', '* * * * *', createContinuousCryptoScan({
     scope: getVerifiedAccountScope, killed: isKillSwitchActive, supportedAssets: CRYPTO_ASSETS,
-    debate: asset => runDebateForAsset(asset, 'crypto'),
+    debate: (asset, expectedScope) => runDebateForAsset(asset, 'crypto', { expectedScope }),
     skip: markSchedulerSkip, failure: markSchedulerFailure,
     observe: counts => logger.info('crypto_scan_observed', counts),
   }));
