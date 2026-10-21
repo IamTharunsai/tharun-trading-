@@ -2,7 +2,7 @@
 // No listeners, broker clients, provider network, timers or orders are started.
 jest.mock('node-cron', () => ({ __esModule: true, default: { schedule: jest.fn() } }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
-jest.mock('../src/services/marketData', () => ({ CRYPTO_ASSETS: ['BTC'], buildMarketSnapshot: jest.fn().mockResolvedValue(null),
+jest.mock('../src/services/marketData', () => ({ CRYPTO_ASSETS: Array.from({ length: 15 }, (_, i) => `C${String(i).padStart(2, '0')}`), buildMarketSnapshot: jest.fn().mockResolvedValue(null),
   getCurrentPrices: jest.fn().mockReturnValue({}), getNextStockBatch: jest.fn().mockReturnValue([]), getTotalStockCount: jest.fn(), refreshOpenPositionStockPrices: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/services/deepAnalysisService', () => ({ refreshFundamentalsForSymbol: jest.fn() }));
 jest.mock('../src/services/stockScreener', () => ({ runDailyScreen: jest.fn().mockResolvedValue([]) }));
@@ -27,6 +27,11 @@ jest.mock('../src/services/polymarketEdge', () => ({ isEdgeScanRunning: jest.fn(
 jest.mock('../src/services/polymarketUS', () => ({ polymarketUSVenue: {} }));
 jest.mock('../src/trading/predictionRecovery', () => ({ recoverPredictionOrders: jest.fn().mockResolvedValue({ outcome: 'NO_PENDING_ORDERS', unresolved: 0 }) }));
 jest.mock('../src/services/universeService', () => ({ universe: { swingCandidates: jest.fn().mockReturnValue([]) } }));
+jest.mock('../src/services/sentimentService', () => ({ isSentimentEnabled: () => false }));
+jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: jest.fn().mockResolvedValue({
+  accountId: 'scope-fixture', mode: 'paper', broker: { listTradableCryptoAssetsVerified: jest.fn().mockResolvedValue(
+    Array.from({ length: 15 }, (_, i) => `C${String(i).padStart(2, '0')}`)) },
+}) }));
 
 type Runtime = import('../src/jobs/schedulerRuntime').SchedulerRuntime;
 let runtime: Runtime;
@@ -34,9 +39,12 @@ let schedule: jest.Mock;
 let init: () => void;
 const originalVenue = process.env.POLYMARKET_VENUE;
 const originalInterval = process.env.POLYMARKET_SCAN_EVERY_MIN;
+const originalCryptoCadence = process.env.CRYPTO_SCAN_EVERY_MIN;
+const originalCryptoLimit = process.env.CRYPTO_DEBATES_PER_SCAN;
 beforeEach(() => {
   jest.resetModules(); jest.useFakeTimers(); jest.setSystemTime(new Date('2026-10-17T12:00:00Z'));
   process.env.POLYMARKET_VENUE = 'us'; process.env.POLYMARKET_SCAN_EVERY_MIN = '15';
+  delete process.env.CRYPTO_SCAN_EVERY_MIN; delete process.env.CRYPTO_DEBATES_PER_SCAN;
   runtime = require('../src/jobs/schedulerRuntime').schedulerRuntime;
   schedule = require('node-cron').default.schedule;
   init = require('../src/jobs/scheduler').initScheduler;
@@ -45,6 +53,8 @@ afterEach(() => {
   jest.useRealTimers();
   if (originalVenue === undefined) delete process.env.POLYMARKET_VENUE; else process.env.POLYMARKET_VENUE = originalVenue;
   if (originalInterval === undefined) delete process.env.POLYMARKET_SCAN_EVERY_MIN; else process.env.POLYMARKET_SCAN_EVERY_MIN = originalInterval;
+  if (originalCryptoCadence === undefined) delete process.env.CRYPTO_SCAN_EVERY_MIN; else process.env.CRYPTO_SCAN_EVERY_MIN = originalCryptoCadence;
+  if (originalCryptoLimit === undefined) delete process.env.CRYPTO_DEBATES_PER_SCAN; else process.env.CRYPTO_DEBATES_PER_SCAN = originalCryptoLimit;
 });
 function callback(id: string): () => Promise<unknown> {
   const index = runtime.snapshot().jobs.findIndex(job => job.id === id);
@@ -61,7 +71,7 @@ test('registers original business schedules/timezones exactly once, without invo
     ['swing_late_morning', '0 11 * * 1-5', 'America/New_York'], ['swing_midday', '0 13 * * 1-5', 'America/New_York'],
     ['intraday_scan', '*/2 9-15 * * 1-5', 'America/New_York'], ['intraday_exits', '* 9-15 * * 1-5', 'America/New_York'],
     ['intraday_flatten', '50 15 * * 1-5', 'America/New_York'], ['broker_sync', '*/60 * * * * *'],
-    ['crypto_daily', '0 8 * * *', 'America/New_York'], ['open_stock_prices', '*/60 * * * * *'], ['stop_loss_monitor', '*/10 * * * * *'],
+    ['crypto_scan', '* * * * *'], ['open_stock_prices', '*/60 * * * * *'], ['stop_loss_monitor', '*/10 * * * * *'],
     ['portfolio_snapshot', '*/5 * * * *'], ['market_regime', '0 * * * *'], ['daily_journal', '59 23 * * *'],
     ['weekly_report', '0 8 * * 0'], ['fundamentals_refresh', '0 2 * * *'], ['prediction_scan', '*/15 * * * *'],
     ['prediction_resolution', '*/30 * * * *'], ['prediction_paper_upkeep', '*/5 * * * *'], ['prediction_score_resolution', '17 * * * *'],
@@ -138,11 +148,128 @@ test('internally caught intraday error and stale/disabled last scan never imply 
   await callback('intraday_scan')(); expect(last('intraday_scan')).toMatchObject({ lastOutcome: 'skipped', lastReason: 'INTRADAY_NOT_RUN' });
 });
 
-test('missing snapshots in a crypto mini-batch are failures, with no invented orders or changed loop cap', async () => {
-  init(); const pending = callback('crypto_daily')();
-  await jest.runAllTimersAsync(); await pending;
-  expect(last('crypto_daily')).toMatchObject({ lastOutcome: 'caught_failure', lastReason: 'NO_MARKET_SNAPSHOT' });
+test('missing crypto snapshots are failures, with no invented orders and at most two sequential attempts', async () => {
+  init(); await callback('crypto_scan')();
+  expect(last('crypto_scan')).toMatchObject({ lastOutcome: 'caught_failure', lastReason: 'NO_MARKET_SNAPSHOT' });
+  expect(require('../src/services/marketData').buildMarketSnapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00', 'C01']);
   expect(require('../src/trading/executionEngine').executeTradeSignal).not.toHaveBeenCalled();
+});
+
+test('weekend crypto cadence rotates beyond the former first ten, including after candidate errors', async () => {
+  jest.setSystemTime(new Date('2026-10-18T02:00:00Z')); init();
+  const snapshot = require('../src/services/marketData').buildMarketSnapshot;
+  snapshot.mockRejectedValueOnce(new Error('private-provider-error'));
+  for (let i = 0; i < 8; i++) { await callback('crypto_scan')(); await jest.advanceTimersByTimeAsync(15 * 60000); }
+  expect(snapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual([
+    ...Array.from({ length: 15 }, (_, i) => `C${String(i).padStart(2, '0')}`), 'C00',
+  ]);
+  expect(require('../src/trading/executionEngine').executeTradeSignal).not.toHaveBeenCalled();
+});
+
+test('overlapping crypto callbacks cannot duplicate even the first account read; lock releases after failure', async () => {
+  init(); const read = require('../src/trading/accountScope').getVerifiedAccountScope;
+  let reject!: (error: Error) => void;
+  read.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const first = callback('crypto_scan')(); await callback('crypto_scan')();
+  expect(read).toHaveBeenCalledTimes(1); expect(last('crypto_scan').lastReason).toBe('ALREADY_RUNNING');
+  reject(new Error('secret-account-response')); await first;
+  expect(last('crypto_scan').lastReason).toBe('BROKER_EVIDENCE_UNAVAILABLE');
+  await jest.advanceTimersByTimeAsync(15 * 60000); await callback('crypto_scan')();
+  expect(require('../src/services/marketData').buildMarketSnapshot).toHaveBeenCalledTimes(2);
+});
+
+test('crypto candidates are sequential and a slow first snapshot cannot start a second provider pipeline', async () => {
+  init(); const snapshot = require('../src/services/marketData').buildMarketSnapshot;
+  let release!: (value: null) => void; let started!: () => void;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  snapshot.mockImplementationOnce(() => { started(); return new Promise(resolve => { release = resolve; }); });
+  const pending = callback('crypto_scan')(); await entered;
+  expect(snapshot).toHaveBeenCalledTimes(1);
+  release(null); await pending; expect(snapshot).toHaveBeenCalledTimes(2);
+});
+
+test('cadence supports seven-minute intervals, suppresses early ticks and rejects malformed config before reads', async () => {
+  process.env.CRYPTO_SCAN_EVERY_MIN = '7'; process.env.CRYPTO_DEBATES_PER_SCAN = '1'; init();
+  const read = require('../src/trading/accountScope').getVerifiedAccountScope;
+  await callback('crypto_scan')(); const calls = read.mock.calls.length;
+  await jest.advanceTimersByTimeAsync(6 * 60000); await callback('crypto_scan')();
+  expect(read).toHaveBeenCalledTimes(calls); expect(last('crypto_scan').lastReason).toBe('CRYPTO_SCAN_NOT_DUE');
+  await jest.advanceTimersByTimeAsync(60000); await callback('crypto_scan')();
+  expect(require('../src/services/marketData').buildMarketSnapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00', 'C01']);
+  process.env.CRYPTO_DEBATES_PER_SCAN = '100'; await callback('crypto_scan')();
+  expect(last('crypto_scan').lastReason).toBe('CRYPTO_SCAN_CONFIG_INVALID');
+});
+
+test('kill switch prevents all crypto I/O and a mid-read kill prevents candidate dispatch', async () => {
+  init(); const killed = require('../src/agents/orchestrator').isKillSwitchActive;
+  const read = require('../src/trading/accountScope').getVerifiedAccountScope;
+  killed.mockReturnValue(true); await callback('crypto_scan')(); expect(read).not.toHaveBeenCalled();
+  killed.mockReturnValue(false); const scope = await read(); read.mockClear();
+  scope.broker.listTradableCryptoAssetsVerified.mockImplementationOnce(async () => { killed.mockReturnValue(true); return ['C00']; });
+  await callback('crypto_scan')();
+  expect(require('../src/services/marketData').buildMarketSnapshot).not.toHaveBeenCalled();
+  expect(last('crypto_scan').lastReason).toBe('KILL_SWITCH_ACTIVE');
+});
+
+test('missing broker instruments never fall back to the static data universe', async () => {
+  init(); const read = require('../src/trading/accountScope').getVerifiedAccountScope; const scope = await read();
+  scope.broker.listTradableCryptoAssetsVerified.mockResolvedValueOnce(['UNSUPPORTED_DATA_ASSET']);
+  await callback('crypto_scan')();
+  expect(last('crypto_scan').lastReason).toBe('NO_CANDIDATES');
+  expect(require('../src/services/marketData').buildMarketSnapshot).not.toHaveBeenCalled();
+});
+
+test.each(['account', 'mode', 'broker'])('%s switch aborts the old tick and resets rotation for the next scope', async changed => {
+  init(); const read = require('../src/trading/accountScope').getVerifiedAccountScope; const old = await read(); read.mockClear();
+  const next = { ...old,
+    ...(changed === 'account' ? { accountId: 'another-fixture' } : {}),
+    ...(changed === 'mode' ? { mode: 'live' } : {}),
+    ...(changed === 'broker' ? { broker: { listTradableCryptoAssetsVerified: jest.fn().mockResolvedValue(['C00', 'C01']) } } : {}),
+  };
+  read.mockResolvedValueOnce(old).mockResolvedValueOnce(old).mockResolvedValue(next);
+  await callback('crypto_scan')();
+  const snapshot = require('../src/services/marketData').buildMarketSnapshot;
+  expect(snapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00']);
+  expect(last('crypto_scan').lastReason).toBe('ACCOUNT_SCOPE_CHANGED');
+  await jest.advanceTimersByTimeAsync(15 * 60000); await callback('crypto_scan')();
+  expect(snapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00', 'C00', 'C01']);
+});
+
+test('actual crypto callback reaches shared committee and real unknown-risk gate blocks execution', async () => {
+  init(); const snapshot = require('../src/services/marketData').buildMarketSnapshot;
+  snapshot.mockImplementation(async (asset: string) => ({ asset, market: 'crypto', price: 100,
+    indicators: { bollingerBands: { upper: 110, lower: 90, middle: 100 }, macd: {} } }));
+  require('../src/trading/preDebateGate').preDebateGate.mockReturnValue({ pass: true });
+  require('../src/services/regimeDetector').detectMarketRegime.mockResolvedValue({ regime: 'TRENDING_BULL' });
+  const council = require('../src/agents/debateEngine').runInvestmentCommitteeDebate;
+  council.mockImplementation(async () => ({ executionApproved: true, finalDecision: 'BUY', decisionId: 'fixture-decision',
+    finalConfidence: 80, positionSizePct: 1, stopLossPrice: 95, takeProfitPrice: 110, masterSynthesis: 'fixture', agentVotes: [] }));
+  require('../src/services/portfolio').getPortfolioState.mockResolvedValue({ accountId: 'scope-fixture', brokerMode: 'paper', positions: [], totalValue: 100000, riskDataComplete: false });
+  const risk = require('../src/trading/riskManager').validateTradeSignal;
+  risk.mockImplementation(jest.requireActual('../src/trading/riskManager').validateTradeSignal);
+  await callback('crypto_scan')();
+  expect(council).toHaveBeenCalledTimes(2); expect(risk).toHaveBeenCalledTimes(2);
+  expect(await risk.mock.results[0].value).toMatchObject({ approved: false, reason: expect.stringContaining('RISK_BASELINE_UNAVAILABLE') });
+  expect(require('../src/trading/executionEngine').executeTradeSignal).not.toHaveBeenCalled();
+});
+
+test('a shared-path execution stops this tick, advances rotation, and never becomes an extra entry next tick', async () => {
+  init(); const snapshot = require('../src/services/marketData').buildMarketSnapshot;
+  snapshot.mockImplementation(async (asset: string) => ({ asset, market: 'crypto', price: 100,
+    indicators: { bollingerBands: { upper: 110, lower: 90, middle: 100 }, macd: {} } }));
+  require('../src/trading/preDebateGate').preDebateGate.mockReturnValue({ pass: true });
+  require('../src/services/regimeDetector').detectMarketRegime.mockResolvedValue({ regime: 'TRENDING_BULL' });
+  require('../src/agents/debateEngine').runInvestmentCommitteeDebate.mockImplementation(async () => ({
+    executionApproved: true, finalDecision: 'BUY', decisionId: 'fixture-decision', finalConfidence: 80,
+    positionSizePct: 1, stopLossPrice: 95, takeProfitPrice: 110, masterSynthesis: 'fixture', agentVotes: [],
+  }));
+  require('../src/trading/riskManager').validateTradeSignal.mockResolvedValue({ approved: true, adjustedSize: 1 });
+  const execute = require('../src/trading/executionEngine').executeTradeSignal; execute.mockResolvedValue(true);
+  await callback('crypto_scan')(); expect(execute).toHaveBeenCalledTimes(1);
+  await jest.advanceTimersByTimeAsync(15 * 60000); await callback('crypto_scan')();
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(snapshot.mock.calls.map(([asset]: string[]) => asset)).toEqual(['C00', 'C01']);
+  expect(execute.mock.calls.every(([signal]: any[]) => signal.market === 'crypto' && signal.agentDecisionId === 'fixture-decision')).toBe(true);
 });
 
 test('international mode preserves dynamic prediction cadence and has no US-only callbacks', () => {
