@@ -226,6 +226,13 @@ test('missing broker instruments never fall back to the static data universe', a
 
 test.each(['account', 'mode', 'broker'])('%s switch aborts the old tick and resets rotation for the next scope', async changed => {
   init(); const read = require('../src/trading/accountScope').getVerifiedAccountScope; const old = await read(); read.mockClear();
+  // A genuine HOLD isolates the later scope skip. A missing first snapshot is
+  // a failure and must correctly retain priority over a later skip reason.
+  require('../src/services/marketData').buildMarketSnapshot.mockImplementation(async (asset: string) => ({ asset, price: 100,
+    indicators: { bollingerBands: { upper: 110, lower: 90, middle: 100 }, macd: {} } }));
+  require('../src/trading/preDebateGate').preDebateGate.mockReturnValue({ pass: true });
+  require('../src/services/regimeDetector').detectMarketRegime.mockResolvedValue({ regime: 'TRENDING_BULL' });
+  require('../src/agents/debateEngine').runInvestmentCommitteeDebate.mockResolvedValue({ finalDecision: 'HOLD', executionApproved: false });
   const next = { ...old,
     ...(changed === 'account' ? { accountId: 'another-fixture' } : {}),
     ...(changed === 'mode' ? { mode: 'live' } : {}),
