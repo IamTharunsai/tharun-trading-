@@ -65,8 +65,27 @@ export async function parseActivityHistory(stream: AsyncIterable<Uint8Array | st
   return { ...identity, events, digest: createHash('sha256').update(JSON.stringify(events)).digest('hex'), transportComplete: true };
 }
 
-const investmentResults = new Set(['FILL', 'CFEE', 'CGD', 'DIV', 'DIVCGL', 'DIVCGS', 'DIVFEE', 'DIVFT',
-  'DIVNRA', 'DIVROC', 'DIVTW', 'DIVTXEX', 'FEE', 'INT', 'INTNRA', 'INTTW', 'PTC', 'PTR']);
+// Unified SSE names deliberately differ from legacy Activities REST (FILL).
+// https://docs.alpaca.markets/us/docs/activity-sse#supported-activity-types
+const resultSubtypes: Record<string, ReadonlySet<string>> = {
+  CGD: new Set(['STCG', 'LTCG']), DIV: new Set(['CDIV', 'SDIV', 'SPD', 'ROC']),
+  INT: new Set(['MGN', 'CDT', 'SWP', 'QII', 'FPSL', 'FI']),
+  FEE: new Set(['', 'REG', 'TAF', 'ORF', 'OCC', 'NRV', 'NRC', 'LCT', 'COM', 'CAT', 'ADR', 'OCOM', 'BSWP']),
+  DIVNRA: new Set(['']),
+};
+const decimal = (value: unknown) => typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value) && Number.isFinite(Number(value));
+function investmentResult(event: Record<string, unknown>): boolean {
+  if (!object(event.details) || !decimal(event.net_amount)) return false;
+  const subtype = event.activity_subtype === undefined ? '' : event.activity_subtype;
+  if (event.activity_type === 'TRD') {
+    return subtype === '' && ['fill', 'trade_correct', 'trade_bust'].includes(String(event.details.execution_type))
+      && typeof event.details.order_id === 'string' && !!event.details.order_id
+      && ['buy', 'sell'].includes(String(event.details.side))
+      && typeof event.details.symbol === 'string' && !!event.details.symbol
+      && decimal(event.qty) && decimal(event.price);
+  }
+  return typeof subtype === 'string' && resultSubtypes[String(event.activity_type)]?.has(subtype) === true;
+}
 const external = new Set(['CSD', 'CSW', 'ACATC']);
 
 /** Negative capital evidence is conditional on a fresh, full-origin finite
@@ -80,7 +99,7 @@ export function corroboratesNoCapital(observation: ActivityHistoryObservation, a
   for (const event of observation.events) {
     if (event.account_id !== accountId || event.currency !== 'USD' || event.status !== 'executed') return false;
     const type = String(event.activity_type);
-    if (investmentResults.has(type)) continue;
+    if (investmentResult(event)) continue;
     if (!external.has(type)) return false;
     const at = date(event.at), executed = date(event.executed_at);
     const settled = typeof event.settle_date === 'string' && /^\d{4}-\d\d-\d\d$/.test(event.settle_date)

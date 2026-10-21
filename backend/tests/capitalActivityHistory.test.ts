@@ -2,7 +2,7 @@ import { parseActivityHistory, corroboratesNoCapital } from '../src/services/cap
 const identity = { accountId: 'fixture', accountCreatedAt: '2026-03-01T00:00:01Z',
   since: '2026-03-01T00:00:00Z', until: '2026-10-16T12:00:30Z' };
 const event = { account_id: 'fixture', event_id: '01K7M5S8Q00000000000000000', ref_id: 'fixture-ref',
-  activity_type: 'FILL', at: '2026-10-16T11:00:00Z', currency: 'USD', status: 'executed' };
+  activity_type: 'TRD', qty: '1', price: '50', net_amount: '-50', details: { execution_type: 'fill', order_id: 'fixture-order', side: 'buy', symbol: 'MSFT' }, at: '2026-10-16T11:00:00Z', currency: 'USD', status: 'executed' };
 function stream(text: string, complete = true) {
   return Object.assign((async function* () { for (let i = 0; i < text.length; i += 7) yield Buffer.from(text.slice(i, i + 7)); })(), { complete });
 }
@@ -38,4 +38,14 @@ test('external, unknown, unsettled and date-boundary-ambiguous effects cannot es
     { ...event, activity_type: 'CSW', at: '2026-10-05T00:00:00Z', executed_at: '2026-10-05T01:00:00Z', settle_date: '2026-10-05' } ]) {
     expect(corroboratesNoCapital({ ...base, events: [activity] }, 'fixture', from, end)).toBe(false);
   }
+});
+
+test.each(['fill', 'trade_correct', 'trade_bust'])('unified TRD %s is an investment result, never legacy FILL', async execution_type => {
+  const base = await parse('');
+  const accepts = (activity: Record<string, unknown>) => corroboratesNoCapital({ ...base, events: [activity] }, 'fixture', new Date('2026-10-06'), new Date('2026-10-16'));
+  expect(accepts({ ...event, details: { ...event.details, execution_type } })).toBe(true);
+  expect(accepts({ ...event, activity_type: 'FILL' })).toBe(false);
+  expect(accepts({ ...event, details: { ...event.details, execution_type: 'accepted' } })).toBe(false);
+  expect(accepts({ ...event, details: null })).toBe(false);
+  expect(accepts({ ...event, activity_type: 'DIV', activity_subtype: 'UNKNOWN' })).toBe(false);
 });

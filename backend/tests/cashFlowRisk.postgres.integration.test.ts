@@ -3,6 +3,7 @@
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('axios', () => ({ __esModule: true, default: { create: jest.fn() } }));
 import axios from 'axios';
+import { createServer, get as httpGet, IncomingMessage } from 'http';
 import { AlpacaBroker } from '../src/services/alpacaBroker';
 import { prisma } from '../src/utils/prisma';
 import { getCashFlowRisk, readCashFlowRisk, recordPortfolioObservation, RISK_STEP_MS as STEP } from '../src/services/cashFlowRisk';
@@ -44,24 +45,43 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     broker.getPortfolioHistoryVerified.mockImplementation(async (start: string, end: string) => {
       const { cashflow: _omitted, ...raw } = history(start, end); return raw;
     });
-    broker.getActivityHistoryVerified = jest.fn(async (_account: string, until: string) => ({
-      accountId: scope.accountId, accountCreatedAt: '2026-03-01T00:00:01Z', since: '2026-03-01T00:00:00Z', until,
-      events: [], digest: 'fixture-digest', transportComplete: true,
-    }));
+    let financialEvents: Record<string, unknown>[] = [{ account_id: scope.accountId,
+      event_id: '01K7M5S8Q00000000000000000', ref_id: 'fixture-trade', activity_type: 'TRD',
+      at: '2026-10-16T10:00:00Z', executed_at: '2026-10-16T10:00:00Z', settle_date: '2026-10-19',
+      currency: 'USD', status: 'executed', qty: '1', price: '50', net_amount: '-50',
+      details: { execution_type: 'fill', order_id: 'fixture-order', side: 'buy', symbol: 'MSFT' } }];
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      for (const activity of financialEvents) response.write(`data: ${JSON.stringify(activity)}\n\n`);
+      response.end();
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Fixture listener missing');
+    const transport = { get: jest.fn(async (_path: string, options: { signal: AbortSignal }) => {
+      const response = await new Promise<IncomingMessage>((resolve, reject) => {
+        const request = httpGet(`http://127.0.0.1:${address.port}/fixture`, { signal: options.signal }, resolve);
+        request.on('error', reject);
+      });
+      return { status: response.statusCode, headers: response.headers, data: response };
+    }) };
+    (axios.create as jest.Mock).mockReturnValueOnce(transport);
+    const adapter = new AlpacaBroker('fixture', 'fixture', true);
+    jest.spyOn(adapter, 'getAccount').mockResolvedValue({ id: scope.accountId, currency: 'USD', created_at: '2026-03-01T00:00:01Z' } as any);
+    broker.getActivityHistoryVerified = adapter.getActivityHistoryVerified.bind(adapter);
+    try {
     expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000, dailyPnlPct: -4, drawdownPct: 4 });
     const retained = await prisma.capitalRiskObservation.findFirstOrThrow({ where: { accountId: scope.accountId } });
     const first = (retained.history as any[])[0];
     expect(first.response).not.toHaveProperty('cashflow'); expect(first.capitalCoverageObservationId).toBeTruthy();
     expect(await prisma.capitalActivityCoverageObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
-    broker.getActivityHistoryVerified.mockImplementation(async (_account: string, until: string) => ({
-      accountId: scope.accountId, accountCreatedAt: '2026-03-01T00:00:01Z', since: '2026-03-01T00:00:00Z', until,
-      events: [{ account_id: scope.accountId, activity_type: 'CSW', currency: 'USD', status: 'executed',
-        at: '2026-10-12T10:00:00Z', executed_at: '2026-10-20T10:00:00Z', settle_date: '2026-10-12' }],
-      digest: 'late-fixture-digest', transportComplete: true,
-    }));
+    financialEvents = [{ account_id: scope.accountId, event_id: '01K7M5S8Q00000000000000001', ref_id: 'late-capital',
+      activity_type: 'CSW', currency: 'USD', status: 'executed',
+      at: '2026-10-12T10:00:00Z', executed_at: '2026-10-20T10:00:00Z', settle_date: '2026-10-12' }];
     expect(await getCashFlowRisk(scope, new Date(baseNow.getTime() + STEP))).toMatchObject({ complete: false, reason: 'CAPITAL_ACTIVITY_COVERAGE_UNAVAILABLE' });
     expect(await prisma.capitalActivityCoverageObservation.count({ where: { accountId: scope.accountId } })).toBe(2);
     expect((await prisma.capitalRiskObservation.findUniqueOrThrow({ where: { id: retained.id } })).history).toEqual(retained.history);
+    } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
   }, 30000);
 
   test('concurrent withdrawal refresh and replay apply absolute capital once, retain a single revision', async () => {
