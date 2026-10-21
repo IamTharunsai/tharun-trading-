@@ -27,6 +27,9 @@ function assertPosition(snapshot: any, holding: any, now = Date.now()) {
   // Exact attribution: never flatten additional manual contracts, infer that
   // a disappeared position settled, or sell across zero into new exposure.
   if (!Number.isFinite(signed) || Math.abs(signed - expected) > 1e-8 || holding.remainingQuantity <= 0) throw new Error('REDUCTION_POSITION_DISCREPANCY');
+  // Comparison tolerance may explain arithmetic drift; it cannot authorize a
+  // sale larger than either the owned projection or actual observed exposure.
+  return Math.min(holding.remainingQuantity, Math.abs(signed));
 }
 
 async function loadHolding(tx: any, openingId: string) {
@@ -84,8 +87,8 @@ export async function reducePredictionHolding(openingId: string, input: z.infer<
     if (await tx.predictionExecution.findFirst({ where: { credentialScopeKey: scope.scopeKey, status: { in: predictionPendingStates } } })
       || await tx.predictionReduction.findFirst({ where: { credentialScopeKey: scope.scopeKey, status: { in: pending } } })) throw new Error('REDUCTION_PENDING_ACCOUNT_MUTATION');
     const holding = await loadHolding(tx, openingId);
-    assertPosition(snapshot, holding);
-    if (plan.quantity > holding.remainingQuantity + 1e-8) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
+    const available = assertPosition(snapshot, holding);
+    if (plan.quantity > available) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
     const authorityGeneration = await advancePredictionGeneration(tx, scope.scopeKey);
     return tx.predictionReduction.create({ data: { claimKey: hash([opening.ownerId, scope.scopeKey, openingId, plan.requestKey]),
       openingExecutionId: openingId, ownerId: opening.ownerId, credentialScopeKey: scope.scopeKey, credentialIdentity: scope.identity,
@@ -116,8 +119,8 @@ async function submitPredictionReduction(id: string) {
       if (await tx.predictionExecution.findFirst({ where: { credentialScopeKey: scope.scopeKey, status: { in: predictionPendingStates } } })
         || await tx.predictionReduction.findFirst({ where: { credentialScopeKey: scope.scopeKey, status: { in: pending }, id: { not: id } } })) throw new Error('REDUCTION_PENDING_ACCOUNT_MUTATION');
       const holding = await loadHolding(tx, claim.openingExecutionId);
-      assertPosition(snapshot, holding);
-      if (claim.quantity > holding.remainingQuantity + 1e-8) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
+      const available = assertPosition(snapshot, holding);
+      if (claim.quantity > available) throw new Error('REDUCTION_EXCEEDS_OWNERSHIP');
       const taken = await tx.predictionReduction.updateMany({ where: { id, status: 'PREPARING' }, data: { status: 'SUBMITTING' } });
       if (taken.count !== 1) throw new Error('REDUCTION_ALREADY_CONSUMED');
       await advancePredictionGeneration(tx, scope.scopeKey);

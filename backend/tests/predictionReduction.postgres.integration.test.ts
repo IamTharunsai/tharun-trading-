@@ -175,6 +175,20 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(1);
   });
 
+  test.each(['YES', 'NO'] as const)('%s numeric comparison tolerance cannot authorize any excess sale quantity', async side => {
+    const opening = await open(side);
+    await expect(reducePredictionHolding(opening.id, { requestKey: 'excess-owned',
+      quantity: opening.appliedQuantity + 5e-9, sideMinPrice: .3 })).rejects.toThrow('EXCEEDS_OWNERSHIP');
+    expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(0);
+    // The broker observation is slightly smaller than the stored projection,
+    // within the comparison tolerance. Its actual exposure is still the cap.
+    signedPosition -= (side === 'YES' ? 1 : -1) * 5e-9;
+    await expect(reducePredictionHolding(opening.id, { requestKey: 'excess-observed',
+      quantity: opening.appliedQuantity, sideMinPrice: .3 })).rejects.toThrow('EXCEEDS_OWNERSHIP');
+    expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(0);
+    expect(posted).toHaveLength(1);
+  });
+
   test('proven terminal zero-fill zero-fee reduction does not manufacture an enduring loss-coverage block', async () => {
     const opening = await open(); zeroFill = true;
     const result = await reducePredictionHolding(opening.id, { requestKey: 'unfilled', quantity: 1, sideMinPrice: .3 });
