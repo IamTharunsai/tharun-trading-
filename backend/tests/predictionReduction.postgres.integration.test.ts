@@ -204,10 +204,11 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     const opening = await open(); await policyForecast();
     const originalTrade = await prisma.trade.findUniqueOrThrow({ where: { id: opening.tradeId! } });
     const { id: unusedTradeId, ...tradeData } = originalTrade;
+    const { brokerState: unusedBrokerState, executionReferences: unusedReferences, activityEvidence: unusedActivity, ...openingScalars } = opening;
     for (let i = 0; i < 20; i++) {
       const id = 'a-unavailable-' + String(i).padStart(2, '0');
       const trade = await prisma.trade.create({ data: { ...tradeData, brokerOrderId: 'broker-' + id } as any });
-      await prisma.predictionExecution.create({ data: { ...opening, id, claimKey: 'claim-' + id, tradeId: trade.id,
+      await prisma.predictionExecution.create({ data: { ...openingScalars, id, claimKey: 'claim-' + id, tradeId: trade.id,
         brokerOrderId: 'broker-' + id, marketSlug: 'unavailable-' + i } });
     }
     const first = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
