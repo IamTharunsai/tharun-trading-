@@ -9,7 +9,8 @@
 // Rules (fail-closed, read at call time so a changed env is honoured):
 //   • Live trading of ANY kind requires TRADING_MODE=live AND
 //     LIVE_TRADING_CONFIRMED=I_ACCEPT_REAL_MONEY_RISK.
-//   • Alpaca live additionally requires ALPACA_LIVE_API_KEY/SECRET.
+//   • Alpaca can be pinned to paper independently using ALPACA_TRADING_MODE=paper.
+//     Alpaca live additionally requires ALPACA_LIVE_API_KEY/SECRET.
 //   • Polymarket live additionally requires POLYMARKET_US_LIVE=true and the
 //     kill switch being off. POLYMARKET_US_LIVE on its own is never enough.
 //   • Anything else → paper.
@@ -42,6 +43,14 @@ export function liveTradingConfirmed(env: NodeJS.ProcessEnv = process.env): Gate
 
 /** Alpaca live = confirmed live mode + real ALPACA_LIVE_* keys. */
 export function alpacaLiveAllowed(env: NodeJS.ProcessEnv = process.env): GateDecision {
+  // This is an additional restriction, never an alternative live authorization.
+  // A personal setup may run paper stocks while Polymarket uses the shared
+  // confirmed live gate. Adding stock live credentials later must not undo it.
+  if (env.ALPACA_TRADING_MODE !== undefined) {
+    const requested = clean(env.ALPACA_TRADING_MODE).toLowerCase();
+    if (requested === 'paper') return { allowed: false, reason: 'Alpaca explicitly restricted to paper' };
+    if (requested !== 'live') return { allowed: false, reason: 'ALPACA_TRADING_MODE must be paper or live' };
+  }
   const base = liveTradingConfirmed(env);
   if (!base.allowed) return base;
   const key = clean(env.ALPACA_LIVE_API_KEY);
