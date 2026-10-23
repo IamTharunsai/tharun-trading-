@@ -36,6 +36,7 @@ import { getPortfolioState } from '../services/portfolio';
 import { validateLiveQualification } from './liveQualification';
 import { bindStockQuote, assertStockQuoteBinding, readStockEntryQuote, StockQuoteBinding } from './stockEntryQuote';
 import { assertStockEntryQuote, assertStockEntryBudget, reduceStockEntryQuantity } from './stockEntryPolicy';
+import { emitContractEvent, TradeExecutedPayload } from '../websocket/socketEvents';
 export { buildStockOrder } from './stockOrders';
 
 // ─── Env flags ───────────────────────────────────────────────────────────────
@@ -533,6 +534,9 @@ export function reanchorProtectionToFill(
 export async function recordConfirmedExecution(signal: TradeSignal, intentId: string, order: { orderId?: string; fees?: number }, fillPrice: number, quantity: number, protection: string): Promise<void> {
   const { asset, market, direction, agentDecisionId } = signal;
   if (direction !== 'BUY' && direction !== 'SELL') throw new Error('Cannot record a non-trading direction');
+  // Set inside the transaction only on the path that actually records the
+  // fill; emitted after commit below (never for an already-RECORDED replay).
+  let recorded: TradeExecutedPayload | null = null;
   await prisma.$transaction(async tx => {
     const intent = await tx.executionIntent.findUnique({ where: { id: intentId } });
     if (!intent?.accountId || !intent.mode) throw new Error('Fill account identity missing');
@@ -563,7 +567,7 @@ export async function recordConfirmedExecution(signal: TradeSignal, intentId: st
         pendingEntryIntentId: null, brokerObservedQuantity: aggregateQuantity, protectionStatus: protection, stopLossPrice: positionProtection.stopLossPrice,
         takeProfitPrice: positionProtection.takeProfitPrice, ...(priorQty === 0 ? { openedAt: new Date() } : {}) },
     });
-    await tx.trade.create({ data: { asset, market, type: direction, status: 'OPEN',
+    const createdTrade = await tx.trade.create({ data: { asset, market, type: direction, status: 'OPEN',
       entryPrice: fillPrice, quantity, fees: order.fees ?? 0, brokerOrderId: order.orderId,
       brokerConfirmed: true, accountId: intent.accountId, brokerMode: intent.mode, positionId: position.id,
       agentDecisionId, stopLossPrice: fillProtection.stopLossPrice, takeProfitPrice: fillProtection.takeProfitPrice,
@@ -571,5 +575,15 @@ export async function recordConfirmedExecution(signal: TradeSignal, intentId: st
     await tx.agentDecision.update({ where: { id: agentDecisionId }, data: { executed: true,
       executionReason: `${direction} ${quantity.toFixed(4)} ${asset} @ $${fillPrice.toFixed(2)} | Order: ${order.orderId} | ${intent.mode.toUpperCase()}` } });
     await tx.executionIntent.update({ where: { id: intentId }, data: { status: 'RECORDED', fillPrice, fillQuantity: quantity, error: null } });
+    recorded = {
+      trade: { id: createdTrade.id, asset, type: direction, quantity, entryPrice: fillPrice },
+      mode: intent.mode,
+      accountId: intent.accountId,
+    };
   });
+  // Normalized `trade:executed` contract event (websocket/socketEvents.ts):
+  // the dashboard toast + recent-trades store and the AgentMonitor feed both
+  // consume exactly this shape. Emitted only after the recording transaction
+  // commits, so a rolled-back or replayed recording never announces a trade.
+  if (recorded) emitContractEvent('trade:executed', recorded);
 }

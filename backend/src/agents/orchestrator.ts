@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
+import { emitContractEvent } from '../websocket/socketEvents';
 
 // Global kill switch. The in-memory flag is the fast path; the value is also
 // persisted to settings.killSwitchActive so a restart/redeploy does NOT
@@ -32,14 +33,19 @@ export async function loadKillSwitchState(): Promise<boolean> {
 }
 
 export function activateKillSwitch() {
+  // Contract event (websocket/socketEvents.ts): the dashboard kill-switch
+  // flag/toast listens for this name — fire on EVERY activation, including
+  // the risk manager's automatic drawdown trip.
   KILL_SWITCH_ACTIVE = true;
   persist(true);
+  emitContractEvent('kill:switch:activated', { active: true, timestamp: Date.now() });
   logger.warn('🔴 KILL SWITCH ACTIVATED — All trading halted');
 }
 
 export function deactivateKillSwitch() {
   KILL_SWITCH_ACTIVE = false;
   persist(false);
+  emitContractEvent('kill:switch:deactivated', { active: false, timestamp: Date.now() });
   logger.info('🟢 Kill switch deactivated — Trading resumed');
 }
 
