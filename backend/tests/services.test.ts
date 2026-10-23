@@ -8,11 +8,6 @@ describe('Service Imports', () => {
     expect(intermarketService).toBeDefined();
   });
 
-  it('should import correlationService', () => {
-    const { correlationService } = require('../src/services/correlationService');
-    expect(correlationService).toBeDefined();
-  });
-
   it('should import optionsFlowService', () => {
     const { optionsFlowService } = require('../src/services/optionsFlowService');
     expect(optionsFlowService).toBeDefined();

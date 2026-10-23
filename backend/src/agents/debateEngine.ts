@@ -1039,8 +1039,8 @@ export async function runInvestmentCommitteeDebate(
   const atrPct = Number.isFinite(rawAtrPct) && rawAtrPct > 0 ? rawAtrPct : floorPct;
   const stopLossPct = Math.min(Math.max(atrPct * 1.5, floorPct), ceilingPct);
   // Take-profit is derived from the already-clamped stop distance with a fixed
-  // 2.5x margin, not computed independently — topTraderRules LAW 3 rejects any
-  // trade under a 2:1 ratio, and deriving both sides from the same ATR reading
+  // 2.5x margin, not computed independently — a sub-2:1 risk/reward is not a
+  // viable trade, and deriving both sides from the same ATR reading
   // with matching clamp multipliers made every trade land exactly on that
   // boundary, where floating-point rounding could tip a valid trade into a
   // false rejection.
