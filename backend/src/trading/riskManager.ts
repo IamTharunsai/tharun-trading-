@@ -211,19 +211,67 @@ export async function validateTradeSignal(
   return result;
 }
 
+// ─── Protection-monitor failure — a missing price must fail loud ─────────────
+export const PROTECTION_UNKNOWN_STATUS = 'PROTECTION_UNKNOWN';
+
+/**
+ * Positions whose stop/target levels are enforced by these DB monitors —
+ * crypto always is: this codebase's Alpaca path has no bracket/OCO/OTO
+ * order class for crypto (bracket attachment is equities-only — see
+ * buildStockOrder / placeBrokerOrder), so no broker-hosted protection can
+ * be attached at placement — have NO
+ * protection at all while their price is missing. That must never pass
+ * silently: log at error level, flag the position PROTECTION_UNKNOWN
+ * (the Position.protectionStatus flag, as brokerSync does with
+ * UNVERIFIED_PROTECTION), and raise the operator alert. The flag is
+ * sticky and the alert fires only on the transition into it, so a dead
+ * feed alarms once instead of every monitor cycle, and the position
+ * stays visibly unprotected until broker reconciliation re-verifies it.
+ * Broker-hosted (bracket) positions are exempt: their legs live at the
+ * broker and do not depend on this price feed.
+ * Returns true when this call transitioned the position into the flag.
+ */
+export async function flagProtectionUnknown(positionId: string | null | undefined, asset: string, monitor: string): Promise<boolean> {
+  if (!positionId) {
+    logger.error(`[PROTECTION] ❌ No current price for ${asset} in ${monitor} — stop-loss/take-profit enforcement is blind for this position`);
+    return false;
+  }
+  try {
+    const position = await prisma.position.findUnique({ where: { id: positionId }, select: { status: true, protectionStatus: true } });
+    // Broker-hosted (bracket) positions are exempt: their legs live at the
+    // broker and do not depend on this price feed — no alarm for them.
+    if (position?.protectionStatus === 'BROKER_HOSTED') return false;
+    logger.error(`[PROTECTION] ❌ No current price for ${asset} in ${monitor} — stop-loss/take-profit enforcement is blind for this position`);
+    if (!position || position.status !== 'OPEN'
+      || position.protectionStatus === PROTECTION_UNKNOWN_STATUS) return false;
+    await prisma.position.update({ where: { id: positionId }, data: { protectionStatus: PROTECTION_UNKNOWN_STATUS } });
+  } catch (err: any) {
+    logger.error(`[PROTECTION] Failed to flag position ${positionId} as ${PROTECTION_UNKNOWN_STATUS}: ${err?.message}`);
+    return false;
+  }
+  import('../services/alertService').then(({ alert }) =>
+    alert.systemError('PROTECTION_MONITOR', `No current price for ${asset} (${monitor}): stop-loss/take-profit cannot be enforced — position flagged ${PROTECTION_UNKNOWN_STATUS}`).catch(() => {})
+  ).catch(() => {});
+  return true;
+}
+
 // ─── checkStopLosses — fast (10 s) SL/TP monitor called by scheduler.ts ──────
 /**
  * Scans all open trades against the current in-memory price map.
  * Closes any that have crossed their stop-loss or take-profit level.
+ * A trade with no usable price is flagged PROTECTION_UNKNOWN and alerted
+ * (see flagProtectionUnknown) — never skipped silently.
  */
 export async function checkStopLosses(prices: Record<string, number>): Promise<void> {
-  if (!prices || Object.keys(prices).length === 0) return;
   const scope = await getVerifiedAccountScope();
   const trades = await prisma.trade.findMany({ where: { status: 'OPEN', accountId: scope.accountId,
     brokerMode: scope.mode, positionId: { not: null } } });
   for (const trade of trades) {
-    const price = prices[trade.asset];
-    if (!Number.isFinite(price) || price <= 0) continue;
+    const price = prices?.[trade.asset];
+    if (!Number.isFinite(price) || price <= 0) {
+      await flagProtectionUnknown(trade.positionId, trade.asset, 'checkStopLosses');
+      continue;
+    }
     const hitStop = trade.stopLossPrice && (trade.type === 'BUY' ? price <= trade.stopLossPrice : price >= trade.stopLossPrice);
     const hitTarget = trade.takeProfitPrice && (trade.type === 'BUY' ? price >= trade.takeProfitPrice : price <= trade.takeProfitPrice);
     if (hitStop || hitTarget) {

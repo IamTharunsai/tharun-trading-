@@ -15,6 +15,13 @@ import { TradeSignal, PortfolioState } from '../agents/types';
 import { getActiveMode, getTradingBroker } from './brokerRouter';
 
 export function buildCryptoOrder(signal: TradeSignal, quantity: number) {
+  // This codebase's Alpaca path has no bracket/OCO/OTO order class for
+  // crypto (bracket attachment is equities-only — see buildStockOrder /
+  // placeBrokerOrder), so no broker-hosted stop/target can be attached
+  // here, and inventing one would only get the order rejected. Protection is therefore
+  // APPLICATION_MONITORED by the DB monitors (checkStopLosses /
+  // markToMarketOpenPositions), which is exactly why those monitors fail
+  // loud — flag + alert — on a missing price instead of skipping.
   if (signal.market !== 'crypto' || signal.direction !== 'BUY' || !Number.isFinite(quantity) || quantity <= 0) return null;
   const qty = Math.floor(quantity * 1e6) / 1e6;
   if (qty <= 0) return null;
@@ -25,7 +32,7 @@ export { confirmOrderFill } from './orderFills';
 import { getCurrentPrice, buildMarketSnapshot } from '../services/marketData';
 import { logger } from '../utils/logger';
 import { isKillSwitchActive } from '../agents/orchestrator';
-import { validateTradeSignal } from './riskManager';
+import { validateTradeSignal, flagProtectionUnknown } from './riskManager';
 import { authorizePersistedDecision, executionPlanSchema } from './decisionAuthority';
 import { buildStockOrder } from './stockOrders';
 import { createHash } from 'crypto';
@@ -104,7 +111,9 @@ async function placeBrokerOrder(
       time_in_force: market === 'crypto' ? 'gtc' : 'day',
     };
 
-    // Bracket order (stop-loss + take-profit) when levels provided
+    // Bracket order (stop-loss + take-profit) when levels provided.
+    // Stocks only: Alpaca has no bracket order class for crypto (see
+    // buildCryptoOrder) — crypto protection stays application-monitored.
     if (!preparedRequest && market === 'stocks' && Number.isInteger(qty) && stopLoss && takeProfit && side === 'BUY') {
       orderRequest.order_class = 'bracket';
       orderRequest.take_profit = { limit_price: parseFloat(takeProfit.toFixed(2)) };
@@ -463,7 +472,10 @@ export async function markToMarketOpenPositions(): Promise<void> {
     try {
       const currentPrice = await fetchCurrentPrice(trade.asset);
       if (!currentPrice || currentPrice <= 0) {
-        logger.debug(`[MTM] No price for ${trade.asset}, skipping`);
+        // Never skip silently: with no price this monitor cannot enforce
+        // the trade's stop/target — flag the position + alert (crypto has
+        // no broker bracket to fall back on; see flagProtectionUnknown).
+        await flagProtectionUnknown(trade.positionId, trade.asset, 'markToMarketOpenPositions');
         continue;
       }
 
