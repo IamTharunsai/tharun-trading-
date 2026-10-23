@@ -32,8 +32,14 @@ def _normalize_run(closes, pred_len: int) -> np.ndarray:
     rejects on length. Extra rows are truncated; a short run is extended
     flat with its own final value; an empty or non-finite run is a hard
     error rather than a fabricated or contract-violating forecast.
+
+    The dtype conversion is part of the contract, not a nicety: the
+    vendored model's outputs are float32 (torch float32 tensors ->
+    float32 DataFrame columns), and float32 ensemble statistics put
+    meanReturn outside the validator's 1e-8 agreement tolerance (see
+    run_forecast). Ingestion upcasts each run to float64, exactly.
     """
-    closes = np.asarray(closes, dtype=float)
+    closes = np.asarray(closes, dtype=np.float64)
     if closes.size == 0:
         raise ValueError("predict() returned no rows")
     if len(closes) > pred_len:
@@ -69,7 +75,9 @@ def run_forecast(predictor, ohlcv: list, pred_len: int, ensemble_size: int = 5) 
         )
         close_runs.append(_normalize_run(pred_df["close"].to_numpy(), pred_len))
 
-    close_matrix = np.stack(close_runs)  # shape (ensemble_size, pred_len)
+    # float64 end-to-end: runs arrive upcast from _normalize_run, and the
+    # astype pins the matrix dtype even if that ever changes.
+    close_matrix = np.stack(close_runs).astype(np.float64, copy=False)  # shape (ensemble_size, pred_len)
     mean_close = close_matrix.mean(axis=0)
 
     # Bands from ensemble quantiles, NOT mean ± std. At T=1.0 the sampled
@@ -89,14 +97,23 @@ def run_forecast(predictor, ohlcv: list, pred_len: int, ensemble_size: int = 5) 
         np.quantile(close_matrix, _BAND_Q_HIGH, axis=0), mean_close
     )
 
-    last_close = float(df["close"].iloc[-1])
-    # meanReturn is computed from the exact predictedClose values returned
-    # below — the platform recomputes it from the response body and demands
-    # agreement to within 1e-8.
-    mean_return = float((mean_close[-1] - last_close) / last_close)
+    # Build the response lists FIRST, then derive meanReturn from the exact
+    # values being returned, in plain Python float arithmetic. The platform
+    # validator recomputes (predictedClose[-1] - lastClose) / lastClose in
+    # float64 from the JSON-round-tripped response and demands agreement
+    # within 1e-8 — computing from the same returned value, the same
+    # received last close, and the same operation makes the delta 0 by
+    # construction. The pre-fix code let the predictor's float32 dtype
+    # reach this arithmetic (float32 ensemble matrix -> float32 mean ->
+    # float32 division on NumPy 2 / NEP 50), and float32 rounding at price
+    # magnitudes is ~1e-8..3e-8 in meanReturn — the ONDS rejection in the
+    # 2026-10-23 production logs (delta 3.17e-8).
+    predicted_close = mean_close.tolist()
+    last_close = float(ohlcv[-1]["close"])
+    mean_return = (predicted_close[-1] - last_close) / last_close
 
     return {
-        "predictedClose": mean_close.tolist(),
+        "predictedClose": predicted_close,
         "upperBand": upper_band.tolist(),
         "lowerBand": lower_band.tolist(),
         "meanReturn": mean_return,
