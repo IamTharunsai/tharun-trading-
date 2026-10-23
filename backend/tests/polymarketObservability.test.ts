@@ -12,6 +12,7 @@ const mockTradeCount = jest.fn();
 const mockCalcPortfolio = jest.fn();
 const mockIsConfigured = jest.fn();
 const mockGetAccount = jest.fn();
+const mockGetVerifiedAccountScope = jest.fn();
 jest.mock('../src/utils/prisma', () => ({ prisma: {
   trade: { findMany: mockTradeFindMany, count: mockTradeCount },
   portfolioSnapshot: { findFirst: jest.fn() },
@@ -44,6 +45,7 @@ jest.mock('../src/services/polymarketUS', () => ({
 }));
 jest.mock('../src/agents/orchestrator', () => ({ activateKillSwitch: jest.fn(), deactivateKillSwitch: jest.fn(), isKillSwitchActive: () => false }));
 jest.mock('../src/trading/riskManager', () => ({ closePosition: jest.fn() }));
+jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: mockGetVerifiedAccountScope }));
 jest.mock('../src/services/marketData', () => ({ getCurrentPrices: () => ({}) }));
 jest.mock('../src/routes/predictionSimulation', () => ({ recordPredictionSimulation: jest.fn(), listPredictionSimulations: jest.fn() }));
 jest.mock('../src/trading/decisionVisibility', () => ({ entryDecisionWhere: jest.fn() }));
@@ -76,6 +78,9 @@ const ownerReq = (over: any = {}) => ({ query: {}, user: { id: 'fixture-owner', 
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // GET /trades is scoped to the verified account + active broker mode;
+  // the wager fixtures below live in this scope.
+  mockGetVerifiedAccountScope.mockResolvedValue({ accountId: 'acct-fixture', mode: 'paper', broker: {} });
   mockCalcPortfolio.mockResolvedValue({
     alpacaEquity: 1000, polymarketEquity: 0, combinedTotal: 1000, cashBalance: 500,
     buyingPower: 500, investedCollateral: 100, dataSource: 'ALPACA_AUTHENTICATED_PAPER', timestamp: 'fixture',
@@ -114,16 +119,18 @@ test('(a) a Polymarket US failure degrades to not-connected instead of failing t
 // ── (b) wagers read path uses the stored market value ───────────────────────
 
 const mockWagerTrades = [
-  { id: 'w1', market: 'prediction', status: 'CLOSED', pnl: 5 },
-  { id: 'w2', market: 'prediction', status: 'OPEN', pnl: null },
-  { id: 's1', market: 'stock', status: 'CLOSED', pnl: 9 },
+  { id: 'w1', market: 'prediction', status: 'CLOSED', pnl: 5, accountId: 'acct-fixture', brokerMode: 'paper' },
+  { id: 'w2', market: 'prediction', status: 'OPEN', pnl: null, accountId: 'acct-fixture', brokerMode: 'paper' },
+  { id: 's1', market: 'stock', status: 'CLOSED', pnl: 9, accountId: 'acct-fixture', brokerMode: 'paper' },
 ];
 
 test('(b) GET /trades with the stored market value returns the recorded wagers', async () => {
   const applyWhere = (where: any) => mockWagerTrades.filter((t: any) =>
     (where.market === undefined || t.market === where.market)
     && (where.status === undefined || t.status === where.status)
-    && (where.asset === undefined || t.asset === where.asset));
+    && (where.asset === undefined || t.asset === where.asset)
+    && (where.accountId === undefined || t.accountId === where.accountId)
+    && (where.brokerMode === undefined || t.brokerMode === where.brokerMode));
   mockTradeFindMany.mockImplementation(async ({ where, skip = 0, take }: any) =>
     applyWhere(where).slice(skip, take == null ? undefined : skip + take).map((t) => ({ ...t })));
   mockTradeCount.mockImplementation(async ({ where }: any) => applyWhere(where).length);
