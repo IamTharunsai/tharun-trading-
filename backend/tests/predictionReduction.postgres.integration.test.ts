@@ -68,7 +68,8 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     await prisma.polymarketPrediction.upsert({ where: { id: 'reduction-prediction' }, create: { id: 'reduction-prediction',
       venue: 'polymarket_us', marketSlug: 'reduction-market', question: 'offline only', marketMid: .495,
       rawFair: .8, fairProb: .8, llmProb: .8, evidenceWeight: 1, decision: 'YES', side: 'YES' },
-      update: { createdAt: new Date(), decision: 'YES', side: 'YES', fairProb: .8, llmProb: .8 } });
+      update: { createdAt: new Date(), decision: 'YES', side: 'YES', fairProb: .8, llmProb: .8,
+        resolvedAt: null, outcome: null } });
     request.mockImplementation(async (method: string, path: string, body: any) => {
       if (method === 'GET' && path === '/v1/account/balances') return { balances: [{ currency: 'USD', currentBalance: 100, buyingPower: 100 }] };
       if (method === 'GET' && path === '/v1/orders/open') return { orders: [] };
