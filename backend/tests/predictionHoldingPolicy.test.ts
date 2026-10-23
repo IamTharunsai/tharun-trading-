@@ -1,4 +1,4 @@
-import { planPredictionHoldingReduction, assertPredictionHoldingPolicy, predictionMarketPolicyFingerprint } from '../src/trading/predictionHoldingPolicy';
+import { planPredictionHoldingReduction, assertPredictionHoldingPolicy, predictionMarketPolicyFingerprint, predictionRoundedFeeBoundPerContract } from '../src/trading/predictionHoldingPolicy';
 import type { VenueMarket, VenueBook } from '../src/services/predictionVenue';
 const now = 1800000000000;
 const thresholds = { tpBuffer: .01, exitEdge: .02, evidenceShift: .1 };
@@ -37,9 +37,45 @@ test('convergence requires net fee allowance; deterioration and unchanged thesis
   const neutral = { ...forecast, fairProb: .6 }, base = { ...entryForecast, fairProb: .6 };
   const common = { ...input(), market: { ...market, feeCoefficient: .04 }, forecast: neutral, entryForecast: base };
   expect(planPredictionHoldingReduction({ ...common, book: { ...book, bids: [{ price: .59, size: 10 }], asks: [{ price: .61, size: 10 }] } }).status).toBe('HOLD');
-  expect(planPredictionHoldingReduction({ ...common, book: { ...book, bids: [{ price: .6, size: 10 }], asks: [{ price: .61, size: 10 }] } })).toMatchObject({ reason: 'tp_converged' });
+  expect(planPredictionHoldingReduction({ ...common, book: { ...book, bids: [{ price: .62, size: 10 }], asks: [{ price: .63, size: 10 }] } })).toMatchObject({ reason: 'tp_converged' });
   expect(planPredictionHoldingReduction({ ...input(), forecast: { ...forecast, fairProb: .65 } })).toMatchObject({ reason: 'evidence_changed' });
   expect(planPredictionHoldingReduction({ ...input(), forecast: { ...forecast, fairProb: .8 } }).status).toBe('HOLD');
+});
+
+test.each(['YES', 'NO'] as const)('%s one-contract cent rounding prevents the old false convergence', side => {
+  const fairYes = side === 'YES' ? .492 : .508;
+  const planned = planPredictionHoldingReduction({ ...input(), holding: { ...holding, side, openingQuantity: 1, remainingQuantity: 1, openingNotional: .5 },
+    snapshot: { ...snapshot, positions: { market: { netPositionDecimal: side === 'YES' ? '1' : '-1', expired: false } } },
+    forecast: { ...forecast, fairProb: fairYes }, entryForecast: { ...entryForecast, fairProb: fairYes },
+    book: { ...book, bids: [{ price: side === 'YES' ? .5 : .49, size: 1 }], asks: [{ price: side === 'YES' ? .51 : .5, size: 1 }] } });
+  expect(.5 - .0695 / 4).toBeGreaterThan(.492 - .01); // Old decision was an exit.
+  expect(.5 - .02).toBeLessThan(.492 - .01); // Documented rounded actual fee misses that target.
+  expect(planned.status).toBe('HOLD');
+});
+
+test.each([
+  [1, .02], [.5, .01], [.3, .01], [.288, .01], [.287, 0], [.01, 0], [.000001, 0],
+])('rounded fee cap holds for actual partial fill %p, without a planned-fill quantum', (filled, collected) => {
+  const perContract = predictionRoundedFeeBoundPerContract(.0695);
+  expect(collected).toBeLessThanOrEqual(filled * perContract);
+  for (const side of ['YES', 'NO'] as const) {
+    const fairYes = side === 'YES' ? .492 : .508;
+    const planned = planPredictionHoldingReduction({ ...input(), market: { ...market, minQty: .000001 },
+      holding: { ...holding, side, openingQuantity: filled, remainingQuantity: filled, openingNotional: filled * .5 },
+      snapshot: { ...snapshot, positions: { market: { netPositionDecimal: String(side === 'YES' ? filled : -filled), expired: false } } },
+      forecast: { ...forecast, fairProb: fairYes }, entryForecast: { ...entryForecast, fairProb: fairYes },
+      book: { ...book, bids: [{ price: side === 'YES' ? .5 : .49, size: filled }], asks: [{ price: side === 'YES' ? .51 : .5, size: filled }] } });
+    expect(planned.status).toBe('HOLD');
+  }
+});
+
+test('partial IOC commission cannot be bounded by spreading a large planned order fee over its planned size', () => {
+  const plannedContracts = 100, roundedPlannedFee = 1.74, actualPartial = .3, roundedPartialFee = .01;
+  expect(roundedPartialFee / actualPartial).toBeGreaterThan(roundedPlannedFee / plannedContracts);
+  expect(roundedPartialFee / actualPartial).toBeLessThanOrEqual(predictionRoundedFeeBoundPerContract(.0695));
+  // Multiple fills share the provider cumulative cap; a .6 cumulative fill at
+  // .5 can collect at most .01, not two independent .3-fill cents.
+  expect(.01).toBeLessThanOrEqual(.6 * predictionRoundedFeeBoundPerContract(.0695));
 });
 test.each([
   { venue: 'international' }, { marketSlug: 'other' }, { fairProb: NaN }, { llmProb: null }, { evidenceWeight: 0 },

@@ -37,6 +37,8 @@ const model = (name: string) => {
   };
 };
 const fakeDb: any = { trade: model('trade'), polymarketPrediction: model('polymarketPrediction'), polymarketPaperOrder: model('polymarketPaperOrder'), prediction: model('prediction') };
+fakeDb.$executeRaw = jest.fn(async () => 1);
+fakeDb.$transaction = jest.fn(async (operation: any) => operation(fakeDb));
 jest.mock('../src/utils/prisma', () => ({ prisma: fakeDb }));
 
 const llm = jest.fn();

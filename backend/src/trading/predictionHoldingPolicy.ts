@@ -4,6 +4,7 @@ import type { VenueBook, VenueMarket } from '../services/predictionVenue';
 import type { PmUsExecutionSnapshot } from '../services/polymarketUS';
 import { sellLevels, walkLevels } from './predictionMath';
 import { decideExit, ExitThresholds } from './predictionExitDecision';
+import { lockPredictionForecastMarket } from './predictionForecastCustody';
 
 const bound = Number.MAX_SAFE_INTEGER / 100;
 const quantity = z.number().finite().positive().max(bound);
@@ -26,7 +27,19 @@ export function predictionForecastFingerprint(raw: unknown) {
 export function predictionMarketPolicyFingerprint(m: VenueMarket) {
   return fingerprint([m.venue, m.id, m.open, m.executionMetadataVerified, m.tickSize, m.minQty, m.feeCoefficient]);
 }
-export const holdingPolicyEvidenceSchema = z.object({ version: z.literal(1), openingExecutionId: z.string().min(1),
+
+/** Standard taker fee cap, valid for every positive actual cumulative fill q:
+ * E <= q*theta/4. Half-even nearest-cent rounding R satisfies R(x)<=2x for
+ * x>=0 (below half a cent R=0; otherwise R<=x+.005<=2x). The documented
+ * cumulative cap therefore gives collectedFees/q <= theta/2, including dust
+ * and partial IOC fills. Never divide a planned order's rounded fee by its
+ * planned quantity to infer the fee of a smaller actual fill.
+ * https://docs.polymarket.us/fees#standard-fee-rules */
+export function predictionRoundedFeeBoundPerContract(theta: number) {
+  probability.parse(theta);
+  return theta / 2;
+}
+export const holdingPolicyEvidenceSchema = z.object({ version: z.literal(2), feeBound: z.literal('STANDARD_ROUNDED_THETA_HALF'), openingExecutionId: z.string().min(1),
   forecastId: z.string().min(1), forecastHash: z.string().regex(/^[a-f0-9]{64}$/),
   entryPredictionId: z.string().min(1), entryForecastHash: z.string().regex(/^[a-f0-9]{64}$/),
   marketHash: z.string().regex(/^[a-f0-9]{64}$/), thresholds: exitThresholdsSchema,
@@ -82,19 +95,19 @@ export function planPredictionHoldingReduction(args: { holding: PolicyHolding; s
       floor = h.side === 'YES' ? yesLimit : Number((1 - yesLimit).toFixed(6));
     }
     if (floor < .01 || floor > .99) throw new Error('SALE_FLOOR_UNSUPPORTED');
-    // theta*p*(1-p) <= theta/4 across every executable price. Estimates only;
-    // actual order commission remains the accounting authority.
+    // Includes positive cent rounding even if the IOC fills only a fraction.
+    // This conservative planning bound never books commission or guarantees P&L.
     const decision = decideExit({ side: h.side, entryPrice: h.openingNotional / h.openingQuantity,
-      exitPrice: floor - m.feeCoefficient / 4, fairNowYes: current.fairProb,
+      exitPrice: floor - predictionRoundedFeeBoundPerContract(m.feeCoefficient), fairNowYes: current.fairProb,
       fairAtEntrySide: h.side === 'YES' ? entry.fairProb : 1 - entry.fairProb, cfg });
     if (!decision.exit) return { status: 'HOLD', reason: 'THESIS_REMAINS_OPEN' };
-    const policyEvidence = holdingPolicyEvidenceSchema.parse({ version: 1, openingExecutionId: h.openingExecutionId,
+    const policyEvidence = holdingPolicyEvidenceSchema.parse({ version: 2, feeBound: 'STANDARD_ROUNDED_THETA_HALF', openingExecutionId: h.openingExecutionId,
       forecastId: current.id, forecastHash: predictionForecastFingerprint(current), entryPredictionId: entry.id,
       entryForecastHash: predictionForecastFingerprint(entry), marketHash: predictionMarketPolicyFingerprint(m), thresholds: cfg,
       reason: decision.reason, remainingQuantity: h.remainingQuantity, quantity: contracts, sideMinPrice: floor,
       bookObservedAt: b.fetchedAt, expiresAt: Math.min(b.fetchedAt + 5000, current.createdAt.getTime() + 300000) });
     return { status: 'REDUCTION_READY', reason: decision.reason, quantity: contracts, sideMinPrice: floor, policyEvidence,
-      requestKey: fingerprint(['holding-policy-v1', h.openingExecutionId, current.id, h.remainingQuantity]) };
+      requestKey: fingerprint(['holding-policy-v2', h.openingExecutionId, current.id, h.remainingQuantity]) };
   } catch (error) {
     return { status: 'BLOCKED', reason: error instanceof Error && !(error instanceof z.ZodError) ? error.message : 'POLICY_EVIDENCE_INVALID' };
   }
@@ -111,11 +124,20 @@ export async function assertPredictionHoldingPolicy(tx: any, raw: unknown, openi
     || policy.remainingQuantity !== holding.remainingQuantity || policy.marketHash !== marketHash
     || policy.expiresAt <= now || policy.bookObservedAt > now + 1000 || now - policy.bookObservedAt > 5000
     || fingerprint(policy.thresholds) !== fingerprint(readPredictionExitThresholds())) throw new Error('HOLDING_POLICY_AUTHORITY_CHANGED');
+  // Caller already holds the account lock. The shared market lock stays held
+  // through claim creation/consumption at transaction commit; probability and
+  // resolution publishers acquire the same market lock before mutating rows.
+  // This is a transaction linearization point, not a promise that no forecast
+  // can publish after commit and before a subsequent network POST.
+  await lockPredictionForecastMarket(tx, 'polymarket_us', opening.marketSlug);
+  if (policy.expiresAt <= Date.now() || Date.now() - policy.bookObservedAt > 5000) throw new Error('HOLDING_POLICY_AUTHORITY_CHANGED');
   const latest = await tx.polymarketPrediction.findFirst({ where: { venue: 'polymarket_us', marketSlug: opening.marketSlug },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
   const entry = await tx.polymarketPrediction.findUnique({ where: { id: opening.predictionId } });
+  const afterReads = Date.now();
   if (!latest || latest.id !== policy.forecastId || latest.marketSlug !== opening.marketSlug || latest.venue !== 'polymarket_us'
-    || latest.resolvedAt || new Date(latest.createdAt).getTime() > now + 1000 || now - new Date(latest.createdAt).getTime() > 300000
+    || policy.expiresAt <= afterReads || latest.resolvedAt || new Date(latest.createdAt).getTime() > afterReads + 1000
+    || afterReads - new Date(latest.createdAt).getTime() > 300000
     || predictionForecastFingerprint(latest) !== policy.forecastHash || predictionForecastFingerprint(entry) !== policy.entryForecastHash) {
     throw new Error('HOLDING_POLICY_FORECAST_CHANGED');
   }

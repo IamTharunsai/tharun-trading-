@@ -20,6 +20,7 @@ import { getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import * as M from '../trading/predictionMath';
 import type { PredictionVenue, VenueBook, VenueMarket } from './predictionVenue';
 import { decideExit } from '../trading/predictionExitDecision';
+import { publishPredictionForecast, resolvePredictionForecastMarket } from '../trading/predictionForecastCustody';
 export { decideExit } from '../trading/predictionExitDecision';
 export type { ExitDecision } from '../trading/predictionExitDecision';
 
@@ -611,8 +612,7 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
       const bestEdge = plan ? null : edges[0];
       let predictionId: string | null = recentOk ? recent.id : null;
       if (!recentOk) {
-        const row = await db.polymarketPrediction.create({
-          data: {
+        const row = await publishPredictionForecast(db, {
             venue: venue.id, marketSlug: m.id, eventSlug: m.eventId ?? null, category: m.category, question: m.question.slice(0, 500),
             endDate: m.endDate ? new Date(m.endDate) : null, marketMid: mid, bestBid: bid, bestAsk: ask,
             llmProb: fair.llmProb, llmConfidence: fair.llmConfidence, headlineCount: fair.headlineCount,
@@ -621,7 +621,6 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
             decision, skipReason, side: plan?.side ?? bestEdge?.side ?? null,
             netEdge: plan?.netEdge ?? bestEdge?.netEdge ?? null, execPrice: plan?.price ?? bestEdge?.execPrice ?? null,
             feePerShare: plan?.feePerShare ?? bestEdge?.feePerShare ?? null,
-          },
         }).catch((err: any) => { logger.debug(`[PM-EDGE] prediction write failed: ${err?.message}`); return null; });
         predictionId = row?.id ?? null;
       }
@@ -683,7 +682,7 @@ export async function resolvePolymarketPredictions(opts: { venue?: PredictionVen
   for (const slug of slugs) {
     const v = await venue.getSettlement(slug);
     if (v == null) continue;
-    await db.polymarketPrediction.updateMany({ where: { marketSlug: slug, outcome: null }, data: { outcome: v, resolvedAt: new Date() } }).catch(() => {});
+    await resolvePredictionForecastMarket(db, venue.id, slug, v).catch(() => {});
     resolved++;
   }
   if (resolved) logger.info(`🎯 [PM-EDGE] ${resolved} market(s) resolved for the scorecard`);

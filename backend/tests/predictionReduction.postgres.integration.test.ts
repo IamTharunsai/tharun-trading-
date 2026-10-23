@@ -13,6 +13,7 @@ import { getPolymarketUSCredentialScope, polymarketUSVenue } from '../src/servic
 import * as polymarketUS from '../src/services/polymarketUS';
 import { assertPredictionRecoveryScope } from '../src/trading/predictionRecoveryScope';
 import { runPredictionHoldingMaintenance } from '../src/trading/predictionHoldingMaintenance';
+import { publishPredictionForecast, resolvePredictionForecastMarket } from '../src/trading/predictionForecastCustody';
 
 const ownerId = 'reduction-fixture-owner';
 const suite = process.env.RUN_PREDICTION_RECOVERY_POSTGRES === 'true' ? describe : describe.skip;
@@ -116,10 +117,10 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
   }
 
   async function policyForecast(side: 'YES' | 'NO' = 'YES', id = 'policy-forecast') {
-    const row = await prisma.polymarketPrediction.create({ data: { id, venue: 'polymarket_us', marketSlug: 'reduction-market',
+    const row = await publishPredictionForecast(prisma, { id, venue: 'polymarket_us', marketSlug: 'reduction-market',
       question: 'offline policy', marketMid: .5, rawFair: side === 'YES' ? .2 : .9, fairProb: side === 'YES' ? .2 : .9,
       llmProb: side === 'YES' ? .2 : .9, evidenceWeight: .8, decision: 'SKIP', side: null,
-      createdAt: new Date(Date.now() + 1) } });
+      createdAt: new Date(Date.now() + 1) });
     jest.spyOn(polymarketUSVenue, 'getBook').mockImplementation(async () => ({
       bids: [{ price: side === 'YES' ? .3 : .19, size: 100 }], asks: [{ price: side === 'YES' ? .31 : .2, size: 100 }],
       state: 'MARKET_STATE_OPEN', fetchedAt: Date.now() }));
@@ -189,15 +190,96 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     await open(); const forecast = await policyForecast(); let reads = 0;
     const original = jest.spyOn(polymarketUS, 'getPolymarketUSMarket').getMockImplementation()!;
     jest.spyOn(polymarketUS, 'getPolymarketUSMarket').mockImplementation(async (...args) => {
-      if (++reads === 3) await prisma.polymarketPrediction.create({ data: { id: 'superseding-policy', venue: 'polymarket_us',
+      if (++reads === 3) await publishPredictionForecast(prisma, { id: 'superseding-policy', venue: 'polymarket_us',
         marketSlug: 'reduction-market', question: 'offline replacement', marketMid: .5, rawFair: .8, fairProb: .8,
-        llmProb: .8, evidenceWeight: .8, decision: 'SKIP', createdAt: new Date(Math.max(Date.now(), forecast.createdAt.getTime()) + 2) } });
+        llmProb: .8, evidenceWeight: .8, decision: 'SKIP', createdAt: new Date(Math.max(Date.now(), forecast.createdAt.getTime()) + 2) });
       return original(...args);
     });
     const result = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
     expect(result.rows[0].status).toBe('REDUCTION_REFUSED');
     expect(await prisma.predictionReduction.findFirstOrThrow({ where: { ownerId } })).toMatchObject({ status: 'ABORTED', brokerOrderId: null });
     expect(posted).toHaveLength(1);
+  });
+
+  test.each(['publish', 'resolve'] as const)('a concurrent %s waits while final policy read and consumption linearize', async mutation => {
+    await open(); await policyForecast();
+    let readerEntered!: () => void, releaseReader!: () => void, publisherAttempted!: () => void;
+    const paused = new Promise<void>(resolve => { readerEntered = resolve; });
+    const release = new Promise<void>(resolve => { releaseReader = resolve; });
+    const attempting = new Promise<void>(resolve => { publisherAttempted = resolve; });
+    const afterMarketLockStates: string[] = []; let pausedOnce = false, publisherFinished = false;
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    const transaction = jest.spyOn(prisma, '$transaction').mockImplementation((async (operation: any, ...options: any[]) => {
+      if (typeof operation !== 'function') return (originalTransaction as any)(operation, ...options);
+      return (originalTransaction as any)(async (tx: any) => {
+        const preparing = await tx.predictionReduction.findFirst({ where: { ownerId, status: 'PREPARING' } });
+        let accountLocked = false;
+        const forecastModel = new Proxy(tx.polymarketPrediction, { get(target, property) {
+          if (property === 'findFirst') return async (...args: any[]) => {
+            const value = await target.findFirst(...args);
+            if (preparing && !pausedOnce && args[0]?.where?.marketSlug === 'reduction-market' && args[0]?.orderBy) {
+              pausedOnce = true; readerEntered(); await release;
+            }
+            return value;
+          };
+          const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
+        } });
+        const wrapped = new Proxy(tx, { get(target, property) {
+          if (property === 'polymarketPrediction') return forecastModel;
+          if (property === '$executeRaw') return async (...args: any[]) => {
+            const sql = String(args[0]);
+            if (sql.includes('pg_advisory_xact_lock(hashtext(')) accountLocked = true;
+            const publisherMarketLock = !accountLocked && sql.includes('pg_advisory_xact_lock(1347571526');
+            if (publisherMarketLock) publisherAttempted();
+            const value = await target.$executeRaw(...args);
+            if (publisherMarketLock) {
+              const claim = await target.predictionReduction.findFirst({ where: { ownerId } });
+              if (claim) afterMarketLockStates.push(claim.status);
+            }
+            return value;
+          };
+          const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
+        } });
+        return operation(wrapped);
+      }, ...options);
+    }) as any);
+    const bounded = async (promise: Promise<unknown>) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Fixture rendezvous timeout')), 3000); })]); }
+      finally { if (timer) clearTimeout(timer); }
+    };
+    let maintenance: ReturnType<typeof runPredictionHoldingMaintenance> | undefined, publication: Promise<unknown> | undefined;
+    try {
+      maintenance = runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+      await bounded(paused);
+      publication = (mutation === 'publish'
+        ? publishPredictionForecast(prisma, { id: 'during-await-publish', venue: 'polymarket_us', marketSlug: 'reduction-market',
+          question: 'offline concurrent producer', marketMid: .5, rawFair: .8, fairProb: .8, llmProb: .8, evidenceWeight: .8,
+          decision: 'SKIP', createdAt: new Date(Date.now() + 2) })
+        : resolvePredictionForecastMarket(prisma, 'polymarket_us', 'reduction-market', 1))
+        .then(result => { publisherFinished = true; return result; });
+      await bounded(attempting);
+      let waiting = 0;
+      for (let i = 0; i < 50 && waiting === 0; i++) {
+        const locks = await prisma.$queryRaw<Array<{ waiting: number }>>`SELECT count(*)::int AS waiting FROM pg_locks
+          WHERE locktype = 'advisory' AND classid = 1347571526::oid AND NOT granted`;
+        waiting = locks[0].waiting;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBeGreaterThan(0); expect(publisherFinished).toBe(false);
+      expect(await prisma.predictionReduction.findFirstOrThrow({ where: { ownerId } })).toMatchObject({ status: 'PREPARING' });
+      expect(posted).toHaveLength(1); // No sale before durable consumption.
+      releaseReader();
+      const result = await maintenance; await publication;
+      expect(result.rows[0].status).toBe('REDUCTION_OBSERVED');
+      expect(afterMarketLockStates).toHaveLength(1);
+      expect(['SUBMITTING', 'SUBMITTED', 'TERMINAL']).toContain(afterMarketLockStates[0]);
+      expect(posted).toHaveLength(2);
+    } finally {
+      releaseReader();
+      await Promise.allSettled([...(maintenance ? [maintenance] : []), ...(publication ? [publication] : [])]);
+      transaction.mockRestore();
+    }
   });
 
   test('persisted policy cursor moves past twenty unavailable holdings to an actual executable holding', async () => {
