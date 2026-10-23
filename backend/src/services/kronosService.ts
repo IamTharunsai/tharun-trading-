@@ -26,17 +26,69 @@ const forecastSchema = z.object({
   meanReturn: z.number().finite(),
 });
 
+// Compact, payload-free summary of a rejected response's arrays (length and
+// minimum finite value per array) so a schema rejection log can distinguish a
+// positivity failure from a type/shape failure without dumping the payload.
+function summarizeForecastArrays(raw: unknown): Record<string, { length: number; min: number | null }> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const summary: Record<string, { length: number; min: number | null }> = {};
+  for (const key of ['predictedClose', 'upperBand', 'lowerBand']) {
+    const arr = record[key];
+    if (!Array.isArray(arr)) continue;
+    const nums = arr.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    summary[key] = { length: arr.length, min: nums.length ? Math.min(...nums) : null };
+  }
+  return Object.keys(summary).length ? summary : undefined;
+}
+
 export function validateKronosForecast(raw: unknown, symbol: string, predLen: number, lastClose: number): KronosForecast | null {
   const result = forecastSchema.safeParse(raw);
-  if (!result.success) return null;
+  if (!result.success) {
+    // Six distinct failures used to collapse into one caller-side message,
+    // which made a live contract break undiagnosable from logs. Name the
+    // check that failed, with compact summaries only — never the payload.
+    logger.warn('Kronos response rejected: schema validation failed', {
+      symbol, check: 'schema',
+      issues: result.error.issues.slice(0, 3).map(i => `${i.path.join('.')}:${i.code}`),
+      arrays: summarizeForecastArrays(raw),
+    });
+    return null;
+  }
   const forecast = result.data;
-  if (forecast.symbol !== symbol || forecast.predictedClose.length !== predLen
-    || forecast.upperBand.length !== predLen || forecast.lowerBand.length !== predLen) return null;
+  if (forecast.symbol !== symbol) {
+    logger.warn('Kronos response rejected: symbol mismatch', { symbol, check: 'symbol', received: forecast.symbol });
+    return null;
+  }
+  if (forecast.predictedClose.length !== predLen
+    || forecast.upperBand.length !== predLen || forecast.lowerBand.length !== predLen) {
+    logger.warn('Kronos response rejected: length mismatch', {
+      symbol, check: 'length', predLen,
+      lengths: {
+        predictedClose: forecast.predictedClose.length,
+        upperBand: forecast.upperBand.length,
+        lowerBand: forecast.lowerBand.length,
+      },
+    });
+    return null;
+  }
   for (let i = 0; i < predLen; i++) {
-    if (forecast.lowerBand[i] > forecast.predictedClose[i] || forecast.predictedClose[i] > forecast.upperBand[i]) return null;
+    if (forecast.lowerBand[i] > forecast.predictedClose[i] || forecast.predictedClose[i] > forecast.upperBand[i]) {
+      logger.warn('Kronos response rejected: band order violated', {
+        symbol, check: 'band-order', index: i,
+        lower: forecast.lowerBand[i], predicted: forecast.predictedClose[i], upper: forecast.upperBand[i],
+      });
+      return null;
+    }
   }
   const actualReturn = (forecast.predictedClose[predLen - 1] - lastClose) / lastClose;
-  if (!Number.isFinite(actualReturn) || Math.abs(actualReturn - forecast.meanReturn) > 1e-8) return null;
+  if (!Number.isFinite(actualReturn) || Math.abs(actualReturn - forecast.meanReturn) > 1e-8) {
+    logger.warn('Kronos response rejected: meanReturn mismatch', {
+      symbol, check: 'meanReturn',
+      delta: Math.abs(actualReturn - forecast.meanReturn), expected: actualReturn, received: forecast.meanReturn,
+    });
+    return null;
+  }
   return forecast;
 }
 
