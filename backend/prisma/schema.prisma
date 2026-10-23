@@ -371,6 +371,22 @@ model CapitalRiskActivity {
   @@unique([accountId, brokerMode, brokerActivityId])
 }
 
+// Append-only finite SSE evidence. A row records an observation, never an
+// immutable promise of future coverage; late postings require a fresh read.
+model CapitalActivityCoverageObservation {
+  id String @id @default(cuid())
+  accountId String
+  brokerMode String
+  accountCreatedAt DateTime
+  since DateTime
+  until DateTime
+  observedAt DateTime @default(now())
+  digest String
+  events Json
+  transportComplete Boolean
+  @@index([accountId, brokerMode, until], map: "CapitalActivityCoverage_account_mode_until_idx")
+}
+
 model CapitalRiskObservation {
   id String @id @default(cuid())
   accountId String

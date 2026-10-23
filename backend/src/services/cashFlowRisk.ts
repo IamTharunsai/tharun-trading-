@@ -3,6 +3,7 @@ import { prisma } from '../utils/prisma';
 import type { AccountScope } from '../trading/accountScope';
 import type { AlpacaActivity, AlpacaPortfolioHistory } from './alpacaBroker';
 import type { PortfolioState } from '../agents/types';
+import { ActivityHistoryObservation, corroboratesNoCapital } from './capitalActivityHistory';
 
 export const RISK_STEP_MS = 300_000;
 const DAY = 86_400_000;
@@ -279,7 +280,10 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
   const initialReference = new Date(end); initialReference.setUTCHours(0, 0, 0, 0); initialReference.setUTCDate(initialReference.getUTCDate() - 8);
   let expectedRevision: number | undefined;
   try {
-    await prisma.capitalRiskState.upsert({ where: { scopeKey }, create: { scopeKey, ...where, referenceAt: initialReference }, update: {} });
+    // Native INSERT ON CONFLICT DO NOTHING: Prisma upsert(update: {}) may
+    // emulate read/create and race on an account's first concurrent refresh.
+    // Never update an existing reference, revision or failure throttle here.
+    await prisma.capitalRiskState.createMany({ data: [{ scopeKey, ...where, referenceAt: initialReference }], skipDuplicates: true });
     const before = await prisma.capitalRiskState.findUniqueOrThrow({ where: { scopeKey } });
     expectedRevision = before.revision;
     if (before.coveredThrough && before.coveredThrough >= end && before.status === 'VERIFIED') return readCashFlowRisk(scope, now);
@@ -321,14 +325,37 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
       if (previous && request.from <= previous.to) previous.to = Math.max(previous.to, request.to);
       else ranges.push({ ...request });
     }
-    const history: { start: string; end: string; response: AlpacaPortfolioHistory }[] = [];
+    const history: { start: string; end: string; response: AlpacaPortfolioHistory; capitalCoverageObservationId?: string }[] = [];
+    let capitalObservation: ActivityHistoryObservation | undefined;
+    let capitalObservationId: string | undefined;
     const points: RiskPoint[] = [];
     for (const range of ranges) for (let start = range.from; start < range.to;) {
       if (history.length >= 16) throw new Error('RISK_BACKFILL_BOUND_EXCEEDED');
       const until = Math.min(start + 29 * DAY, range.to);
       const response = await scope.broker.getPortfolioHistoryVerified(new Date(start).toISOString(), new Date(until).toISOString());
-      points.push(...parseRiskHistory(response, new Date(start), new Date(until), before.revision === 0 && history.length === 0));
-      history.push({ start: new Date(start).toISOString(), end: new Date(until).toISOString(), response });
+      let parsedResponse = response;
+      if (response && response.cashflow === undefined) {
+        if (!capitalObservation) {
+          capitalObservation = await scope.broker.getActivityHistoryVerified(scope.accountId, now.toISOString());
+          const stored = await prisma.capitalActivityCoverageObservation.create({ data: {
+            ...where, accountCreatedAt: new Date(capitalObservation.accountCreatedAt),
+            since: new Date(capitalObservation.since), until: new Date(capitalObservation.until), observedAt: now,
+            digest: capitalObservation.digest, events: capitalObservation.events as unknown as Prisma.InputJsonValue,
+            transportComplete: capitalObservation.transportComplete,
+          } });
+          capitalObservationId = stored.id;
+        }
+        // Check the entire retained risk horizon, not merely a recent request:
+        // a newly delivered old capital event must invalidate prior zero proof.
+        if (!corroboratesNoCapital(capitalObservation, scope.accountId, new Date(evidenceStart), end)) {
+          throw new Error('CAPITAL_ACTIVITY_COVERAGE_UNAVAILABLE');
+        }
+        // Raw response remains untouched and retained below with its proof link.
+        parsedResponse = { ...response, cashflow: {} };
+      }
+      points.push(...parseRiskHistory(parsedResponse, new Date(start), new Date(until), before.revision === 0 && history.length === 0));
+      history.push({ start: new Date(start).toISOString(), end: new Date(until).toISOString(), response,
+        ...(response && response.cashflow === undefined ? { capitalCoverageObservationId: capitalObservationId } : {}) });
       start = until;
     }
     const account = await scope.broker.getPortfolioSummary();
@@ -389,11 +416,14 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
     return readCashFlowRisk(scope, now);
   } catch (error) {
     const reason = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'CAPITAL_EVIDENCE_UNAVAILABLE';
+    // A worker that never captured a state revision has no authority to
+    // invalidate a row another worker may have created and verified meanwhile.
+    if (expectedRevision === undefined) return empty(reason);
     // A scan failure must not replace the entire portfolio with an exception.
     // Its accounting/position evidence can still monitor existing exposure.
     await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`;
-      const invalidated = await tx.capitalRiskState.updateMany({ where: { scopeKey, ...(expectedRevision !== undefined ? { revision: expectedRevision } : {}) },
+      const invalidated = await tx.capitalRiskState.updateMany({ where: { scopeKey, revision: expectedRevision },
         data: { status: 'UNVERIFIED', error: reason, lastAttemptAt: now } });
       if (invalidated.count) await tx.portfolioSnapshot.updateMany({ where: { ...where, riskAsOf: { not: null } }, data: {
         riskDataComplete: false, riskRecomputedAt: now, adjustedDailyPnl: null, adjustedDailyPnlPct: null,

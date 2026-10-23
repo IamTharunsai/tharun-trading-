@@ -34,3 +34,15 @@ test('a bounded or repeated activity page is unavailable evidence rather than an
   await expect(broker.listActivitiesVerified('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z', 1)).rejects.toThrow('BOUND_EXCEEDED');
   await expect(broker.listActivitiesVerified('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z', 2)).rejects.toThrow('ACTIVITY_PAGE');
 });
+
+test('crypto eligibility uses authenticated active tradable USD pairs, never disabled/nonUSD instruments', async () => {
+  const asset = (symbol: string, patch = {}) => ({ class: 'crypto', status: 'active', tradable: true, symbol, ...patch });
+  get.mockResolvedValue({ data: [asset('BTC/USD'), asset('ETH/USD'), asset('ETH/USD'), asset('SOL/USDT'),
+    asset('DOGE/USD', { tradable: false }), asset('LTC/USD', { status: 'inactive' }), asset('AAPL', { class: 'us_equity' })] });
+  expect(await broker.listTradableCryptoAssetsVerified()).toEqual(['BTC', 'ETH']);
+  expect(get).toHaveBeenCalledWith('/v2/assets', { params: { status: 'active', asset_class: 'crypto' } });
+  get.mockResolvedValueOnce({ data: [{ symbol: 'BTC/USD' }] });
+  await expect(broker.listTradableCryptoAssetsVerified()).rejects.toThrow('CRYPTO_ASSETS_UNAVAILABLE');
+  get.mockRejectedValueOnce(new Error('unavailable'));
+  await expect(broker.listTradableCryptoAssetsVerified()).rejects.toThrow('unavailable');
+});

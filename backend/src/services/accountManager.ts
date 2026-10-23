@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { encryptSecret, decryptSecret } from '../utils/secrets';
 import { prisma } from '../utils/prisma';
+import { getAlpacaMode } from '../trading/liveGate';
 
 // Polygon USDC Contract Addresses
 const NATIVE_USDC_POLYGON = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
@@ -74,7 +75,7 @@ class AccountManager {
     const apiKey = process.env.ALPACA_API_KEY;
     const secretKey = process.env.ALPACA_SECRET_KEY;
     if (apiKey && secretKey && !apiKey.includes('XXXX') && apiKey !== 'dummy-key') {
-      const isPaper = (process.env.ALPACA_BASE_URL || '').includes('paper') || process.env.TRADING_MODE !== 'live';
+      const isPaper = (process.env.ALPACA_BASE_URL || '').includes('paper') || getAlpacaMode() !== 'live';
       await this.testAndSaveAlpaca(apiKey, secretKey, isPaper, false);
     } else {
       // Keys previously entered in Settings (encrypted at rest)

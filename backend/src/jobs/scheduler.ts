@@ -1,5 +1,8 @@
 import cron from 'node-cron';
 import { schedulerRuntime, markSchedulerFailure, markSchedulerSkip } from './schedulerRuntime';
+import { createContinuousCryptoScan } from './cryptoScan';
+import { AccountScope, getVerifiedAccountScope } from '../trading/accountScope';
+import { getActiveMode, getTradingBroker } from '../trading/brokerRouter';
 import { logger } from '../utils/logger';
 import { buildMarketSnapshot, CRYPTO_ASSETS, getCurrentPrices, getNextStockBatch, getTotalStockCount, refreshOpenPositionStockPrices } from '../services/marketData';
 import { refreshFundamentalsForSymbol } from '../services/deepAnalysisService';
@@ -25,15 +28,20 @@ const analyzedTradeIds = new Set<string>();
 // In-memory lock to prevent concurrent debates on same asset
 const debateLocks = new Set<string>();
 
-export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY'; purpose?: 'ENTRY' | 'RESEARCH' } = {}) {
+export async function runDebateForAsset(asset: string, market: 'crypto' | 'stocks' | 'forex' = 'crypto', opts: { bypassGate?: boolean; maximumNotionalUsd?: number; executionLane?: 'COUNCIL' | 'INTRADAY'; purpose?: 'ENTRY' | 'RESEARCH'; expectedScope?: AccountScope } = {}) {
   const purpose = opts.purpose ?? 'ENTRY';
   if (purpose !== 'ENTRY' && purpose !== 'RESEARCH') throw new Error('Invalid debate execution purpose');
   if (isKillSwitchActive()) { markSchedulerSkip('KILL_SWITCH_ACTIVE'); return; }
+  const currentBinding = () => !opts.expectedScope || (getActiveMode() === opts.expectedScope.mode && getTradingBroker() === opts.expectedScope.broker);
+  const currentScope = (portfolio: Awaited<ReturnType<typeof getPortfolioState>>) => currentBinding()
+    && (!opts.expectedScope || (portfolio.accountId === opts.expectedScope.accountId && portfolio.brokerMode === opts.expectedScope.mode));
+  if (!currentBinding()) { markSchedulerSkip('ACCOUNT_SCOPE_CHANGED'); return; }
   const lockKey = `${asset}:${market}`;
   if (debateLocks.has(lockKey)) { markSchedulerSkip('ALREADY_RUNNING'); return; }
 
   // Skip if open position already exists for this asset
   const currentPortfolio = await getPortfolioState();
+  if (!currentScope(currentPortfolio)) { markSchedulerSkip('ACCOUNT_SCOPE_CHANGED'); return; }
   const openPos = currentPortfolio.positions.find(position => position.asset === asset);
   if (openPos) {
     markSchedulerSkip('POSITION_ALREADY_OPEN');
@@ -73,6 +81,7 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
       volumeAvg20: snapshot.indicators.volumeAvg20, atr14: snapshot.indicators.atr14,
     });
     const portfolio = await getPortfolioState();
+    if (!currentScope(portfolio)) { markSchedulerSkip('ACCOUNT_SCOPE_CHANGED'); return; }
     const transcript = await runInvestmentCommitteeDebate(snapshot, portfolio, regime.regime, regime, opts.executionLane ?? 'COUNCIL', undefined, undefined, purpose);
     // Research is blocked before risk/execution, independently of the returned vote.
     if (purpose === 'RESEARCH') {
@@ -189,10 +198,6 @@ export function initScheduler() {
   // previously this used two hardcoded UTC crons (13:35 + 14:35) that both
   // fired every single day year-round, double-running (and double-billing)
   // the market-open scan regardless of season.
-  // First 10 of the 30 tracked coins (list is roughly market-cap ordered, not
-  // measured) — was hardcoded to just BTC/ETH/SOL before. ponytail: not a real
-  // liquidity ranking, upgrade to a scored crypto screen if that matters later.
-  const CRYPTO_SCAN_LIST = CRYPTO_ASSETS.slice(0, 10);
   const ET_ZONE = 'America/New_York';
   // Cap on debates per scan window — keeps API cost bounded while still giving
   // the screen room to move past the first batch when everything HOLDs.
@@ -289,31 +294,15 @@ export function initScheduler() {
     if (result?.unresolved?.length || result?.activityEvidence === 'ACTIVITY_EVIDENCE_UNAVAILABLE') markSchedulerFailure('BROKER_RECONCILIATION_INCOMPLETE');
   });
 
-  // ── CRYPTO: once per day at 8 AM ET — stop early once one trades ─────────
-  // Runs coins in parallel batches of 3 (3× speedup vs sequential) while still
-  // honouring the stop-on-first-trade contract: if ANY coin in a batch trades,
-  // we break out before processing the next batch. The 5 s inter-batch pause
-  // keeps Binance / Alpaca rate-limit pressure low.
-  schedule('crypto_daily', '0 8 * * *', async () => {
-    if (isKillSwitchActive()) { markSchedulerSkip('KILL_SWITCH_ACTIVE'); return; }
-    logger.info('🪙 DAILY CRYPTO SCAN (parallel batches of 3)...');
-    const BATCH_SIZE = 3;
-    for (let i = 0; i < CRYPTO_SCAN_LIST.length; i += BATCH_SIZE) {
-      if (isKillSwitchActive()) { markSchedulerSkip('KILL_SWITCH_ACTIVE'); break; }
-      const batch = CRYPTO_SCAN_LIST.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(
-        batch.map(coin => runDebateForAsset(coin, 'crypto').catch(() => { markSchedulerFailure(); return null; }))
-      );
-      const traded = results.find(r => r?.tradeExecuted);
-      if (traded) {
-        const tradedCoin = batch[results.indexOf(traded)];
-        logger.info(`🪙 Trade found on ${tradedCoin}, stopping crypto scan`);
-        break;
-      }
-      // Brief inter-batch pause to respect Binance WebSocket rate limits
-      await new Promise(r => setTimeout(r, 3000));
-    }
-  }, { timezone: ET_ZONE });
+  // Eligible crypto scanning is independent of US stock session hours. The
+  // callback admits bounded cadence/rotation; shared council/execution gates
+  // remain authoritative. One-minute ticks also support e.g. seven-minute cadence.
+  schedule('crypto_scan', '* * * * *', createContinuousCryptoScan({
+    scope: getVerifiedAccountScope, killed: isKillSwitchActive, supportedAssets: CRYPTO_ASSETS,
+    debate: (asset, expectedScope) => runDebateForAsset(asset, 'crypto', { expectedScope }),
+    skip: markSchedulerSkip, failure: markSchedulerFailure,
+    observe: counts => logger.info('crypto_scan_observed', counts),
+  }));
 
   // ── EVERY 60 SECONDS: Refresh live prices for open stock positions ───────
   // Stock prices were only ever set once at boot (previous day's close) —
