@@ -533,7 +533,7 @@ export function initScheduler() {
     } catch (err) { markSchedulerFailure(); logger.error('Ledger integrity check failed', { err }); }
   });
 
-  logger.info('✅ Tharun Trading Scheduler initialized:');
+  logger.info('✅ Bhishma Scheduler initialized:');
   logger.info('   ⏱️ Investment Committee (swing): 9:35, 11:00 & 13:00 ET, sector-balanced universe');
   logger.info('   ⚡ Intraday fast lane: every 2 min 9:40–15:30 ET, flatten 15:50 ET');
   logger.info('   🔄 Broker position sync every 60 seconds');

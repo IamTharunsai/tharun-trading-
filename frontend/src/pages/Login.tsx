@@ -58,7 +58,7 @@ export default function LoginPage() {
             <Zap size={32} className="text-amber-600" />
           </div>
           <h1 className="font-bold text-2xl text-slate-900 tracking-tight">
-            THARUN TRADING TERMINAL
+            BHISHMA TRADING TERMINAL
           </h1>
           <p className="font-mono text-xs text-slate-500 mt-1 uppercase tracking-wider">
             Owner Authentication Terminal

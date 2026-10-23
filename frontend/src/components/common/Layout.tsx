@@ -222,7 +222,7 @@ export default function Layout() {
             </div>
             <div>
               <div className="font-bold text-sm tracking-wide text-slate-900 leading-tight">
-                THARUN TERMINAL
+                BHISHMA TERMINAL
               </div>
               <div className="font-mono text-[10px] text-blue-700 font-bold tracking-wider leading-tight">
                 AUTONOMOUS HEDGE CORE

@@ -55,7 +55,7 @@ async function postDiscord(payload: AlertPayload): Promise<void> {
     description: payload.message,
     color: DISCORD_COLOURS[payload.severity],
     timestamp: (payload.timestamp ?? new Date()).toISOString(),
-    footer: { text: 'APEX Trading Bot' },
+    footer: { text: 'Bhishma Trading' },
   };
 
   if (payload.fields && Object.keys(payload.fields).length > 0) {
@@ -91,7 +91,7 @@ async function postSlack(payload: AlertPayload): Promise<void> {
     title: `${SEVERITY_EMOJI[payload.severity]} ${payload.title}`,
     text: payload.message,
     ts: Math.floor((payload.timestamp ?? new Date()).getTime() / 1000),
-    footer: 'APEX Trading Bot',
+    footer: 'Bhishma Trading',
   };
 
   if (payload.fields && Object.keys(payload.fields).length > 0) {

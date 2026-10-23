@@ -3,11 +3,11 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: apex_postgres
+    container_name: bhishma_postgres
     restart: always
     environment:
-      POSTGRES_DB: apex_trader
-      POSTGRES_USER: apex_user
+      POSTGRES_DB: bhishma_trader
+      POSTGRES_USER: bhishma_user
       POSTGRES_PASSWORD: apex_secure_pass_2024
     ports:
       - "5432:5432"
@@ -16,7 +16,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: apex_redis
+    container_name: bhishma_redis
     restart: always
     ports:
       - "6379:6379"
