@@ -287,6 +287,18 @@ portfolioRouter.get('/breakdown', async (_req: Request, res: Response) => {
   try {
     const { calculateAuthenticatedPortfolio } = await import('../services/portfolioAccounting');
     const metrics = await calculateAuthenticatedPortfolio();
+    // metrics.dataSource only ever names the Alpaca account, so it cannot
+    // report the Polymarket connection. Ask the Polymarket US service (the
+    // same source /polymarket-us/account uses) for the actual state; a
+    // Polymarket failure must not take the whole breakdown down with it.
+    let polymarketConnected = false;
+    try {
+      const pmUs = await import('../services/polymarketUS');
+      if (pmUs.isPolymarketUSConfigured()) {
+        const account: any = await pmUs.getPolymarketUSAccount();
+        polymarketConnected = account?.connected === true;
+      }
+    } catch { polymarketConnected = false; }
     res.json({
       alpaca: {
         equity: metrics.alpacaEquity,
@@ -294,7 +306,7 @@ portfolioRouter.get('/breakdown', async (_req: Request, res: Response) => {
       },
       polymarket: {
         equity: metrics.polymarketEquity,
-        connected: metrics.dataSource.includes('POLYMARKET'),
+        connected: polymarketConnected,
       },
       combinedTotal: metrics.combinedTotal,
       cashBalance: metrics.cashBalance,
