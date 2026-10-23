@@ -84,3 +84,47 @@ test('inflight bootstrap verification finishes before queued durable owner publi
   expect(manager.getAlpacaState()).toMatchObject({ connected: true, apiKey: 'fixture-owner-key' });
   expect(decryptSecret(stored.alpacaApiKeyEnc)).toBe('fixture-owner-key');
 });
+
+test.each([true, false])('queued refresh reads current custody inside queue (refresh after owner B: %s)', async refreshAfterB => {
+  const manager = await prior();
+  let releaseA!: (value: any) => void;
+  http.mockImplementationOnce(() => new Promise(resolve => { releaseA = resolve; }));
+  const a = manager.testAndSaveAlpaca('fixture-A-key', 'fixture-A-secret');
+  await flush();
+  let refresh: Promise<unknown>; let b: ReturnType<typeof manager.testAndSaveAlpaca>;
+  if (refreshAfterB) {
+    b = manager.testAndSaveAlpaca('fixture-B-key', 'fixture-B-secret');
+    refresh = manager.refreshAlpaca();
+  } else {
+    refresh = manager.refreshAlpaca();
+    b = manager.testAndSaveAlpaca('fixture-B-key', 'fixture-B-secret');
+  }
+  releaseA({ data: account });
+  await Promise.all([a, b, refresh]);
+  expect(manager.getAlpacaState()).toMatchObject({ connected: true, apiKey: 'fixture-B-key' });
+  expect(decryptSecret(stored.alpacaApiKeyEnc)).toBe('fixture-B-key');
+  const accountKeys = http.mock.calls.filter(([url]) => url.endsWith('/account')).map(([, options]) => options.headers['APCA-API-KEY-ID']);
+  expect(accountKeys.slice(-3)).toEqual(refreshAfterB
+    ? ['fixture-A-key', 'fixture-B-key', 'fixture-B-key']
+    : ['fixture-A-key', 'fixture-A-key', 'fixture-B-key']);
+});
+test('disconnect fences pending verification publication without claiming credential revocation', async () => {
+  const manager = await prior();
+  let release!: (value: any) => void;
+  http.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const pending = manager.testAndSaveAlpaca('fixture-new-key', 'fixture-new-secret');
+  await flush(); manager.disconnectAlpaca(); release({ data: account });
+  expect(await pending).toMatchObject({ success: false });
+  expect(manager.getAlpacaState()).toMatchObject({ connected: false });
+  expect(save).not.toHaveBeenCalled();
+});
+
+test('disconnect during an already-started save blocks publication while retaining durable save evidence', async () => {
+  const manager = await prior(); let commit!: () => void;
+  save.mockImplementationOnce((args: any) => new Promise(resolve => { commit = () => { stored = args.update; resolve(stored); }; }));
+  const pending = manager.testAndSaveAlpaca('fixture-new-key', 'fixture-new-secret');
+  await flush(); manager.disconnectAlpaca(); commit();
+  expect(await pending).toMatchObject({ success: false });
+  expect(manager.getAlpacaState().connected).toBe(false);
+  expect(decryptSecret(stored.alpacaApiKeyEnc)).toBe('fixture-new-key');
+});

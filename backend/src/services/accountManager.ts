@@ -68,6 +68,7 @@ export class AccountManager {
 
   private alpacaConnectionQueue: Promise<unknown> = Promise.resolve();
   private alpacaGeneration = 0;
+  private alpacaDisconnectGeneration = 0;
 
   constructor() {
     this.initFromEnv();
@@ -110,12 +111,20 @@ export class AccountManager {
   // ─── ALPACA BROKER INTEGRATION ──────────────────────────────────────────────
   async testAndSaveAlpaca(apiKey: string, secretKey: string, paperMode: boolean = true, saveSettings: boolean = true) {
     ++this.alpacaGeneration;
-    const pending = this.alpacaConnectionQueue.then(() => this.connectAlpaca(apiKey, secretKey, paperMode, saveSettings));
+    const disconnectGeneration = this.alpacaDisconnectGeneration;
+    return this.enqueueAlpaca(() => this.connectAlpaca(apiKey, secretKey, paperMode, saveSettings, disconnectGeneration));
+  }
+
+  private enqueueAlpaca<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = this.alpacaConnectionQueue.then(operation);
     this.alpacaConnectionQueue = pending.catch(() => {});
     return pending;
   }
 
-  private async connectAlpaca(apiKey: string, secretKey: string, paperMode: boolean, saveSettings: boolean) {
+  private async connectAlpaca(apiKey: string, secretKey: string, paperMode: boolean, saveSettings: boolean, disconnectGeneration: number) {
+    const interrupted = () => disconnectGeneration !== this.alpacaDisconnectGeneration;
+    const superseded = () => ({ success: false, error: 'Alpaca connection canceled by disconnect. Please reconnect.' });
+    if (interrupted()) return superseded();
     const baseUrl = paperMode ? 'https://paper-api.alpaca.markets' : 'https://api.alpaca.markets';
     try {
       // 1. Validate credentials against /v2/account
@@ -170,6 +179,7 @@ export class AccountManager {
         lastSyncAt: Date.now(),
       };
 
+      if (interrupted()) return superseded();
       if (saveSettings) {
         // Stored encrypted (AES-256-GCM, ENCRYPTION_KEY) so Settings-entered
         // keys survive a restart without sitting in the DB in plaintext.
@@ -192,6 +202,7 @@ export class AccountManager {
 
       // Publish only after durable encrypted settings have committed. Boot and
       // refresh reads explicitly opt out of persistence.
+      if (interrupted()) return superseded();
       this.alpacaState = nextState;
       logger.info(`✅ Alpaca successfully connected! Account: ${acc.account_number} (${paperMode ? 'PAPER' : 'LIVE'}), Value: $${acc.portfolio_value}`);
       const { apiKey: _k, secretKey: _s, ...safeAccount } = this.alpacaState as any;
@@ -329,6 +340,8 @@ export class AccountManager {
   }
 
   disconnectAlpaca() {
+    ++this.alpacaGeneration;
+    ++this.alpacaDisconnectGeneration;
     this.alpacaState = {
       connected: false,
       paperMode: true,
@@ -355,10 +368,13 @@ export class AccountManager {
 
   /** Re-read cash / equity / positions for the connected Alpaca account (called every minute by brokerSync). */
   async refreshAlpaca() {
-    await this.alpacaConnectionQueue;
-    const st: any = this.alpacaState;
-    if (!st?.connected || !st.apiKey || !st.secretKey) return;
-    await this.testAndSaveAlpaca(st.apiKey, st.secretKey, st.paperMode, false);
+    return this.enqueueAlpaca(async () => {
+      // Read custody only when this queued refresh executes. Capturing keys
+      // before enqueue could restore an old account after a newer owner save.
+      const st = this.alpacaState;
+      if (!st.connected || !st.apiKey || !st.secretKey) return;
+      await this.connectAlpaca(st.apiKey, st.secretKey, st.paperMode, false, this.alpacaDisconnectGeneration);
+    });
   }
 
   getLiveAccountsSummary() {
