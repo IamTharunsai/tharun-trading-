@@ -250,6 +250,25 @@ export function kellyFraction(q: number, cost: number): number {
   return (q - cost) / (1 - cost);
 }
 
+export interface EvKelly { expectedValue: number; kellyFraction: number }
+
+/**
+ * Display EV / Kelly for one side of a binary market — the single definition
+ * every Prediction-row writer (edge scan display rows, legacy research scan)
+ * must use, so the cards the UI renders cannot disagree with the model edge.
+ * EV is per $1 share on that side (fairSide − costSide, the rawEdge
+ * definition above); Kelly is the full-Kelly fraction for that side
+ * (kellyFraction returns 0 unless the side is genuinely +EV). With no side
+ * to price, or non-finite inputs, both stay 0 — computed, never inflated.
+ */
+export function sideEvKelly(fairYes: number, marketYes: number, side: Side | null | undefined): EvKelly {
+  if (side !== 'YES' && side !== 'NO') return { expectedValue: 0, kellyFraction: 0 };
+  if (!Number.isFinite(fairYes) || !Number.isFinite(marketYes)) return { expectedValue: 0, kellyFraction: 0 };
+  const fairSide = side === 'YES' ? fairYes : 1 - fairYes;
+  const costSide = side === 'YES' ? marketYes : 1 - marketYes;
+  return { expectedValue: fairSide - costSide, kellyFraction: kellyFraction(fairSide, costSide) };
+}
+
 export interface SizeInputs {
   fairSide: number;
   costPerShare: number;   // exec price + fee per share

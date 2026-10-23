@@ -253,6 +253,48 @@ describe('runPolymarketEdgeScan', () => {
     expect(tables.polymarketPrediction[0].decision).toBe('SKIP');
   });
 
+  // The display rows below are exactly what GET /market/predictions returns
+  // and what the Polymarket page renders as scan cards (EV / Kelly fields).
+  it('display rows carry computed EV/Kelly even when the plan is blocked (scan-card regression)', async () => {
+    tables.trade.push({ id: 't0', asset: 'POLYMARKET', status: 'CLOSED', closedAt: new Date(), pnl: -12, metadata: {} });
+    const s = await E.runPolymarketEdgeScan({ venue: venueWith([mkt()], { 'mkt-a': bookOf(0.40, 0.42) }) });
+    expect(s.entriesBlocked).toMatch(/daily loss/);
+    const row = tables.prediction.find((r: any) => r.title === 'Will A win?')!;
+    expect(row).toBeDefined();
+    expect(row.recommendedBet).toBe('SKIP'); // no bet was placed…
+    expect(row.edge).toBeGreaterThan(0);     // …but the model edge the card displays is real
+    // EV/Kelly are priced on that best-edge side (YES) from the fair and mid
+    // the row itself stores (targetPrice = fair·100, currentPrice = mid·100).
+    const fair = row.targetPrice / 100, mid = row.currentPrice / 100;
+    expect(fair).toBeGreaterThan(mid);
+    expect(row.expectedValue).toBeCloseTo(fair - mid, 10);
+    expect(row.expectedValue).toBeGreaterThan(0.1);
+    expect(row.kellyFraction).toBeCloseTo((fair - mid) / (1 - mid), 10);
+    expect(row.kellyFraction).toBeGreaterThan(0);
+  });
+
+  it('display rows carry computed EV/Kelly on a placed entry', async () => {
+    const s = await E.runPolymarketEdgeScan({ venue: venueWith([mkt()], { 'mkt-a': bookOf(0.40, 0.42) }) });
+    expect(s.entries).toBe(1);
+    const row = tables.prediction.find((r: any) => r.title === 'Will A win?')!;
+    expect(row.recommendedBet).toBe('YES');
+    const fair = row.targetPrice / 100, mid = row.currentPrice / 100;
+    expect(row.expectedValue).toBeCloseTo(fair - mid, 10);
+    expect(row.expectedValue).toBeGreaterThan(0);
+    expect(row.kellyFraction).toBeCloseTo((fair - mid) / (1 - mid), 10);
+    expect(row.kellyFraction).toBeGreaterThan(0);
+  });
+
+  it('display rows keep EV/Kelly at zero when the model edge is genuinely zero', async () => {
+    llm.mockResolvedValue({ pYes: 0.41, confidence: 85, reasoning: 'model agrees with the market', riskFactors: [], recommendedSide: 'SKIP', headlines: [] });
+    querySentiment.mockResolvedValue({ score: 0, mentions: 0, freshestHours: null, headlines: [], scorer: 'lexicon' });
+    await E.runPolymarketEdgeScan({ venue: venueWith([mkt()], { 'mkt-a': bookOf(0.40, 0.42) }) });
+    const row = tables.prediction.find((r: any) => r.title === 'Will A win?')!;
+    expect(row).toBeDefined();
+    expect(row.expectedValue).toBeCloseTo(0, 12);
+    expect(row.kellyFraction).toBeCloseTo(0, 12);
+  });
+
   it('skips near-resolution markets whose news is stale', async () => {
     querySentiment.mockResolvedValue({ score: 0, mentions: 2, freshestHours: 48, headlines: ['[gdelt] old', '[gdelt] older'], scorer: 'lexicon' });
     await E.runPolymarketEdgeScan({ venue: venueWith([mkt({ endDate: inDays(1) })], { 'mkt-a': bookOf(0.40, 0.42) }) });
