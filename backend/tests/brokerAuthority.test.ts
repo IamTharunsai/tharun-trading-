@@ -1,8 +1,11 @@
 const mockBroker = {
   getPortfolioSummary: jest.fn(), getPosition: jest.fn(), createOrder: jest.fn(), getOrder: jest.fn(),
 };
+const mockAxiosGet = jest.fn();
+jest.mock('axios', () => ({ __esModule: true, default: { get: (...args: any[]) => mockAxiosGet(...args) } }));
 jest.mock('../src/trading/brokerRouter', () => ({
   getActiveMode: jest.fn(() => 'paper'), getTradingBroker: jest.fn(() => mockBroker),
+  getTradingCredentials: jest.fn(() => ({ mode: 'paper', apiKey: 'fixture-key', secret: 'fixture-secret' })),
 }));
 jest.mock('../src/trading/riskManager', () => ({ validateTradeSignal: jest.fn() }));
 jest.mock('../src/agents/orchestrator', () => ({ isKillSwitchActive: jest.fn(() => false) }));
@@ -17,6 +20,8 @@ jest.mock('../src/utils/prisma', () => ({ prisma: {
   $transaction: jest.fn(), $executeRaw: jest.fn(),
 } }));
 
+import { withRiskEvidence } from './helpers/riskEvidence';
+
 describe('execution uses central broker authority and verified account values', () => {
   let executeTradeSignal: any;
   let prisma: any;
@@ -27,7 +32,9 @@ describe('execution uses central broker authority and verified account values', 
     reasoning: 'dummy fixture', agentDecisionId: 'dummy-decision',
     voteCounts: { supporting: 8, opposing: 2, abstaining: 0 },
   };
-  const portfolio = { accountId: 'paper-account-1', brokerMode: 'paper', totalValue: 1000, cashBalance: 1000, positions: [] };
+  // The engine's final pre-submit guard re-verifies the same capital-evidence
+  // contract as the risk gate, so the fixture portfolio carries it too.
+  const portfolio = withRiskEvidence({ accountId: 'paper-account-1', brokerMode: 'paper', totalValue: 1000, cashBalance: 1000, positions: [] });
 
   beforeEach(() => {
     jest.resetModules();
@@ -45,6 +52,9 @@ describe('execution uses central broker authority and verified account values', 
     mockBroker.getPosition.mockResolvedValue(null);
     prisma.position.findFirst.mockResolvedValue(null);
     prisma.position.findUnique.mockResolvedValue(null);
+    // Stock entries bind to a live Alpaca IEX quote; serve a fresh one at the
+    // approved plan price (ask 100 = entry 100, inside the 2:1 reward:risk law).
+    mockAxiosGet.mockImplementation(async () => ({ data: { symbol: 'AAPL', quote: { t: new Date().toISOString(), bp: 100, ap: 100, bs: 10, as: 10 } } }));
     mockBroker.createOrder.mockResolvedValue({ id: 'dummy-order' });
     mockBroker.getOrder.mockResolvedValue({ status: 'filled', filled_avg_price: '100', filled_qty: '0.15' });
     prisma.trade.create.mockResolvedValue({ id: 'dummy-trade' });
@@ -56,6 +66,7 @@ describe('execution uses central broker authority and verified account values', 
       signal: 'BUY', finalVote: 'BUY', totalVotes: 14, goVotes: 14, noGoVotes: 0, avgConfidence: 80,
       agentVotes: Array.from({ length: 14 }, (_, i) => ({ agentId: i + 1, finalVote: 'BUY', confidence: 80, executionEligible: true })),
       marketSnapshot: { asset: signal.asset, market: 'stocks', timestamp: Date.now(), inputFingerprint: 'a'.repeat(64),
+        dataEvidence: { source: 'Alpaca IEX', timeframe: '1Day', completedBars: 250, receivedAt: Date.now(), priceObservedAt: Date.now(), quoteObservedAt: Date.now() },
         executionPlan: { ...signal, version: 1, approved: true, mode: 'paper' } },
     });
     prisma.executionIntent.create.mockResolvedValue({ id: 'intent-1' });
