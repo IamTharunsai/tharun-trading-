@@ -1,6 +1,5 @@
 jest.mock('../src/utils/prisma', () => ({ prisma: { trade: {}, position: {}, portfolioSnapshot: { findMany: jest.fn().mockResolvedValue([]) } } }));
 jest.mock('../src/websocket/server', () => ({ getIO: () => ({ emit: jest.fn() }) }));
-jest.mock('../src/services/correlationService', () => ({ correlationService: { shouldAddAssetToPortfolio: jest.fn().mockResolvedValue({ shouldAdd: true }) } }));
 const killSwitch = jest.fn();
 jest.mock('../src/agents/orchestrator', () => ({ activateKillSwitch: () => killSwitch(), isKillSwitchActive: () => false }));
 const tradeFailed = jest.fn().mockResolvedValue(undefined);
