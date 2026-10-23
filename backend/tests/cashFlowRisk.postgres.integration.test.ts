@@ -40,6 +40,31 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     flows.push({ type, amount, at }); equityChanges.push({ amount, at });
     activities.push({ id: `capital-${activities.length}`, activity_type: type, net_amount: String(amount), date: new Date(at).toISOString().slice(0, 10) });
   };
+  test('concurrent withdrawal refresh and replay apply absolute capital once, retain a single revision', async () => {
+    expect(await prisma.capitalRiskState.count({ where: { accountId: scope.accountId } })).toBe(0);
+    event('CSW', -10000);
+    let arrivals = 0; let release!: () => void; const fetched = new Promise<void>(resolve => { release = resolve; });
+    broker.listActivitiesVerified.mockImplementation(async () => { if (++arrivals === 2) release(); await fetched; return activities; });
+    const nativeCreate = prisma.capitalRiskState.createMany.bind(prisma.capitalRiskState);
+    let initializers = 0; let releaseInitializers!: () => void;
+    const bothInitializers = new Promise<void>(resolve => { releaseInitializers = resolve; });
+    const initializer = jest.spyOn(prisma.capitalRiskState, 'createMany');
+    initializer.mockImplementation((async (args: any) => {
+      expect(args.skipDuplicates).toBe(true);
+      if (++initializers === 2) releaseInitializers();
+      await bothInitializers;
+      return nativeCreate(args);
+    }) as any);
+    let values;
+    try { values = await Promise.all([getCashFlowRisk(scope, baseNow), getCashFlowRisk(scope, baseNow)]); }
+    finally { initializer.mockRestore(); releaseInitializers(); }
+    expect(initializers).toBe(2);
+    values.forEach(value => expect(value).toMatchObject({ complete: true, dailyPnl: 0, drawdownPct: 0, equity: 90000 }));
+    expect(await prisma.capitalRiskObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
+    expect(await prisma.capitalRiskActivity.count({ where: { accountId: scope.accountId } })).toBe(1);
+    expect((await getCashFlowRisk(scope, baseNow)).revision).toBe(1);
+    expect(broker.getPortfolioHistoryVerified).toHaveBeenCalledTimes(2); // both fetched, one CAS committed
+  }, 25000);
   test('omission-only finite coverage retains raw response and old losses; late capital invalidates instead of rewriting zero', async () => {
     equityChanges.push({ at: Date.parse('2026-10-16T10:00:00Z'), amount: -4000 });
     broker.getPortfolioHistoryVerified.mockImplementation(async (start: string, end: string) => {
@@ -84,17 +109,6 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
   }, 30000);
 
-  test('concurrent withdrawal refresh and replay apply absolute capital once, retain a single revision', async () => {
-    event('CSW', -10000);
-    let arrivals = 0; let release!: () => void; const fetched = new Promise<void>(resolve => { release = resolve; });
-    broker.listActivitiesVerified.mockImplementation(async () => { if (++arrivals === 2) release(); await fetched; return activities; });
-    const values = await Promise.all([getCashFlowRisk(scope, baseNow), getCashFlowRisk(scope, baseNow)]);
-    values.forEach(value => expect(value).toMatchObject({ complete: true, dailyPnl: 0, drawdownPct: 0, equity: 90000 }));
-    expect(await prisma.capitalRiskObservation.count({ where: { accountId: scope.accountId } })).toBe(1);
-    expect(await prisma.capitalRiskActivity.count({ where: { accountId: scope.accountId } })).toBe(1);
-    expect((await getCashFlowRisk(scope, baseNow)).revision).toBe(1);
-    expect(broker.getPortfolioHistoryVerified).toHaveBeenCalledTimes(2); // both fetched, one CAS committed
-  }, 25000);
   test('deposit plus trading loss retains negative opening-equity results despite rising NAV', async () => {
     event('CSD', 10000); equityChanges.push({ at: Date.parse('2026-10-16T11:00:00Z'), amount: -4000 });
     expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000, dailyPnlPct: -4, weeklyPnlPct: -4, drawdownPct: 4, equity: 106000 });
@@ -202,6 +216,30 @@ suite('cash flow risk on isolated disposable PostgreSQL', () => {
     event('CSW', -10000); await getCashFlowRisk(scope, baseNow);
     expect(await prisma.portfolioSnapshot.findUniqueOrThrow({ where: { id: snapshot.id } })).toMatchObject({ accountId: null, brokerMode: null, totalValue: 90000, pnlDay: -10000, riskDataComplete: false, adjustedDailyPnl: null });
     expect(await prisma.trade.findUniqueOrThrow({ where: { id: trade.id } })).toMatchObject({ accountId: null, quantity: 10, entryPrice: 100, pnl: -100 });
+  }, 25000);
+  test('failed initializer cannot invalidate another worker verified state or stored loss', async () => {
+    let failInitializer!: (error: Error) => void;
+    let signalStarted!: () => void;
+    const started = new Promise<void>(resolve => { signalStarted = resolve; });
+    const initializer = jest.spyOn(prisma.capitalRiskState, 'createMany');
+    initializer.mockImplementationOnce(() => {
+      signalStarted();
+      return new Promise((_, reject) => { failInitializer = reject; }) as any;
+    });
+    const failed = getCashFlowRisk(scope, baseNow);
+    await started;
+    try {
+      equityChanges.push({ at: Date.parse('2026-10-16T11:00:00Z'), amount: -4000 });
+      expect(await getCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000 });
+      const snapshot = await recordPortfolioObservation({ accountId: scope.accountId, brokerMode: scope.mode,
+        totalValue: 96000, cashBalance: 96000, invested: 0, pnlTotal: -4000 } as PortfolioState, baseNow);
+      const before = await prisma.capitalRiskState.findFirstOrThrow({ where: { accountId: scope.accountId } });
+      failInitializer(Object.assign(new Error('fixture initializer failure'), { code: 'P2002' }));
+      expect(await failed).toMatchObject({ complete: false, reason: 'CAPITAL_EVIDENCE_UNAVAILABLE', dailyPnl: null });
+      expect(await prisma.capitalRiskState.findUniqueOrThrow({ where: { scopeKey: before.scopeKey } })).toEqual(before);
+      expect(await prisma.portfolioSnapshot.findUniqueOrThrow({ where: { id: snapshot.id } })).toEqual(snapshot);
+      expect(await readCashFlowRisk(scope, baseNow)).toMatchObject({ complete: true, dailyPnl: -4000, revision: before.revision });
+    } finally { initializer.mockRestore(); failInitializer(new Error('fixture cleanup')); }
   }, 25000);
   test('slow failed worker cannot invalidate a newer successful scoped revision', async () => {
     let rejectSlow!: (error: Error) => void;

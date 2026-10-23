@@ -280,7 +280,10 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
   const initialReference = new Date(end); initialReference.setUTCHours(0, 0, 0, 0); initialReference.setUTCDate(initialReference.getUTCDate() - 8);
   let expectedRevision: number | undefined;
   try {
-    await prisma.capitalRiskState.upsert({ where: { scopeKey }, create: { scopeKey, ...where, referenceAt: initialReference }, update: {} });
+    // Native INSERT ON CONFLICT DO NOTHING: Prisma upsert(update: {}) may
+    // emulate read/create and race on an account's first concurrent refresh.
+    // Never update an existing reference, revision or failure throttle here.
+    await prisma.capitalRiskState.createMany({ data: [{ scopeKey, ...where, referenceAt: initialReference }], skipDuplicates: true });
     const before = await prisma.capitalRiskState.findUniqueOrThrow({ where: { scopeKey } });
     expectedRevision = before.revision;
     if (before.coveredThrough && before.coveredThrough >= end && before.status === 'VERIFIED') return readCashFlowRisk(scope, now);
@@ -413,11 +416,14 @@ export async function getCashFlowRisk(scope: AccountScope, now = new Date()): Pr
     return readCashFlowRisk(scope, now);
   } catch (error) {
     const reason = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'CAPITAL_EVIDENCE_UNAVAILABLE';
+    // A worker that never captured a state revision has no authority to
+    // invalidate a row another worker may have created and verified meanwhile.
+    if (expectedRevision === undefined) return empty(reason);
     // A scan failure must not replace the entire portfolio with an exception.
     // Its accounting/position evidence can still monitor existing exposure.
     await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`;
-      const invalidated = await tx.capitalRiskState.updateMany({ where: { scopeKey, ...(expectedRevision !== undefined ? { revision: expectedRevision } : {}) },
+      const invalidated = await tx.capitalRiskState.updateMany({ where: { scopeKey, revision: expectedRevision },
         data: { status: 'UNVERIFIED', error: reason, lastAttemptAt: now } });
       if (invalidated.count) await tx.portfolioSnapshot.updateMany({ where: { ...where, riskAsOf: { not: null } }, data: {
         riskDataComplete: false, riskRecomputedAt: now, adjustedDailyPnl: null, adjustedDailyPnlPct: null,
