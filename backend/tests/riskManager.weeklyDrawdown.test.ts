@@ -4,6 +4,7 @@
 // middle-tier gate: rejects when pnlWeekPct breaches -weeklyDrawdownLimit.
 
 import { validateTradeSignal } from '../src/trading/riskManager';
+import { withRiskEvidence } from './helpers/riskEvidence';
 import { TradeSignal, PortfolioState } from '../src/agents/types';
 jest.mock('../src/utils/prisma', () => ({ prisma: { portfolioSnapshot: { findMany: jest.fn().mockResolvedValue([]) } } }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
@@ -25,7 +26,7 @@ const basePortfolio: PortfolioState = {
 describe('validateTradeSignal — weekly drawdown', () => {
   it('rejects when pnlWeekPct breaches WEEKLY_DRAWDOWN_LIMIT_PCT', async () => {
     process.env.WEEKLY_DRAWDOWN_LIMIT_PCT = '10';
-    const portfolio = { ...basePortfolio, pnlWeekPct: -12 };
+    const portfolio = withRiskEvidence({ ...basePortfolio, pnlWeekPct: -12 });
     const result = await validateTradeSignal(baseSignal, portfolio);
     expect(result.approved).toBe(false);
     expect(result.reason).toMatch(/weekly drawdown/i);
@@ -33,7 +34,7 @@ describe('validateTradeSignal — weekly drawdown', () => {
 
   it('approves when pnlWeekPct is within the limit', async () => {
     process.env.WEEKLY_DRAWDOWN_LIMIT_PCT = '10';
-    const portfolio = { ...basePortfolio, pnlWeekPct: -3 };
+    const portfolio = withRiskEvidence({ ...basePortfolio, pnlWeekPct: -3 });
     const result = await validateTradeSignal(baseSignal, portfolio);
     expect(result.approved).toBe(true);
   });

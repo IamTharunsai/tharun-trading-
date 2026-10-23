@@ -1,6 +1,7 @@
 jest.mock('../src/utils/prisma', () => ({ prisma: { portfolioSnapshot: { findMany: jest.fn().mockResolvedValue([]) } } }));
 jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 import { validateTradeSignal } from '../src/trading/riskManager';
+import { withRiskEvidence } from './helpers/riskEvidence';
 import type { PortfolioState, TradeSignal } from '../src/agents/types';
 
 const portfolio: PortfolioState = {
@@ -17,9 +18,9 @@ const signal: TradeSignal = {
 describe('default daily loss boundary', () => {
   beforeEach(() => { delete process.env.DAILY_LOSS_LIMIT_PCT; });
   it('refuses new risk at a three percent daily loss', async () => {
-    expect((await validateTradeSignal(signal, { ...portfolio, pnlDayPct: -3 })).approved).toBe(false);
+    expect((await validateTradeSignal(signal, withRiskEvidence({ ...portfolio, pnlDayPct: -3 }))).approved).toBe(false);
   });
   it('allows an otherwise valid signal below the default loss limit', async () => {
-    expect((await validateTradeSignal(signal, { ...portfolio, pnlDayPct: -2.99 })).approved).toBe(true);
+    expect((await validateTradeSignal(signal, withRiskEvidence({ ...portfolio, pnlDayPct: -2.99 }))).approved).toBe(true);
   });
 });
