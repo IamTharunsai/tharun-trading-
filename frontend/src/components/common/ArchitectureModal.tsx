@@ -113,23 +113,22 @@ export default function ArchitectureModal({ isOpen, onClose }: ArchitectureModal
                 </div>
 
                 <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
-                  <div className="font-mono text-xs font-bold text-amber-700">LAW 3: FEE FRICTION DEFENSE GATE</div>
-                  <h4 className="font-bold text-slate-900 text-sm">Exchange Fee Viability Check</h4>
+                  <div className="font-mono text-xs font-bold text-amber-700">LAW 3: RISK VALIDATOR GATE</div>
+                  <h4 className="font-bold text-slate-900 text-sm">Every Order Passes the Risk Validator</h4>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Prior to routing any order, <code className="text-blue-700 font-mono">checkTradeViability()</code> simulates entry and exit exchange fees. If fees consume &gt; 20% of projected profit, the order is blocked and routed to zero-fee commission venues (Alpaca commission-free equities or Polymarket 0% fee contracts).
+                    Prior to routing any order, <code className="text-blue-700 font-mono">validateTradeSignal()</code> re-checks the signal against verified capital evidence: daily and weekly loss limits, cash reserve, position-count and size caps, trade geometry, and recorded council votes. Orders execute only through Alpaca (commission-free equities/crypto) or the Polymarket US venue — there is no separate fee-viability gate.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
-                  <div className="font-mono text-xs font-bold text-purple-700">LAW 4: 4-TIER RECOVERY CIRCUIT BREAKER</div>
-                  <h4 className="font-bold text-slate-900 text-sm">Autonomous Capital Preservation State</h4>
+                  <div className="font-mono text-xs font-bold text-purple-700">LAW 4: DRAWDOWN CIRCUIT BREAKERS</div>
+                  <h4 className="font-bold text-slate-900 text-sm">Autonomous Capital Preservation</h4>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    If drawdown occurs, the system dynamically changes operating modes:
+                    Drawdown is enforced by the risk validator on every order, from verified broker capital evidence:
                     <span className="block font-mono text-[11px] text-slate-700 mt-1">
-                      &bull; NORMAL (&gt;$95): 100% position sizing<br/>
-                      &bull; CAUTION ($88-$94): Risk cut to 0.3% ($0.27)<br/>
-                      &bull; RECOVERY ($80-$87): Risk cut to 0.2%, max 1 position<br/>
-                      &bull; DEFEND (&lt;$80): Equities paused; 90%+ Polymarket arbitrage only
+                      &bull; Daily loss at the configured limit: new entries blocked<br/>
+                      &bull; Weekly drawdown at the configured limit: new entries blocked<br/>
+                      &bull; All-time drawdown at the configured limit: kill switch trips and trading halts
                     </span>
                   </p>
                 </div>

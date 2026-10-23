@@ -125,7 +125,7 @@ export async function runDebateForAsset(asset: string, market: 'crypto' | 'stock
         if (executed) {
           logger.info(`✅ Trade executed: ${transcript.finalDecision} ${asset} @ $${snapshot.price}`);
         } else {
-          logger.warn(`🚫 Trade approved by risk check but execution failed/blocked for ${asset} (see execution logs above — Top Trader Rules, viability, or broker rejection)`);
+          logger.warn(`🚫 Trade approved by Risk Validator but not executed for ${asset} — executionEngine blocked or failed it (see its logs above: kill switch, persisted-decision authority, live qualification, price/cash checks, or broker rejection)`);
         }
       } else {
         logger.info(`🚫 Trade blocked by Risk Validator: ${riskCheck.reason}`);
