@@ -2,6 +2,7 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketServer, Socket } from 'socket.io';
 import { maintainSocketOwner, OwnerSocketLease } from './ownerSocketSession';
+import { registerSocketEmitter } from './socketEvents';
 import { logger } from '../utils/logger';
 
 let io: SocketServer | null = null;
@@ -13,6 +14,7 @@ export function initWebSocket(server: HttpServer) {
     'http://localhost:5173',
     ...String(process.env.FRONTEND_URL || '').split(',').map(origin => origin.trim()).filter(Boolean),
   ];
+  registerSocketEmitter((event, payload) => { io?.emit(event, payload as any); });
   io = new SocketServer(server, {
     cors: { origin: wsOrigins, methods: ['GET', 'POST'], credentials: true },
     pingTimeout: 60000, pingInterval: 25000
@@ -61,6 +63,7 @@ export function initWebSocket(server: HttpServer) {
       socket.disconnect(true);
     }
     leases.clear();
+    registerSocketEmitter(null);
     if (io === instance) io = null;
   });
 }

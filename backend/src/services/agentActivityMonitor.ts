@@ -10,6 +10,11 @@ import { getIO } from '../websocket/server';
  * - Decision making process
  * - Trade recommendations
  * - Geopolitical analysis
+ *
+ * Socket contract: every activity kind is broadcast as the single
+ * `agent:status` event (see websocket/socketEvents.ts); `activityType`
+ * discriminates the kind. The former per-kind event names
+ * (agent:gathering / agent:learning / …) had no frontend listener.
  */
 
 export interface AgentActivity {
@@ -63,7 +68,7 @@ class AgentActivityMonitor {
 
     // Broadcast to WebSocket clients
     const io = getIO();
-    io?.emit('agent:gathering', activity);
+    io?.emit('agent:status', activity);
 
     // Log to database
     await this.saveActivity(activity);
@@ -96,7 +101,7 @@ class AgentActivityMonitor {
     }
 
     const io = getIO();
-    io?.emit('agent:learning', activity);
+    io?.emit('agent:status', activity);
 
     await this.saveActivity(activity);
     logger.info(`🧠 ${agentName} learning: ${sourceType}`, { confidence, insightCount: insights.length });
@@ -128,7 +133,7 @@ class AgentActivityMonitor {
     if (this.activities.length > this.maxActivities) this.activities.shift();
 
     const io = getIO();
-    io?.emit('agent:analyzing', activity);
+    io?.emit('agent:status', activity);
 
     await this.saveActivity(activity);
     logger.info(`🔍 ${agentName} analyzing ${asset}`, { confidence });
@@ -163,7 +168,7 @@ class AgentActivityMonitor {
     if (this.activities.length > this.maxActivities) this.activities.shift();
 
     const io = getIO();
-    io?.emit('agent:voting', { ...activity, vote });
+    io?.emit('agent:status', { ...activity, vote });
 
     await this.saveActivity(activity);
     logger.info(`🗳️ ${agentName} voting ${vote} on ${asset}`, { confidence, round });
@@ -195,7 +200,7 @@ class AgentActivityMonitor {
     if (this.activities.length > this.maxActivities) this.activities.shift();
 
     const io = getIO();
-    io?.emit('agent:trading', { ...activity, action, amount, price });
+    io?.emit('agent:status', { ...activity, action, amount, price });
 
     await this.saveActivity(activity);
     logger.info(`💰 ${agentName} executing ${action}: ${amount} ${asset} @ $${price}`, {});

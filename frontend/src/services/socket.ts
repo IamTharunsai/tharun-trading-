@@ -46,20 +46,34 @@ export function connectSocket() {
     store.setSocketStatus('error');
   });
 
+  // ── SOCKET CONTRACT ─────────────────────────────────────────────────────────
+  // Mirror of backend/src/websocket/socketEvents.ts: every listener below
+  // has a real backend producer. Listeners whose events were never emitted
+  // (council:start, council:complete, position:closed, guardrail:triggered)
+  // were removed — do not add a listener without a producer in that file.
+
   // ── REAL-TIME PRICE UPDATES ──────────────────────────────────────────────────
   socket.on('price:update', (data: any) => {
     store.updatePrice(data);
   });
 
   // Session IDs preserve simultaneous stock, crypto and position-review debates.
+  // debate:complete is deliberately NOT in this loop — it has a single
+  // dedicated registration below (it used to be registered twice).
   for (const event of ['debate:start', 'debate:round', 'debate:agent-speaking',
     'debate:agent-voted', 'debate:cross-examination', 'debate:final-vote',
-    'debate:master-thinking', 'debate:complete']) {
+    'debate:master-thinking', 'debate:error', 'debate:agent-error']) {
     socket.on(event, (data: unknown) => {
       if (observingToken && useStore.getState().token === observingToken) store.receiveDebateEvent(event, data);
+      // Only a fatal debate error is user-visible; non-fatal ones are
+      // routine single-stage fallbacks the committee recovers from.
+      if (event === 'debate:error' && (data as any)?.fatal) {
+        toast.error('Committee session failed — see the debate panel for details', { duration: 6000 });
+      }
     });
   }
   socket.on('debate:complete', (data: any) => {
+    if (observingToken && useStore.getState().token === observingToken) store.receiveDebateEvent('debate:complete', data);
     const transcript = data?.transcript;
     if (!transcript) return;
     const asset = typeof transcript.asset === 'string' ? transcript.asset : 'Unknown asset';
@@ -70,28 +84,25 @@ export function connectSocket() {
       toast(`${asset}: ${decision} — ${transcript.blockReason || 'No execution approval'}`, { duration: 5000 });
     }
   });
-  // ── LEGACY ORCHESTRATOR EVENTS (kept for compatibility) ──────────────────────
-  socket.on('council:start', (data: any) => {
-    store.resetCouncil();
-    store.setCurrentAnalysis(data.asset);
-    for (let i = 1; i <= 14; i++) {
-      store.updateAgentStatus(i, 'analyzing', undefined, data.asset);
-    }
-  });
 
+  // ── AGENT ACTIVITY ───────────────────────────────────────────────────────────
+  // The backend unifies every activity kind (gathering / learning /
+  // analyzing / voting / trading) into this one event; activityType
+  // discriminates. (The old council:start / council:complete listeners were
+  // legacy orchestrator events nothing ever emitted — the debate family
+  // above is the real council lifecycle and already drives the store.)
   socket.on('agent:status', (data: any) => {
-    store.updateAgentStatus(data.agentId, data.status, data.vote, data.asset);
-  });
-
-  socket.on('council:complete', (data: any) => {
-    store.setCurrentAnalysis(null);
-    const { result } = data;
-    if (result?.shouldExecute) {
-      toast.success(`🤖 Council VOTED ${result.finalDecision} for ${result.asset}`, { duration: 5000 });
-    }
+    const status = data.activityType === 'VOTING' ? 'voted' : 'analyzing';
+    const vote = data.activityType === 'VOTING' && data.vote
+      ? { agentId: data.agentId, agentName: data.agentName, vote: data.vote, confidence: data.confidence ?? 0, reasoning: data.content ?? '' }
+      : undefined;
+    store.updateAgentStatus(data.agentId, status, vote, data.asset);
   });
 
   // ── TRADE EVENTS ─────────────────────────────────────────────────────────────
+  // Emitted by the backend execution engine once a fill is recorded
+  // (recordConfirmedExecution) with the normalized payload:
+  // { trade: { id, asset, type, quantity, entryPrice }, mode, accountId }.
   socket.on('trade:executed', (data: any) => {
     store.addTrade(data.trade);
     const isPaper = data.mode === 'paper';
@@ -102,21 +113,17 @@ export function connectSocket() {
     );
   });
 
-  socket.on('position:closed', (data: any) => {
-    const pnlStr = data.pnl >= 0 ? `+$${data.pnl.toFixed(2)}` : `-$${Math.abs(data.pnl).toFixed(2)}`;
-    const icon = data.reason === 'stop_loss' ? '🛑' : data.reason === 'take_profit' ? '🎯' : '✅';
-    const pnlColor = data.pnl >= 0 ? '#12805F' : '#B0263B';
-    toast(`${icon} ${data.asset} closed: ${pnlStr} (${data.reason.replace('_', ' ')})`, {
-      duration: 6000,
-      style: { border: `1px solid ${pnlColor}`, background: `${pnlColor}0F` }
-    });
-  });
+  // position:closed and guardrail:triggered listeners were removed: the
+  // backend has no producer for either. Position exits finalize
+  // asynchronously through broker-evidence reconciliation (partial fills),
+  // so no single synchronous close event can report a trustworthy final
+  // PnL — closed positions surface via the REST portfolio/trades views.
+  // Risk rejections are synchronous and already surfaced as the
+  // debate:complete blockReason toast above.
 
-  // ── GUARDRAIL / KILL SWITCH ───────────────────────────────────────────────────
-  socket.on('guardrail:triggered', (data: any) => {
-    toast.error(`⚠️ GUARDRAIL: ${data.rule} triggered`, { duration: 8000 });
-  });
-
+  // ── KILL SWITCH ──────────────────────────────────────────────────────────────
+  // Emitted by the backend orchestrator on every switch state change
+  // (REST activate/deactivate and the risk manager's automatic trip alike).
   socket.on('kill:switch:activated', () => {
     store.setKillSwitch(true);
     toast.error('🔴 KILL SWITCH ACTIVATED — All trading halted', { duration: 0 });

@@ -5,7 +5,8 @@ import { getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import { ethers } from 'ethers';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
-import { getIO } from '../websocket/server';
+// (No socket import: scan progress/results go over REST — see
+// websocket/socketEvents.ts for why the polymarket:* emits were removed.)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THARUN AUTO TRADING PLATFORM
@@ -419,7 +420,8 @@ async function scanPolymarketOpportunitiesInner(
 ): Promise<ProbabilityAnalysis[]> {
 
   logger.info('\n🔍 SCANNING POLYMARKET FOR OPPORTUNITIES...');
-  getIO()?.emit('polymarket:scanning', { portfolioValue });
+  // No socket emit: `polymarket:scanning` had no frontend listener; scan
+  // progress/results are served over REST (see websocket/socketEvents.ts).
 
   const events = await fetchActiveEvents(undefined, 500, 200);
   logger.info(`   Found ${events.length} active markets`);
@@ -458,7 +460,8 @@ async function scanPolymarketOpportunitiesInner(
   await persistPredictionResearch(allAnalyses);
 
   // Return only actionable opportunities: SKIP-rated markets (persisted above for display) are excluded.
-  getIO()?.emit('polymarket:scan-complete', { opportunities: analyses });
+  // No socket emit: `polymarket:scan-complete` had no frontend listener;
+  // callers receive `analyses` as this function's return value / via REST.
   return analyses;
 }
 

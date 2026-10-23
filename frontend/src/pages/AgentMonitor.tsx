@@ -88,6 +88,9 @@ export default function AgentMonitorPage() {
     if (!live) return;
     const socket = connectSocket();
     const onVoting = (data: any) => {
+      // Backend broadcasts all activity kinds as `agent:status`; this feed
+      // only renders votes (socket contract — see services/socket.ts).
+      if (data.activityType !== 'VOTING') return;
       setActivities(prev => [{
         timestamp: data.timestamp || Date.now(),
         agentId: data.agentId,
@@ -136,12 +139,12 @@ export default function AgentMonitorPage() {
       }, ...prev].slice(0, 200));
     };
 
-    socket.on('agent:voting', onVoting);
+    socket.on('agent:status', onVoting);
     socket.on('debate:agent-voted', onAgentVoted);
     socket.on('debate:final-vote', onFinalVote);
     socket.on('trade:executed', onTradeExecuted);
     return () => {
-      socket.off('agent:voting', onVoting);
+      socket.off('agent:status', onVoting);
       socket.off('debate:agent-voted', onAgentVoted);
       socket.off('debate:final-vote', onFinalVote);
       socket.off('trade:executed', onTradeExecuted);

@@ -3,7 +3,8 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
 import { appConfig } from '../utils/config';
-import { getIO } from '../websocket/server';
+// (No socket import: this stream feeds backend caches/logs only — see
+// websocket/socketEvents.ts for why quote:update / trade:update were removed.)
 
 export interface MarketQuote {
   symbol: string;
@@ -195,7 +196,9 @@ export class AlpacaMarketStreamService {
           };
 
           this.quotesCache.set(msg.S, quote);
-          getIO()?.emit('quote:update', quote);
+          // No socket emit: `quote:update` had no frontend listener (the
+          // dashboard consumes the normalized `price:update` instead).
+          // The quote still lands in quotesCache for backend consumers.
         }
       }
     } catch {}
@@ -231,7 +234,11 @@ export class AlpacaMarketStreamService {
         this.processedEventIds.add(eventKey);
 
         logger.info(`📢 Alpaca trade_update received: ${tradeUpdate.event} for order ${tradeUpdate.order?.id} (${tradeUpdate.order?.symbol})`);
-        getIO()?.emit('trade:update', tradeUpdate);
+        // No socket emit: `trade:update` (the Alpaca broker order-lifecycle
+        // stream) had no frontend listener and its name collided with the
+        // app's own `trade:executed` contract event. The update is logged
+        // above and deduped; confirmed fills surface via `trade:executed`
+        // from the execution engine instead.
       }
     } catch {}
   }
