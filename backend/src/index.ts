@@ -107,7 +107,7 @@ export async function boot(port: number = 3000) {
   // Start HTTP & WebSocket server immediately so port 3000 is open without blocking
   if (!server.listening) {
     server.listen(port, '0.0.0.0', () => {
-      logger.info(`🚀 THARUN TRADING BOT backend running on http://0.0.0.0:${port}`);
+      logger.info(`🛡️ BHISHMA backend running on http://0.0.0.0:${port}`);
       logger.info(`📊 Trading mode: ${process.env.TRADING_MODE?.toUpperCase() || 'PAPER'}`);
     });
   }

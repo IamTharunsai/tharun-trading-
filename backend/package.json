@@ -1,9 +1,10 @@
 {
-  "name": "apex-trader-backend",
+  "name": "bhishma-backend",
   "version": "1.0.0",
-  "description": "THARUN TRADING BOT - Autonomous Multi-Agent Trading Platform Backend",
+  "description": "Bhishma -- Autonomous Multi-Agent AI Trading Platform Backend",
   "main": "dist/index.js",
   "scripts": {
+    "postinstall": "npm run prisma:generate",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "prisma generate --schema=./prisma/schema.prisma && tsc",
     "start": "node dist/index.js",

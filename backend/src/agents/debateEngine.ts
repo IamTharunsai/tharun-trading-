@@ -496,7 +496,7 @@ If current price is significantly below fair value AND trend supports recovery =
 
 // ── MASTER COORDINATOR ────────────────────────────────────────────────────────
 
-const MASTER_COORDINATOR_PROMPT = `You are THE MASTER COORDINATOR — the Chief Investment Officer of Tharun Agentic Trading. You have listened to a full investment committee debate. Now you must synthesize all arguments and make the FINAL decision.
+const MASTER_COORDINATOR_PROMPT = `You are THE MASTER COORDINATOR — the Chief Investment Officer of Bhishma Trading. You have listened to a full investment committee debate. Now you must synthesize all arguments and make the FINAL decision.
 
 DECISION STANDARDS:
 - You need genuine conviction, not just a majority vote
