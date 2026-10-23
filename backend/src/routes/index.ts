@@ -195,18 +195,28 @@ export const tradesRouter = Router();
 tradesRouter.use(privateResponse, requireOwner);
 
 tradesRouter.get('/', async (req: Request, res: Response) => {
-  const { page = '1', limit = '50', asset, status, market } = req.query;
-  const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-  const where: any = {};
-  if (asset) where.asset = asset;
-  if (status) where.status = status;
-  if (market && market !== 'all') where.market = market;
+  try {
+    const { page = '1', limit = '50', asset, status, market } = req.query;
+    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    // Scope to the verified account and its active broker mode, the same
+    // whereScope GET /trades/stats uses. Pooling every account and mode
+    // leaked unrelated books into the list and its pagination total;
+    // unscoped legacy rows are not silently assigned either. The caller's
+    // asset/status/market filters compose with the scope, never replace it.
+    const scope = await getVerifiedAccountScope();
+    const where: any = { accountId: scope.accountId, brokerMode: scope.mode };
+    if (asset) where.asset = asset;
+    if (status) where.status = status;
+    if (market && market !== 'all') where.market = market;
 
-  const [trades, total] = await Promise.all([
-    prisma.trade.findMany({ where, skip, take: parseInt(limit as string), orderBy: { openedAt: 'desc' }, include: { agentDecision: true } }),
-    prisma.trade.count({ where })
-  ]);
-  res.json({ trades, total, page: parseInt(page as string), pages: Math.ceil(total / parseInt(limit as string)) });
+    const [trades, total] = await Promise.all([
+      prisma.trade.findMany({ where, skip, take: parseInt(limit as string), orderBy: { openedAt: 'desc' }, include: { agentDecision: true } }),
+      prisma.trade.count({ where })
+    ]);
+    res.json({ trades, total, page: parseInt(page as string), pages: Math.ceil(total / parseInt(limit as string)) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch trades' });
+  }
 });
 
 tradesRouter.get('/lifecycle', async (req: Request, res: Response) => {
