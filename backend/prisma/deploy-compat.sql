@@ -51,6 +51,8 @@ CREATE INDEX IF NOT EXISTS "PredictionReductionObservation_reductionId_observedA
 ALTER TABLE "PredictionHolding" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "PredictionReduction" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "PredictionReductionObservation" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "PredictionReduction" ADD COLUMN IF NOT EXISTS "policyEvidence" JSONB;
+ALTER TABLE "PredictionRecoveryState" ADD COLUMN IF NOT EXISTS "holdingCursorId" TEXT;
 
 CREATE TABLE IF NOT EXISTS "CapitalActivityCoverageObservation" (
   "id" TEXT NOT NULL PRIMARY KEY, "accountId" TEXT NOT NULL, "brokerMode" TEXT NOT NULL,

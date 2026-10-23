@@ -10,7 +10,10 @@ import { executeLivePrediction, reconcilePredictionExecution } from '../src/trad
 import { reducePredictionHolding, reconcilePredictionReduction } from '../src/trading/predictionReduction';
 import { recoverPredictionOrders } from '../src/trading/predictionRecovery';
 import { getPolymarketUSCredentialScope, polymarketUSVenue } from '../src/services/polymarketUS';
+import * as polymarketUS from '../src/services/polymarketUS';
 import { assertPredictionRecoveryScope } from '../src/trading/predictionRecoveryScope';
+import { runPredictionHoldingMaintenance } from '../src/trading/predictionHoldingMaintenance';
+import { publishPredictionForecast, resolvePredictionForecastMarket } from '../src/trading/predictionForecastCustody';
 
 const ownerId = 'reduction-fixture-owner';
 const suite = process.env.RUN_PREDICTION_RECOVERY_POSTGRES === 'true' ? describe : describe.skip;
@@ -42,11 +45,18 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
   beforeEach(async () => {
     killed = false; signedPosition = 0; orderSequence = 0; loseReply = false; unknownFee = false; partial = false; zeroFill = false;
     brokerOrders.clear(); posted.length = 0; request.mockReset();
+    jest.spyOn(polymarketUS, 'getPolymarketUSMarket').mockReset().mockImplementation(async () => ({ venue: 'polymarket_us', id: 'reduction-market',
+      question: 'owned outside listing', category: 'general', open: true, executionMetadataVerified: true, feeCoefficient: .0695, tickSize: .01, minQty: .01 }));
+    jest.spyOn(polymarketUSVenue, 'listMarkets').mockReset().mockImplementation(async () => [{ venue: 'polymarket_us', id: 'reduction-market',
+      question: 'offline only', category: 'general', open: true, executionMetadataVerified: true, feeCoefficient: .0695, tickSize: .01, minQty: .01 }]);
+    jest.spyOn(polymarketUSVenue, 'getBook').mockReset().mockImplementation(async () => ({ bids: [{ price: .49, size: 100 }],
+      asks: [{ price: .5, size: 100 }], state: 'MARKET_STATE_OPEN', fetchedAt: Date.now() }));
     Object.assign(process.env, { TRADING_MODE: 'live', LIVE_TRADING_CONFIRMED: 'I_ACCEPT_REAL_MONEY_RISK', POLYMARKET_US_LIVE: 'true' });
     await prisma.predictionReductionObservation.deleteMany({ where: { reduction: { ownerId } } });
     await prisma.predictionReduction.deleteMany({ where: { ownerId } });
     await prisma.predictionHolding.deleteMany({ where: { ownerId } });
     await prisma.predictionExecution.deleteMany({ where: { ownerId } });
+    await prisma.polymarketPrediction.deleteMany({ where: { marketSlug: 'reduction-market', id: { not: 'reduction-prediction' } } });
     await prisma.trade.deleteMany({ where: { accountId: scopeKey } });
     await prisma.predictionRecoveryState.deleteMany({ where: { ownerId } });
     await prisma.predictionAccountAuthority.deleteMany({ where: { scopeKey } });
@@ -58,7 +68,8 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     await prisma.polymarketPrediction.upsert({ where: { id: 'reduction-prediction' }, create: { id: 'reduction-prediction',
       venue: 'polymarket_us', marketSlug: 'reduction-market', question: 'offline only', marketMid: .495,
       rawFair: .8, fairProb: .8, llmProb: .8, evidenceWeight: 1, decision: 'YES', side: 'YES' },
-      update: { createdAt: new Date(), decision: 'YES', side: 'YES', fairProb: .8, llmProb: .8 } });
+      update: { createdAt: new Date(), decision: 'YES', side: 'YES', fairProb: .8, llmProb: .8,
+        resolvedAt: null, outcome: null } });
     request.mockImplementation(async (method: string, path: string, body: any) => {
       if (method === 'GET' && path === '/v1/account/balances') return { balances: [{ currency: 'USD', currentBalance: 100, buyingPower: 100 }] };
       if (method === 'GET' && path === '/v1/orders/open') return { orders: [] };
@@ -105,6 +116,192 @@ suite('linked reduction through actual entry/recovery/holding PostgreSQL transac
     process.env.TRADING_MODE = 'paper'; process.env.POLYMARKET_US_LIVE = 'false'; killed = true;
     return row;
   }
+
+  async function policyForecast(side: 'YES' | 'NO' = 'YES', id = 'policy-forecast') {
+    const row = await publishPredictionForecast(prisma, { id, venue: 'polymarket_us', marketSlug: 'reduction-market',
+      question: 'offline policy', marketMid: .5, rawFair: side === 'YES' ? .2 : .9, fairProb: side === 'YES' ? .2 : .9,
+      llmProb: side === 'YES' ? .2 : .9, evidenceWeight: .8, decision: 'SKIP', side: null,
+      createdAt: new Date(Date.now() + 1) });
+    jest.spyOn(polymarketUSVenue, 'getBook').mockImplementation(async () => ({
+      bids: [{ price: side === 'YES' ? .3 : .19, size: 100 }], asks: [{ price: side === 'YES' ? .31 : .2, size: 100 }],
+      state: 'MARKET_STATE_OPEN', fetchedAt: Date.now() }));
+    return row;
+  }
+
+  test.each(['YES', 'NO'] as const)('%s actual entry → automatic policy → partial → known-ID recovery → remaining basis with no duplicate delivery', async side => {
+    const opening = await open(side); const originalTrade = await prisma.trade.findUniqueOrThrow({ where: { id: opening.tradeId! } });
+    await policyForecast(side); partial = true;
+    const observe = await runPredictionHoldingMaintenance();
+    expect(observe).toMatchObject({ mode: 'OBSERVE', outcome: 'OBSERVATION_ONLY', entryReadiness: 'NOT_CERTIFIED_BY_MAINTENANCE' });
+    expect(observe.rows[0]).toMatchObject({ status: 'REDUCTION_READY', quantity: opening.appliedQuantity });
+    expect(await prisma.predictionHolding.count({ where: { ownerId } })).toBe(0);
+    expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(0); expect(posted).toHaveLength(1);
+    const reduced = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+    expect(reduced.rows[0]).toMatchObject({ status: 'REDUCTION_OBSERVED' });
+    const first = await prisma.predictionReduction.findUniqueOrThrow({ where: { id: reduced.rows[0].reductionId! } });
+    expect(first.appliedQuantity).toBe(.5); expect((first.policyEvidence as any).reason).toBe('edge_flipped');
+    expect(posted[1].intent).toBe(side === 'YES' ? 'ORDER_INTENT_SELL_LONG' : 'ORDER_INTENT_SELL_SHORT');
+    expect(Number(posted[1].price.value)).toBeCloseTo(side === 'YES' ? .3 : .2);
+    expect(await prisma.trade.findUniqueOrThrow({ where: { id: opening.tradeId! } })).toEqual(originalTrade);
+    await prisma.predictionReduction.update({ where: { id: first.id }, data: { status: 'RECONCILIATION_REQUIRED' } });
+    partial = false;
+    const remainder = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+    expect(remainder.rows[0]).toMatchObject({ status: 'REDUCTION_OBSERVED', quantity: opening.appliedQuantity - .5 });
+    expect(posted).toHaveLength(3);
+    const final = await prisma.predictionHolding.findUniqueOrThrow({ where: { openingExecutionId: opening.id } });
+    expect(final.remainingQuantity).toBe(0); expect(final.remainingBasis).toBeCloseTo(0);
+    expect(final.realizedPnl).toBeCloseTo((side === 'YES' ? -.24 : .26) * opening.appliedQuantity);
+    expect((await runPredictionHoldingMaintenance({ mode: 'REDUCE' })).outcome).toBe('NO_ACTUAL_HOLDINGS');
+    expect(posted).toHaveLength(3);
+    expect(await prisma.predictionReductionObservation.count({ where: { reductionId: first.id } })).toBe(1);
+    expect((await prisma.strategyQualification.findUniqueOrThrow({ where: { id: opening.qualificationId } })).expiresAt.getTime()).toBe(0);
+    await expect(prisma.$transaction(tx => assertPredictionRecoveryScope(tx, ownerId, scopeKey))).rejects.toThrow('REDUCTION_LOSS_COVERAGE');
+  });
+
+  test('policy zero-fill decision is durably consumed and not redelivered by a later runner', async () => {
+    await open(); await policyForecast(); zeroFill = true;
+    expect((await runPredictionHoldingMaintenance({ mode: 'REDUCE' })).rows[0].status).toBe('REDUCTION_OBSERVED');
+    expect((await runPredictionHoldingMaintenance({ mode: 'REDUCE' })).rows[0].status).toBe('DECISION_ALREADY_RECORDED');
+    expect(posted).toHaveLength(2); expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(1);
+  });
+
+  test('unknown commission and manual inventory differences never produce policy readiness', async () => {
+    await open(); await policyForecast(); signedPosition += 1;
+    expect((await runPredictionHoldingMaintenance()).rows[0]).toMatchObject({ status: 'BLOCKED', reason: 'POSITION_DISCREPANCY' });
+    signedPosition -= 1; unknownFee = true; partial = true;
+    expect((await runPredictionHoldingMaintenance({ mode: 'REDUCE' })).rows[0].status).toBe('REDUCTION_RECONCILIATION_REQUIRED');
+    expect((await runPredictionHoldingMaintenance()).outcome).toBe('RECONCILIATION_REQUIRED');
+    expect((await runPredictionHoldingMaintenance({ mode: 'REDUCE' })).outcome).toBe('RECONCILIATION_REQUIRED');
+    expect(posted).toHaveLength(2);
+  });
+
+  test('forecast changed between policy planning and claim prevents a sale', async () => {
+    await open(); const forecast = await policyForecast(); let reads = 0;
+    const original = jest.spyOn(polymarketUSVenue, 'getBook').getMockImplementation()!;
+    jest.spyOn(polymarketUSVenue, 'getBook').mockImplementation(async (...args) => {
+      if (++reads === 2) await prisma.polymarketPrediction.update({ where: { id: forecast.id }, data: { fairProb: .8 } });
+      return original(...args);
+    });
+    const result = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+    expect(result.rows[0]).toMatchObject({ status: 'BLOCKED', reason: 'HOLDING_POLICY_FORECAST_CHANGED' });
+    expect(await prisma.predictionReduction.count({ where: { ownerId } })).toBe(0); expect(posted).toHaveLength(1);
+  });
+
+  test('a newer forecast between claim and consumption refuses the recorded policy without a POST', async () => {
+    await open(); const forecast = await policyForecast(); let reads = 0;
+    const original = jest.spyOn(polymarketUS, 'getPolymarketUSMarket').getMockImplementation()!;
+    jest.spyOn(polymarketUS, 'getPolymarketUSMarket').mockImplementation(async (...args) => {
+      if (++reads === 3) await publishPredictionForecast(prisma, { id: 'superseding-policy', venue: 'polymarket_us',
+        marketSlug: 'reduction-market', question: 'offline replacement', marketMid: .5, rawFair: .8, fairProb: .8,
+        llmProb: .8, evidenceWeight: .8, decision: 'SKIP', createdAt: new Date(Math.max(Date.now(), forecast.createdAt.getTime()) + 2) });
+      return original(...args);
+    });
+    const result = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+    expect(result.rows[0].status).toBe('REDUCTION_REFUSED');
+    expect(await prisma.predictionReduction.findFirstOrThrow({ where: { ownerId } })).toMatchObject({ status: 'ABORTED', brokerOrderId: null });
+    expect(posted).toHaveLength(1);
+  });
+
+  test.each(['publish', 'resolve'] as const)('a concurrent %s waits while final policy read and consumption linearize', async mutation => {
+    await open(); await policyForecast();
+    let readerEntered!: () => void, releaseReader!: () => void, publisherAttempted!: () => void;
+    const paused = new Promise<void>(resolve => { readerEntered = resolve; });
+    const release = new Promise<void>(resolve => { releaseReader = resolve; });
+    const attempting = new Promise<void>(resolve => { publisherAttempted = resolve; });
+    const afterMarketLockStates: string[] = []; let pausedOnce = false, publisherFinished = false;
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    const transaction = jest.spyOn(prisma, '$transaction').mockImplementation((async (operation: any, ...options: any[]) => {
+      if (typeof operation !== 'function') return (originalTransaction as any)(operation, ...options);
+      return (originalTransaction as any)(async (tx: any) => {
+        const preparing = await tx.predictionReduction.findFirst({ where: { ownerId, status: 'PREPARING' } });
+        let accountLocked = false;
+        const forecastModel = new Proxy(tx.polymarketPrediction, { get(target, property) {
+          if (property === 'findFirst') return async (...args: any[]) => {
+            const value = await target.findFirst(...args);
+            if (preparing && !pausedOnce && args[0]?.where?.marketSlug === 'reduction-market' && args[0]?.orderBy) {
+              pausedOnce = true; readerEntered(); await release;
+            }
+            return value;
+          };
+          const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
+        } });
+        const wrapped = new Proxy(tx, { get(target, property) {
+          if (property === 'polymarketPrediction') return forecastModel;
+          if (property === '$executeRaw') return async (...args: any[]) => {
+            const sql = String(args[0]);
+            if (sql.includes('pg_advisory_xact_lock(hashtext(')) accountLocked = true;
+            const publisherMarketLock = !accountLocked && sql.includes('pg_advisory_xact_lock(1347571526');
+            if (publisherMarketLock) publisherAttempted();
+            const value = await target.$executeRaw(...args);
+            if (publisherMarketLock) {
+              const claim = await target.predictionReduction.findFirst({ where: { ownerId } });
+              if (claim) afterMarketLockStates.push(claim.status);
+            }
+            return value;
+          };
+          const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value;
+        } });
+        return operation(wrapped);
+      }, ...options);
+    }) as any);
+    const bounded = async (promise: Promise<unknown>) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try { await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Fixture rendezvous timeout')), 3000); })]); }
+      finally { if (timer) clearTimeout(timer); }
+    };
+    let maintenance: ReturnType<typeof runPredictionHoldingMaintenance> | undefined, publication: Promise<unknown> | undefined;
+    try {
+      maintenance = runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+      await bounded(paused);
+      publication = (mutation === 'publish'
+        ? publishPredictionForecast(prisma, { id: 'during-await-publish', venue: 'polymarket_us', marketSlug: 'reduction-market',
+          question: 'offline concurrent producer', marketMid: .5, rawFair: .8, fairProb: .8, llmProb: .8, evidenceWeight: .8,
+          decision: 'SKIP', createdAt: new Date(Date.now() + 2) })
+        : resolvePredictionForecastMarket(prisma, 'polymarket_us', 'reduction-market', 1))
+        .then(result => { publisherFinished = true; return result; });
+      await bounded(attempting);
+      let waiting = 0;
+      for (let i = 0; i < 50 && waiting === 0; i++) {
+        const locks = await prisma.$queryRaw<Array<{ waiting: number }>>`SELECT count(*)::int AS waiting FROM pg_locks
+          WHERE locktype = 'advisory' AND classid = 1347571526::oid AND NOT granted`;
+        waiting = locks[0].waiting;
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBeGreaterThan(0); expect(publisherFinished).toBe(false);
+      expect(await prisma.predictionReduction.findFirstOrThrow({ where: { ownerId } })).toMatchObject({ status: 'PREPARING' });
+      expect(posted).toHaveLength(1); // No sale before durable consumption.
+      releaseReader();
+      const result = await maintenance; await publication;
+      expect(result.rows[0].status).toBe('REDUCTION_OBSERVED');
+      expect(afterMarketLockStates).toHaveLength(1);
+      expect(['SUBMITTING', 'SUBMITTED', 'TERMINAL']).toContain(afterMarketLockStates[0]);
+      expect(posted).toHaveLength(2);
+    } finally {
+      releaseReader();
+      await Promise.allSettled([...(maintenance ? [maintenance] : []), ...(publication ? [publication] : [])]);
+      transaction.mockRestore();
+    }
+  });
+
+  test('persisted policy cursor moves past twenty unavailable holdings to an actual executable holding', async () => {
+    const opening = await open(); await policyForecast();
+    const originalTrade = await prisma.trade.findUniqueOrThrow({ where: { id: opening.tradeId! } });
+    const { id: unusedTradeId, ...tradeData } = originalTrade;
+    const { brokerState: unusedBrokerState, executionReferences: unusedReferences, activityEvidence: unusedActivity, ...openingScalars } = opening;
+    for (let i = 0; i < 20; i++) {
+      const id = 'a-unavailable-' + String(i).padStart(2, '0');
+      const trade = await prisma.trade.create({ data: { ...tradeData, brokerOrderId: 'broker-' + id } as any });
+      await prisma.predictionExecution.create({ data: { ...openingScalars, id, claimKey: 'claim-' + id, tradeId: trade.id,
+        brokerOrderId: 'broker-' + id, marketSlug: 'unavailable-' + i } });
+    }
+    const first = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+    expect(first.rows).toHaveLength(20); expect(first.rows.every(r => r.status === 'BLOCKED')).toBe(true);
+    expect(posted).toHaveLength(1);
+    expect((await prisma.predictionRecoveryState.findUniqueOrThrow({ where: { ownerId } })).holdingCursorId).toBe('a-unavailable-19');
+    const next = await runPredictionHoldingMaintenance({ mode: 'REDUCE' });
+    expect(next.rows[0]).toMatchObject({ openingExecutionId: opening.id, status: 'REDUCTION_OBSERVED' });
+    expect(posted).toHaveLength(2);
+  });
 
   test.each(['YES', 'NO'] as const)('actual %s entry → fractional terminal partial → restart recovery → full close retains basis and exact loss', async side => {
     const opening = await open(side); const originalTrade = await prisma.trade.findUniqueOrThrow({ where: { id: opening.tradeId! } });

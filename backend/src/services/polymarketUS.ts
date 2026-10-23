@@ -174,6 +174,19 @@ export async function listPolymarketUSMarkets(max = 200): Promise<VenueMarket[]>
   return out;
 }
 
+/** Inspect an already-owned market directly, independent of listing rank.
+ * https://docs.polymarket.us/api-reference/markets/get-market-by-slug */
+export async function getPolymarketUSMarket(slug: string): Promise<VenueMarket | null> {
+  if (typeof slug !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(slug)) return null;
+  try {
+    const response: any = await polymarketPublicRead(() => axios.get(`${GATEWAY}/v1/market/slug/${slug}`,
+      { timeout: 10000, maxRedirects: 0, maxContentLength: 1048576 }));
+    const market = response?.data?.market;
+    if (market?.slug !== slug || typeof market.active !== 'boolean' || typeof market.closed !== 'boolean' || typeof market.archived !== 'boolean') return null;
+    return normalizeUSMarket(market);
+  } catch { return null; }
+}
+
 function levels(raw: any[] | undefined): BookLevel[] {
   return (raw ?? [])
     .map((l: any) => ({ price: num(l?.px) ?? NaN, size: Number(l?.qty) }))

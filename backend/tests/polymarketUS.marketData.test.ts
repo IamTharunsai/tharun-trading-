@@ -16,7 +16,7 @@ import axios from 'axios';
 import { polymarketPublicRead } from '../src/services/polymarketPublicRead';
 import { LlmAdmissionError } from '../src/utils/llmAdmission';
 import {
-  normalizeUSMarket, listPolymarketUSMarkets, getPolymarketUSBook, getPolymarketUSPriceHistory, classifyPolymarketBookFailure,
+  normalizeUSMarket, listPolymarketUSMarkets, getPolymarketUSMarket, getPolymarketUSBook, getPolymarketUSPriceHistory, classifyPolymarketBookFailure,
   getPolymarketUSSettlement, placePolymarketUSOrder, cancelPolymarketUSOrder, toYesOrderPrice, buildPolymarketUSOrder,
 } from '../src/services/polymarketUS';
 
@@ -37,6 +37,19 @@ beforeEach(() => {
 });
 
 describe('market data', () => {
+  it('inspects a held market by exact slug without relying on active listing rank', async () => {
+    (axios.get as jest.Mock).mockResolvedValueOnce({ data: { market: rawMarket() } });
+    expect(await getPolymarketUSMarket('tec-mlb-nlchamp-lad')).toMatchObject({ id: 'tec-mlb-nlchamp-lad', executionMetadataVerified: true });
+    expect(axios.get).toHaveBeenCalledWith('https://gateway.polymarket.us/v1/market/slug/tec-mlb-nlchamp-lad',
+      { timeout: 10000, maxRedirects: 0, maxContentLength: 1048576 });
+    expect(sdk.events.list).not.toHaveBeenCalled();
+  });
+  it('refuses wrong-market metadata and path injection without creating authority', async () => {
+    (axios.get as jest.Mock).mockResolvedValueOnce({ data: { market: rawMarket({ slug: 'other' }) } });
+    expect(await getPolymarketUSMarket('expected')).toBeNull();
+    jest.clearAllMocks();
+    expect(await getPolymarketUSMarket('../other')).toBeNull(); expect(axios.get).not.toHaveBeenCalled();
+  });
   it('refuses a locally blocked book without dispatching or labeling it a provider outage', async () => {
     (polymarketPublicRead as jest.Mock).mockRejectedValueOnce(new LlmAdmissionError('queue_timeout'));
     expect(await getPolymarketUSBook('x')).toBeNull();

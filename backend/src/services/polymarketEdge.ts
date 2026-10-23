@@ -19,6 +19,10 @@ import { prisma } from '../utils/prisma';
 import { getPolymarketMaxOrderUsd } from '../trading/liveGate';
 import * as M from '../trading/predictionMath';
 import type { PredictionVenue, VenueBook, VenueMarket } from './predictionVenue';
+import { decideExit } from '../trading/predictionExitDecision';
+import { publishPredictionForecast, resolvePredictionForecastMarket } from '../trading/predictionForecastCustody';
+export { decideExit } from '../trading/predictionExitDecision';
+export type { ExitDecision } from '../trading/predictionExitDecision';
 
 const db = prisma as any;
 const VENUE_TAG = 'polymarket_us';
@@ -448,21 +452,6 @@ export async function processPaperOrders(venue: PredictionVenue, cfg = readEdgeC
 
 // ── Exits ────────────────────────────────────────────────────────────────────
 
-export type ExitDecision = { exit: false } | { exit: true; reason: 'tp_converged' | 'edge_flipped' | 'evidence_changed' };
-
-/** Pure exit rules for one position. */
-export function decideExit(args: {
-  side: M.Side; entryPrice: number; exitPrice: number; fairNowYes: number | null; fairAtEntrySide: number | null; cfg: EdgeConfig;
-}): ExitDecision {
-  if (args.fairNowYes == null) return { exit: false };
-  const fairSide = args.side === 'YES' ? args.fairNowYes : 1 - args.fairNowYes;
-  // Thesis checks first, so a collapse in fair value is labelled as such.
-  if (fairSide < args.entryPrice - args.cfg.exitEdge) return { exit: true, reason: 'edge_flipped' };
-  if (args.fairAtEntrySide != null && fairSide < args.fairAtEntrySide - args.cfg.evidenceShift) return { exit: true, reason: 'evidence_changed' };
-  if (args.exitPrice >= fairSide - args.cfg.tpBuffer) return { exit: true, reason: 'tp_converged' };
-  return { exit: false };
-}
-
 async function closeTrade(t: any, exitPrice: number, exitFee: number, reason: string) {
   const qty = Number(t.quantity) || 0;
   const entryFee = Number(t.fees) || 0;
@@ -623,8 +612,7 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
       const bestEdge = plan ? null : edges[0];
       let predictionId: string | null = recentOk ? recent.id : null;
       if (!recentOk) {
-        const row = await db.polymarketPrediction.create({
-          data: {
+        const row = await publishPredictionForecast(db, {
             venue: venue.id, marketSlug: m.id, eventSlug: m.eventId ?? null, category: m.category, question: m.question.slice(0, 500),
             endDate: m.endDate ? new Date(m.endDate) : null, marketMid: mid, bestBid: bid, bestAsk: ask,
             llmProb: fair.llmProb, llmConfidence: fair.llmConfidence, headlineCount: fair.headlineCount,
@@ -633,7 +621,6 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
             decision, skipReason, side: plan?.side ?? bestEdge?.side ?? null,
             netEdge: plan?.netEdge ?? bestEdge?.netEdge ?? null, execPrice: plan?.price ?? bestEdge?.execPrice ?? null,
             feePerShare: plan?.feePerShare ?? bestEdge?.feePerShare ?? null,
-          },
         }).catch((err: any) => { logger.debug(`[PM-EDGE] prediction write failed: ${err?.message}`); return null; });
         predictionId = row?.id ?? null;
       }
@@ -695,7 +682,7 @@ export async function resolvePolymarketPredictions(opts: { venue?: PredictionVen
   for (const slug of slugs) {
     const v = await venue.getSettlement(slug);
     if (v == null) continue;
-    await db.polymarketPrediction.updateMany({ where: { marketSlug: slug, outcome: null }, data: { outcome: v, resolvedAt: new Date() } }).catch(() => {});
+    await resolvePredictionForecastMarket(db, venue.id, slug, v).catch(() => {});
     resolved++;
   }
   if (resolved) logger.info(`🎯 [PM-EDGE] ${resolved} market(s) resolved for the scorecard`);
