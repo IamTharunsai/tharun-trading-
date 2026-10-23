@@ -1,4 +1,6 @@
 jest.mock('../src/utils/prisma', () => ({ prisma: {} }));
+jest.mock('../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
+jest.mock('../src/services/accountManager', () => ({ accountManager: { getAlpacaState: () => null } }));
 import {
   liveTradingConfirmed, alpacaLiveAllowed, getAlpacaMode, polymarketLiveAllowed,
   getPolymarketMaxOrderUsd, LIVE_CONFIRM_PHRASE,
@@ -42,6 +44,30 @@ describe('liveGate — one rule for real money', () => {
     expect(polymarketLiveAllowed({ ...env, POLYMARKET_US_LIVE: 'false' }, false).allowed).toBe(false);
   });
 
+  it('explicit paper stocks stay paper with live credentials while the Polymarket gate is independently allowed', () => {
+    const env = { TRADING_MODE: 'live', LIVE_TRADING_CONFIRMED: LIVE_CONFIRM_PHRASE,
+      POLYMARKET_US_LIVE: 'true', ALPACA_TRADING_MODE: 'paper', ...LIVE_KEYS };
+    expect(getAlpacaMode(env)).toBe('paper');
+    expect(polymarketLiveAllowed(env, false).allowed).toBe(true);
+    expect(polymarketLiveAllowed(env, true).allowed).toBe(false);
+    expect(polymarketLiveAllowed({ ...env, LIVE_TRADING_CONFIRMED: '' }, false).allowed).toBe(false);
+  });
+
+  it.each(['', 'papre', 'auto'])('invalid explicit Alpaca mode %j cannot fall back to global live', mode => {
+    expect(getAlpacaMode({ TRADING_MODE: 'live', LIVE_TRADING_CONFIRMED: LIVE_CONFIRM_PHRASE,
+      ALPACA_TRADING_MODE: mode, ...LIVE_KEYS })).toBe('paper');
+  });
+
+  it('explicit stock live mode cannot bypass global paper, confirmation or credentials', () => {
+    expect(getAlpacaMode({ ALPACA_TRADING_MODE: 'live', TRADING_MODE: 'paper',
+      LIVE_TRADING_CONFIRMED: LIVE_CONFIRM_PHRASE, ...LIVE_KEYS })).toBe('paper');
+    expect(getAlpacaMode({ ALPACA_TRADING_MODE: 'live', TRADING_MODE: 'live', ...LIVE_KEYS })).toBe('paper');
+    expect(getAlpacaMode({ ALPACA_TRADING_MODE: 'live', TRADING_MODE: 'live',
+      LIVE_TRADING_CONFIRMED: LIVE_CONFIRM_PHRASE })).toBe('paper');
+    expect(getAlpacaMode({ ALPACA_TRADING_MODE: 'live', TRADING_MODE: 'live',
+      LIVE_TRADING_CONFIRMED: LIVE_CONFIRM_PHRASE, ...LIVE_KEYS })).toBe('live');
+  });
+
   it('max order: POLYMARKET_US_MAX_ORDER_USD wins, POLYMARKET_MAX_BET_USD is an alias, default $5', () => {
     expect(getPolymarketMaxOrderUsd({})).toBe(5);
     expect(getPolymarketMaxOrderUsd({ POLYMARKET_MAX_BET_USD: '3' })).toBe(3);
@@ -67,6 +93,18 @@ describe('createAlpacaBroker no longer bypasses the gate', () => {
       expect(b).not.toBeNull();
       expect(b.baseUrl).toBe('https://paper-api.alpaca.markets');
       expect(b.apiKey).toBe('PKPAPERKEY123456');
+    });
+  });
+
+  it('a confirmed global live setup with a paper stock pin routes only paper credentials and endpoint', () => {
+    Object.assign(process.env, { TRADING_MODE: 'live', LIVE_TRADING_CONFIRMED: LIVE_CONFIRM_PHRASE,
+      ALPACA_TRADING_MODE: 'paper', ALPACA_PAPER_API_KEY: 'PKPAPERKEY123456',
+      ALPACA_PAPER_SECRET_KEY: 'papersecret1234567890', ...LIVE_KEYS });
+    jest.isolateModules(() => {
+      const { createAlpacaBroker } = require('../src/services/alpacaBroker');
+      const broker: any = createAlpacaBroker(false);
+      expect(broker.baseUrl).toBe('https://paper-api.alpaca.markets');
+      expect(broker.apiKey).toBe('PKPAPERKEY123456');
     });
   });
 });
