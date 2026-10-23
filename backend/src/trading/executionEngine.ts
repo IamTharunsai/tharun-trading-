@@ -34,6 +34,7 @@ import { positionScopeKey, getVerifiedAccountScope, AccountScope } from './accou
 import { requestPositionExit } from './positionExits';
 import { getPortfolioState } from '../services/portfolio';
 import { validateLiveQualification } from './liveQualification';
+import { checkForecastGate } from './forecastGate';
 import { bindStockQuote, assertStockQuoteBinding, readStockEntryQuote, StockQuoteBinding } from './stockEntryQuote';
 import { assertStockEntryQuote, assertStockEntryBudget, reduceStockEntryQuantity } from './stockEntryPolicy';
 export { buildStockOrder } from './stockOrders';
@@ -211,6 +212,16 @@ export async function executeTradeSignal(
     const risk = await validateTradeSignal(signal, portfolio);
     if (!risk.approved) {
       await recordExecutionFailure(agentDecisionId, risk.reason);
+      return false;
+    }
+    // Forecast gate: a recorded, unexpired forecast for this asset that
+    // opposes the entry side blocks the order before any price/quote/intent
+    // work. Default ON (FORECAST_GATE_ENABLED=false disables). The trade's
+    // own council call is excluded inside checkForecastGate — it is the
+    // decision being executed, not independent evidence against it.
+    const forecastGate = await checkForecastGate({ asset, direction, decisionId: agentDecisionId });
+    if (!forecastGate.allowed) {
+      await recordExecutionFailure(agentDecisionId, forecastGate.reason);
       return false;
     }
     // 1. Price
