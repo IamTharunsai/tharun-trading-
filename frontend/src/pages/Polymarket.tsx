@@ -56,6 +56,7 @@ function normalizePrediction(p: any): Pred | null {
   const yes = prob(p.yesPrice);
   const no = prob(p.noPrice) ?? (yes !== null ? 1 - yes : null);
   const edge = num(p.edge);
+  const ev = num(p.expectedValue);
   const rb = String(p.recommendedBet || '').toUpperCase();
   return {
     id: String(p.id),
@@ -66,7 +67,9 @@ function normalizePrediction(p: any): Pred | null {
     modelProb: prob(p.trueYesProbability ?? p.modelProbability),
     // edge is stored as a fraction (0.08) in some rows and percent (8) in others
     edgePct: edge === null ? null : Math.abs(edge) <= 1 ? edge * 100 : edge,
-    evPct: num(p.expectedValue),
+    // expectedValue is stored the same way (per-share fraction, e.g. 0.077);
+    // it was rendered unconverted, so a real 7.7% EV printed as "0.1%"/"0.0%"
+    evPct: ev === null ? null : Math.abs(ev) <= 1 ? ev * 100 : ev,
     kelly: prob(p.kellyFraction),
     recommendedBet: rb === 'YES' || rb === 'NO' || rb === 'SKIP' ? rb : null,
     reasoning: p.reasoning ? String(p.reasoning) : null,

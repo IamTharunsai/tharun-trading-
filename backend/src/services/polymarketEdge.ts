@@ -624,7 +624,10 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
         }).catch((err: any) => { logger.debug(`[PM-EDGE] prediction write failed: ${err?.message}`); return null; });
         predictionId = row?.id ?? null;
       }
-      displayRows.push({ m, mid, fair, decision, netEdge: plan?.netEdge ?? bestEdge?.netEdge ?? 0, reasoning: fair.reasoning, hLeft });
+      // Carry the side the displayed edge belongs to: when the plan was
+      // blocked (decision SKIP) this is the only place bestEdge.side survives,
+      // and writeDisplayRows needs it to price EV/Kelly for the card.
+      displayRows.push({ m, mid, fair, decision, side: plan?.side ?? bestEdge?.side ?? null, netEdge: plan?.netEdge ?? bestEdge?.netEdge ?? 0, reasoning: fair.reasoning, hLeft });
 
       if (!plan) { if (skipReason) skip(skipReason); continue; }
       const placed = await placePaperEntry(m, plan, cfg, predictionId);
@@ -648,16 +651,20 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
 
 /**
  * Display EV / Kelly for one scan row, from the model probability and the
- * market mid the row is displayed at. EV is per $1 share on the recommended
- * side (fairSide − costSide, the rawEdge definition in predictionMath);
- * Kelly is the module's full-Kelly fraction for that side. A row with no
- * YES/NO recommendation has no side to price, so both stay 0.
+ * market mid the row is displayed at — delegated to predictionMath's
+ * sideEvKelly, the one definition every Prediction-row writer shares.
+ *
+ * The priced side is the bet decision when there is one. When the scan did
+ * not bet (decision SKIP — plan blocked by sizing, depth, exposure caps or
+ * an entries block) but planEntry still computed a best-edge side, the row
+ * is priced on THAT side: the card already displays that side's netEdge, so
+ * zeroing EV/Kelly here made every blocked-but-real edge read 0.0% / 0.0%.
+ * A row with neither a decision nor a computed side stays 0.
  */
-export function displayEvKelly(r: { fair: FairEstimate; mid: number; decision: string }): { expectedValue: number; kellyFraction: number } {
-  const fairSide = r.decision === 'YES' ? r.fair.fair : r.decision === 'NO' ? 1 - r.fair.fair : null;
-  const costSide = r.decision === 'YES' ? r.mid : r.decision === 'NO' ? 1 - r.mid : null;
-  if (fairSide == null || costSide == null) return { expectedValue: 0, kellyFraction: 0 };
-  return { expectedValue: fairSide - costSide, kellyFraction: M.kellyFraction(fairSide, costSide) };
+export function displayEvKelly(r: { fair: FairEstimate; mid: number; decision: string; side?: string | null }): { expectedValue: number; kellyFraction: number } {
+  const side = r.decision === 'YES' || r.decision === 'NO' ? r.decision
+    : r.side === 'YES' || r.side === 'NO' ? r.side : null;
+  return M.sideEvKelly(r.fair.fair, r.mid, side);
 }
 
 /** Keep the existing Predictions UI populated (it reads the Prediction table). */
