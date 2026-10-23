@@ -182,3 +182,69 @@ def test_run_forecast_normalizes_ragged_runs():
     result = run_forecast(_paths_predictor(paths), ohlcv, pred_len=5, ensemble_size=5)
     _assert_platform_contract(result, pred_len=5, last_close=last_close)
 
+def _float32_paths_predictor(paths):
+    """Fake predictor whose predict() returns float32 close arrays — the
+    real model's dtype (the vendored library builds its DataFrame from
+    float32 torch tensors), unlike _paths_predictor's float64 lists."""
+    import numpy as np
+    mock_predictor = MagicMock()
+    state = {"n": 0}
+
+    def fake_predict(df, x_timestamp, y_timestamp, pred_len, **kwargs):
+        path = np.asarray(paths[state["n"] % len(paths)], dtype=np.float32)
+        state["n"] += 1
+        return pd.DataFrame({
+            "open": path, "high": path, "low": path, "close": path,
+            "volume": np.zeros(len(path), dtype=np.float32),
+            "amount": np.zeros(len(path), dtype=np.float32),
+        })
+
+    mock_predictor.predict.side_effect = fake_predict
+    return mock_predictor
+
+
+def test_run_forecast_float32_ensemble_mean_return_matches_validator():
+    # Regression test for the 2026-10-23 production rejection:
+    #   Kronos response rejected: meanReturn mismatch
+    #   {"symbol":"ONDS","check":"meanReturn","delta":3.17e-8,...}
+    # The vendored model returns float32 closes. Where that dtype reached
+    # the meanReturn arithmetic (float32 ensemble matrix -> float32 mean ->
+    # float32 (mean - last) / last under NumPy 2 / NEP 50 promotion), the
+    # result drifted ~1e-8..3e-8 from the platform validator's float64
+    # recomputation — outside its 1e-8 tolerance — and the Quant
+    # Forecaster sat at HOLD with confidence 0. The PR #72 fixtures were
+    # float64 Python lists, so the hazard never fired in tests.
+    #
+    # Fixture: an ONDS-shaped ensemble — last close 9.63, five sampled
+    # paths ending ~17% lower over a 24-step horizon.
+    import numpy as np
+    ohlcv = [
+        {"open": c, "high": c + 0.1, "low": c - 0.1, "close": c, "volume": 1e6,
+         "timestamp": f"2026-01-{(i % 28) + 1:02d}T00:00:00"}
+        for i, c in enumerate(np.linspace(8.0, 9.63, 60))
+    ]
+    last_close = 9.63
+    rng = np.random.default_rng(504)
+    factors = np.array([0.79, 0.81, 0.83, 0.85, 0.86]) + rng.normal(0, 0.01, 5)
+    paths = [np.linspace(9.55, last_close * f, 24) + rng.normal(0, 0.03, 24)
+             for f in factors]
+
+    # Precondition (same style as the band regression test above): had
+    # these float32 outputs been aggregated in float32, as the pre-fix
+    # code did with the real model's runs, meanReturn would land outside
+    # the validator's tolerance for this very ensemble.
+    matrix32 = np.array(paths, dtype=np.float32)
+    mean32 = matrix32.mean(axis=0)
+    mean_return_f32 = float((mean32[-1] - np.float32(last_close)) / np.float32(last_close))
+    validator_from_f32_mean = (float(mean32[-1]) - last_close) / last_close
+    assert abs(validator_from_f32_mean - mean_return_f32) > 1e-8, \
+        "precondition: the float32 path must break the 1e-8 tolerance here"
+
+    result = run_forecast(_float32_paths_predictor(paths), ohlcv, pred_len=24, ensemble_size=5)
+    _assert_platform_contract(result, pred_len=24, last_close=last_close)
+
+    # Stronger than the tolerance: the fix derives meanReturn from the
+    # returned predictedClose values, so after a JSON round-trip the
+    # validator's recomputation agrees exactly (delta 0 by construction).
+    resp = json.loads(json.dumps(result))
+    assert (resp["predictedClose"][-1] - last_close) / last_close == resp["meanReturn"]
