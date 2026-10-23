@@ -646,18 +646,33 @@ export async function runPolymarketEdgeScan(opts: { venue?: PredictionVenue } = 
   }
 }
 
+/**
+ * Display EV / Kelly for one scan row, from the model probability and the
+ * market mid the row is displayed at. EV is per $1 share on the recommended
+ * side (fairSide − costSide, the rawEdge definition in predictionMath);
+ * Kelly is the module's full-Kelly fraction for that side. A row with no
+ * YES/NO recommendation has no side to price, so both stay 0.
+ */
+export function displayEvKelly(r: { fair: FairEstimate; mid: number; decision: string }): { expectedValue: number; kellyFraction: number } {
+  const fairSide = r.decision === 'YES' ? r.fair.fair : r.decision === 'NO' ? 1 - r.fair.fair : null;
+  const costSide = r.decision === 'YES' ? r.mid : r.decision === 'NO' ? 1 - r.mid : null;
+  if (fairSide == null || costSide == null) return { expectedValue: 0, kellyFraction: 0 };
+  return { expectedValue: fairSide - costSide, kellyFraction: M.kellyFraction(fairSide, costSide) };
+}
+
 /** Keep the existing Predictions UI populated (it reads the Prediction table). */
 async function writeDisplayRows(rows: any[]) {
   if (!rows.length) return;
   try {
     await db.prediction.deleteMany({ where: { asset: 'POLYMARKET', resolvedAt: null } });
     for (const r of rows) {
+      const evKelly = displayEvKelly(r);
       await db.prediction.create({
         data: {
           asset: 'POLYMARKET', market: 'polymarket', title: r.m.question.slice(0, 300), category: r.m.category || 'prediction',
           direction: r.decision === 'YES' ? 'UP' : r.decision === 'NO' ? 'DOWN' : 'NEUTRAL',
           confidence: Math.round((r.fair.evidenceWeight || 0) * 100), yesPrice: r.mid, noPrice: 1 - r.mid,
-          edge: r.netEdge, recommendedBet: r.decision, expectedValue: 0, kellyFraction: 0,
+          edge: r.netEdge, recommendedBet: r.decision, expectedValue: evKelly.expectedValue, kellyFraction: evKelly.kellyFraction,
           targetPrice: r.fair.fair * 100, currentPrice: r.mid * 100,
           timeHorizon: r.hLeft != null ? `${Math.max(0, Math.ceil(r.hLeft / 24))}D` : 'n/a',
           keyRisks: [], reasoning: r.reasoning || null, status: 'ACTIVE',

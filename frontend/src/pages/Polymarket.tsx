@@ -89,7 +89,7 @@ export default function PolymarketPage() {
   const breakdownQ = useQuery({ queryKey: ['portfolio-breakdown'], queryFn: getPortfolioBreakdown, refetchInterval: 60000, retry: false });
   const tradesQ = useQuery({
     queryKey: ['polymarket-trades'],
-    queryFn: () => getTrades(1, 200, { market: 'polymarket' }),
+    queryFn: () => getTrades(1, 200, { market: 'prediction' }), // prediction trades are stored with market 'prediction', never 'polymarket'
     refetchInterval: 30000,
     retry: 1,
   });
@@ -113,7 +113,7 @@ export default function PolymarketPage() {
   const trades: any[] = useMemo(() => {
     const d: any = tradesQ.data;
     const list: any[] = Array.isArray(d?.trades) ? d.trades : Array.isArray(d) ? d : [];
-    return list.filter(t => t && String(t.market || '').toLowerCase() === 'polymarket');
+    return list.filter(t => t && String(t.market || '').toLowerCase() === 'prediction');
   }, [tradesQ.data]);
 
   const stats = useMemo(() => {
