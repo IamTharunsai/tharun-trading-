@@ -1025,6 +1025,45 @@ model PolymarketPrediction {
   @@index([createdAt])
 }
 
+// Every directional forecast the stock/crypto system produces (Kronos model
+// output and the council's own final call), persisted in scoreable form at
+// production time so accuracy can be measured after the fact instead of
+// asserted. A row is immutable evidence: scoring fills realizedPrice /
+// realizedReturn / directionHit / brier / scoredAt once, after maturesAt.
+// probabilityUp is the forecaster's stated P(price up over the horizon); for
+// COUNCIL rows it is the council's stated confidence (NOT a calibrated
+// probability -- the scorecard exists to measure exactly that gap). Kronos
+// publishes no probability, so its rows carry probabilityUp = null and are
+// scored on direction only. decisionId links a COUNCIL row to its
+// AgentDecision so the forecast gate never treats a trade's own call as
+// independent opposing evidence.
+model ForecastRecord {
+  id              String    @id @default(cuid())
+  source          String    // 'KRONOS' | 'COUNCIL'
+  asset           String
+  market          String    // 'stocks' | 'crypto'
+  direction       String    // 'UP' | 'DOWN' | 'FLAT'
+  probabilityUp   Float?
+  referencePrice  Float
+  predictedPrice  Float?
+  expectedReturn  Float?
+  horizonBars     Int
+  barDurationMs   Float
+  maturesAt       DateTime
+  decisionId      String?
+  realizedPrice   Float?
+  realizedReturn  Float?
+  directionHit    Boolean?
+  brier           Float?
+  scoredAt        DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+
+  @@index([asset, createdAt])
+  @@index([source, createdAt])
+  @@index([maturesAt, scoredAt])
+}
+
 // A real US submission owns a durable claim before transport. Never retry an
 // ambiguous create: the exchange create contract has no client-order identifier.
 model PredictionExecution {

@@ -289,6 +289,43 @@ tradesRouter.post('/:id/close', requireOwner, async (req: Request, res: Response
   res.json({ closed: true, pnl: result.pnl, pnlPct: result.pnlPct });
 });
 
+// ── /api/forecasts ──────────────────────────────────────────────────────────
+// Read-only forecast scorecard: every recorded Kronos/council forecast,
+// scored against realized prices (hit rate + calibration). This is the
+// measurement surface for the forecast gate — it reports evidence only and
+// never writes qualification rows or authorizes anything.
+export const forecastsRouter = Router();
+forecastsRouter.use(privateResponse, requireOwner);
+
+forecastsRouter.get('/scorecard', async (req: Request, res: Response) => {
+  try {
+    const { getForecastScorecard } = await import('../services/forecastScorecard');
+    const daysRaw = Number(req.query.days);
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(3650, Math.floor(daysRaw)) : undefined;
+    const source = typeof req.query.source === 'string' && ['KRONOS', 'COUNCIL'].includes(req.query.source) ? req.query.source : undefined;
+    const asset = typeof req.query.asset === 'string' && req.query.asset.length <= 32 ? req.query.asset : undefined;
+    res.json(await getForecastScorecard({ days, source, asset }));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to build forecast scorecard' });
+  }
+});
+
+forecastsRouter.get('/recent', async (req: Request, res: Response) => {
+  try {
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(200, Math.floor(limitRaw)) : 50;
+    const where: any = {};
+    if (typeof req.query.asset === 'string' && req.query.asset) where.asset = req.query.asset;
+    if (typeof req.query.source === 'string' && ['KRONOS', 'COUNCIL'].includes(req.query.source)) where.source = req.query.source;
+    const forecasts = typeof (prisma as any).forecastRecord?.findMany === 'function'
+      ? await (prisma as any).forecastRecord.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit })
+      : [];
+    res.json({ forecasts, total: forecasts.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list forecasts' });
+  }
+});
+
 // ── /api/portfolio ────────────────────────────────────────────────────────────
 export const portfolioRouter = Router();
 portfolioRouter.use(privateResponse, requireOwner);

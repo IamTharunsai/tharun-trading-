@@ -431,6 +431,22 @@ export function initScheduler() {
           return;
         }
         await edge.runPolymarketEdgeScan();
+
+        // Reachability for the qualification-gated live lane (was dead
+        // code — tests only). In paper mode polymarketLiveAllowed() is
+        // false and this stays a pure env check: nothing is imported and
+        // nothing changes. When the live gate passes, the sweep re-checks
+        // the full existing liveQualification readiness inside
+        // predictionExecution and remains fail-closed — no qualification
+        // row, no orders.
+        try {
+          const { polymarketLiveAllowed } = await import('../trading/liveGate');
+          if (polymarketLiveAllowed(process.env, isKillSwitchActive()).allowed) {
+            const { runLivePredictionSweep } = await import('../trading/predictionExecution');
+            const sweep = await runLivePredictionSweep();
+            if (sweep.attempted) logger.info(`🎯 Polymarket live sweep: attempted ${sweep.attempted}, placed ${sweep.placed}`);
+          }
+        } catch (err: any) { logger.warn(`Polymarket live sweep skipped: ${err?.message || 'error'}`); }
       } catch (err: any) { markSchedulerFailure(); logger.warn(`Polymarket edge scan skipped: ${err?.message || err?.code || 'network error'}`); }
       return;
     }
@@ -516,6 +532,14 @@ export function initScheduler() {
       const { markToMarketOpenPositions } = await import('../trading/executionEngine');
       await markToMarketOpenPositions();
     } catch (err) { markSchedulerFailure(); logger.error('Mark-to-market failed', { err }); }
+    // Score matured forecasts (ForecastRecord) against realized prices on
+    // the same 5-minute tick. Separate guard: a scoring failure is logged
+    // and never changes this job's outcome or the positions pass above.
+    try {
+      const { scoreMaturedForecasts } = await import('../services/forecastScorecard');
+      const scored = await scoreMaturedForecasts();
+      if (scored.scored) logger.info(`📊 Forecast scorecard: scored ${scored.scored} matured forecast(s), ${scored.pending} awaiting a price`);
+    } catch (err: any) { logger.warn(`Forecast scoring skipped: ${err?.message || 'error'}`); }
   });
 
   // ── Verify audit ledger chain integrity daily at 6 AM ────────────────────

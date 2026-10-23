@@ -16,6 +16,7 @@ import { prisma } from './utils/prisma';
 // Routes
 import authRoutes from './routes/auth';
 import tradesRoutes from './routes/trades';
+import forecastsRoutes from './routes/forecasts';
 import portfolioRoutes from './routes/portfolio';
 import agentsRoutes from './routes/agents';
 import marketRoutes from './routes/market';
@@ -65,6 +66,7 @@ app.use(rateLimit({
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/trades', tradesRoutes);
+app.use('/api/forecasts', forecastsRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/agents', agentsRoutes);
 app.use('/api/market', marketRoutes);
