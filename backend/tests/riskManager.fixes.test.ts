@@ -8,13 +8,17 @@ jest.mock('../src/services/alertService', () => ({ alert: { tradeFailed: (...a: 
 
 import { validateTradeSignal } from '../src/trading/riskManager';
 import { normalizeConfidence } from '../src/utils/confidence';
+import { withRiskEvidence } from './helpers/riskEvidence';
 
 const sig = (over: any = {}) => ({
   asset: 'AAPL', market: 'stocks', direction: 'BUY', confidence: 70,
   entryPrice: 100, stopLossPrice: 95, takeProfitPrice: 110, positionSizePct: 5,
   reasoning: '', agentDecisionId: 'fixture', voteCounts: { supporting: 8, opposing: 2, abstaining: 4 }, ...over,
 }) as any;
-const pf = (over: any = {}) => ({
+// Every fixture carries the capital-evidence the risk gate now requires
+// (see tests/helpers/riskEvidence.ts); it is derived after the per-test
+// overrides so the evidence always mirrors the portfolio under test.
+const pf = (over: any = {}) => withRiskEvidence({
   totalValue: 1000, cashBalance: 900, invested: 100, pnlDay: 0, pnlDayPct: 0, pnlTotal: 0, pnlTotalPct: 0,
   pnlWeekPct: 0, positions: [], openPositions: 0, tradesExecutedToday: 0, drawdownFromPeak: 0, ...over,
 }) as any;
