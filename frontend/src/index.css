@@ -262,13 +262,12 @@ td {
 .bh-scope {
   color-scheme: dark;
   background: var(--bh-ink-900);
-  color: var(--bh-bone-100);
-  font-family: var(--bh-font-body);
+  /* No inherited color/font here on purpose: the shell wraps pages that
+     have not migrated yet, and their own light-theme classes must keep
+     winning inside their bodies. Migrated subtrees set bone text and
+     the Plex face explicitly on their roots. */
 }
 .bh-scope ::selection { background: rgba(198, 161, 91, 0.35); color: var(--bh-bone-100); }
-.bh-scope ::-webkit-scrollbar-track { background: var(--bh-ink-900); }
-.bh-scope ::-webkit-scrollbar-thumb { background: var(--bh-ink-700); }
-.bh-scope ::-webkit-scrollbar-thumb:hover { background: var(--bh-border-strong); }
 
 /* Faint chakra-line motif: two near-invisible concentric rings +
    a hairline horizon rule, drawn with gradients only (no images).
@@ -359,22 +358,22 @@ td {
   border-radius: var(--bh-radius-lg);
   box-shadow: 0 1px 0 0 rgba(242, 234, 216, 0.03) inset, 0 12px 32px -16px rgba(0, 0, 0, 0.65);
 }
-/* Form controls inside a Bhishma subtree (the global light rule above
-   has no !important on background for inputs in most browsers' cascade
-   order — these scoped rules come later and win within .bh-scope). */
-.bh-scope select, .bh-scope input, .bh-scope textarea {
-  background-color: var(--bh-ink-750);
-  color: var(--bh-bone-100);
-  border-color: var(--bh-border);
+/* Form controls + tables, scoped to migrated panels (.bh-panel inside
+   .bh-scope) so unmigrated pages sharing the shell are untouched.
+   !important is required: the legacy global rules above use it too. */
+.bh-scope .bh-panel select, .bh-scope .bh-panel input, .bh-scope .bh-panel textarea {
+  background-color: var(--bh-ink-750) !important;
+  color: var(--bh-bone-100) !important;
+  border-color: var(--bh-border) !important;
 }
-.bh-scope select:focus, .bh-scope input:focus, .bh-scope textarea:focus {
-  border-color: var(--bh-gold-deep);
+.bh-scope .bh-panel select:focus, .bh-scope .bh-panel input:focus, .bh-scope .bh-panel textarea:focus {
+  border-color: var(--bh-gold-deep) !important;
   box-shadow: 0 0 0 2px rgba(198, 161, 91, 0.22);
 }
-.bh-scope select option { background-color: var(--bh-ink-800); color: var(--bh-bone-100); }
-.bh-scope table { color: var(--bh-bone-100); }
-.bh-scope th { color: var(--bh-bone-500); }
-.bh-scope td { color: var(--bh-bone-100); }
+.bh-scope .bh-panel select option { background-color: var(--bh-ink-800) !important; color: var(--bh-bone-100) !important; }
+.bh-scope .bh-panel table { color: var(--bh-bone-100) !important; }
+.bh-scope .bh-panel th { color: var(--bh-bone-500) !important; }
+.bh-scope .bh-panel td { color: var(--bh-bone-100) !important; }
 
 /* ─── Reduced motion: every Bhishma primitive (and the legacy ticker /
    pulse utilities used inside the shell) is disabled, not slowed. ── */

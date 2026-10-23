@@ -22,10 +22,10 @@ const testIdForPath = (path: string) => `nav-${path === '/' ? 'home' : path.repl
 
 function StatusPill({ tone, label, testId, title }: { tone: 'ok' | 'warn' | 'bad' | 'unknown' | 'info'; label: string; testId: string; title?: string }) {
   const cls = {
-    ok: 'text-emerald-600', warn: 'text-amber-600', bad: 'text-red-600', unknown: 'text-slate-400', info: 'text-blue-600',
+    ok: 'text-bh-up', warn: 'text-bh-warn', bad: 'text-bh-down', unknown: 'text-bh-bone-600', info: 'text-bh-info',
   }[tone];
   const dot = {
-    ok: 'bg-emerald-500', warn: 'bg-amber-500', bad: 'bg-red-500', unknown: 'bg-slate-300', info: 'bg-blue-500',
+    ok: 'bg-bh-up bh-live-dot', warn: 'bg-bh-warn', bad: 'bg-bh-down', unknown: 'bg-bh-bone-600', info: 'bg-bh-info',
   }[tone];
   return (
     <span className={`${cls} font-bold flex items-center gap-1.5 whitespace-nowrap`} data-testid={testId} title={title}>
@@ -99,6 +99,9 @@ export default function Layout() {
   const [timeUtc, setTimeUtc] = useState('');
   const [timeEst, setTimeEst] = useState('');
   const location = useLocation();
+  // Overview Cockpit is the first Bhishma-migrated page body; other page
+  // bodies keep the legacy light surface until their own migration wave.
+  const isCockpit = location.pathname === '/dashboard';
   const statusQ = useSystemStatus();
   const status = statusQ.isError ? undefined : statusQ.data;
   const schedulerView = schedulerPresentation(status?.schedulerRuntime);
@@ -203,34 +206,34 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
+    <div className="bh-scope flex h-screen bg-bh-ink-900 overflow-hidden font-plex">
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       {/* Mobile: dimmed backdrop behind the slide-in menu */}
       {mobileNavOpen && (
-        <div className="fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setMobileNavOpen(false)} />
+        <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMobileNavOpen(false)} />
       )}
       {/* ── Sidebar (slide-in drawer under 768px, fixed column above) ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 flex-shrink-0 flex flex-col bg-white border-r border-slate-200 overflow-y-auto shadow-xs transform transition-transform duration-200 md:static md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-40 w-64 flex-shrink-0 flex flex-col bg-bh-ink-850 border-r border-bh-border overflow-y-auto transform transition-transform duration-200 md:static md:translate-x-0 ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'}`}
         onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setMobileNavOpen(false); }}
       >
         {/* Brand header */}
-        <div className="p-4 border-b border-slate-200">
+        <div className="p-4 border-b border-bh-border bh-chakra-lines">
           <div className="flex items-center gap-2.5 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-sm">
-              <Zap size={18} className="text-white" />
+            <div className="w-8 h-8 rounded-bh bg-bh-gold-dim border border-bh-border-strong flex items-center justify-center font-bold shadow-bh-gold-glow">
+              <Zap size={18} className="text-bh-gold-bright" />
             </div>
             <div>
-              <div className="font-bold text-sm tracking-wide text-slate-900 leading-tight">
-                BHISHMA TERMINAL
+              <div className="bh-wordmark font-alike text-xl leading-tight">
+                BHISHMA
               </div>
-              <div className="font-mono text-[10px] text-blue-700 font-bold tracking-wider leading-tight">
-                AUTONOMOUS HEDGE CORE
+              <div className="font-mono text-[10px] text-bh-gold font-bold tracking-wider leading-tight">
+                TERMINAL · AUTONOMOUS HEDGE CORE
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-slate-500">
+          <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-bh-bone-500">
             {statusKnown ? (
               killSwitchActive ? (
                 <StatusPill tone="bad" label="TRADING HALTED" testId="sidebar-system-status" />
@@ -245,7 +248,7 @@ export default function Layout() {
             ) : (
               <StatusPill tone="unknown" label={statusQ.isLoading ? 'CHECKING…' : 'STATUS UNKNOWN'} testId="sidebar-system-status" />
             )}
-            <span className="text-slate-400">{timeEst.split(' ')[0]}</span>
+            <span className="text-bh-bone-600">{timeEst.split(' ')[0]}</span>
           </div>
         </div>
 
@@ -253,7 +256,7 @@ export default function Layout() {
         <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
           {NAV_GROUPS.map((grp) => (
             <div key={grp.group} className="space-y-1">
-              <div className="px-3 text-[10px] font-mono font-bold tracking-wider text-slate-400 uppercase">
+              <div className="px-3 text-[10px] font-mono font-bold tracking-wider text-bh-bone-600 uppercase">
                 {grp.group}
               </div>
               {grp.items.map(({ path, label, icon: Icon }) => (
@@ -263,10 +266,10 @@ export default function Layout() {
                   data-testid={testIdForPath(path)}
                   end={path === '/'}
                   className={({ isActive }) => `
-                    flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all
+                    flex items-center gap-2.5 px-3 py-2 rounded-bh text-xs font-medium transition-all
                     ${isActive
-                      ? 'bg-blue-50 text-blue-700 border border-blue-200/80 font-semibold shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
+                      ? 'bg-bh-gold/10 text-bh-gold-bright border border-bh-gold/30 font-semibold'
+                      : 'text-bh-bone-500 hover:text-bh-bone-100 hover:bg-bh-ink-750 border border-transparent'
                     }
                   `}
                 >
@@ -279,23 +282,23 @@ export default function Layout() {
         </nav>
 
         {/* Bottom controls */}
-        <div className="p-3 border-t border-slate-200 space-y-2 bg-slate-50/50">
+        <div className="p-3 border-t border-bh-border space-y-2 bg-bh-ink-900/60">
           <button
             data-testid="export-csv"
             onClick={handleExportCsv}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-mono text-xs font-medium transition-colors shadow-xs"
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-bh bg-bh-ink-800 hover:bg-bh-ink-750 border border-bh-border text-bh-bone-300 font-mono text-xs font-medium transition-colors"
           >
-            <FileSpreadsheet size={13} className="text-emerald-600" />
+            <FileSpreadsheet size={13} className="text-bh-up" />
             <span>EXPORT ACCOUNT CSV</span>
           </button>
 
           <button
             data-testid="kill-switch"
             onClick={handleKillSwitch}
-            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-all shadow-xs ${
+            className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-bh border font-mono text-xs font-bold transition-all ${
               killSwitchActive
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 animate-pulse'
-                : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                ? 'bg-bh-up/10 text-bh-up border-bh-up/40 animate-pulse'
+                : 'bg-bh-ember/10 text-bh-ember-bright border-bh-ember/40 hover:bg-bh-ember/20'
             }`}
           >
             <Power size={13} />
@@ -305,7 +308,7 @@ export default function Layout() {
           <button
             data-testid="logout"
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-slate-500 hover:text-slate-800 text-xs font-mono transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-bh-bone-500 hover:text-bh-bone-100 text-xs font-mono transition-colors"
           >
             <LogOut size={13} /> Logout
           </button>
@@ -313,13 +316,13 @@ export default function Layout() {
       </aside>
 
       {/* ── Main Viewport ────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+      <div className={`flex-1 flex flex-col min-w-0 overflow-hidden ${isCockpit ? 'bg-bh-ink-900' : 'bg-slate-50'}`}>
         {/* Top Ticker Bar & Terminal Controls */}
-        <div className="bg-white border-b border-slate-200 flex items-center justify-between px-4 py-1.5 text-xs font-mono shadow-xs">
+        <div className="bh-shimmer bg-bh-ink-850 border-b border-bh-border flex items-center justify-between px-4 py-1.5 text-xs font-mono">
           <div className="flex items-center gap-4">
             <button
               data-testid="mobile-nav-toggle"
-              className="md:hidden p-1 -ml-1 rounded text-slate-700 hover:bg-slate-100"
+              className="md:hidden p-1 -ml-1 rounded text-bh-bone-300 hover:bg-bh-ink-750"
               aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
               onClick={() => setMobileNavOpen(o => !o)}
             >
@@ -327,16 +330,16 @@ export default function Layout() {
             </button>
             <button
             onClick={() => setCmdOpen(true)}
-            className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white text-slate-500 hover:text-slate-800 text-xs font-mono transition-colors"
+            className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-bh border border-bh-border bg-bh-ink-800 hover:bg-bh-ink-750 text-bh-bone-500 hover:text-bh-bone-100 text-xs font-mono transition-colors"
           >
             <Search size={11} />
             <span>Search…</span>
-            <span className="flex items-center gap-0.5 text-[9px] text-slate-400 bg-white border border-slate-200 px-1 py-0.5 rounded">⌘K</span>
+            <span className="flex items-center gap-0.5 text-[9px] text-bh-bone-600 bg-bh-ink-700 border border-bh-border px-1 py-0.5 rounded">⌘K</span>
           </button>
-          <span className="text-blue-700 font-bold hidden sm:inline">TERMINAL FEED:</span>
-            <span className="text-slate-600">{timeEst}</span>
-            <span className="text-slate-300 hidden sm:inline">|</span>
-            <span className="text-slate-600 hidden sm:inline">{timeUtc}</span>
+          <span className="text-bh-gold font-bold hidden sm:inline">TERMINAL FEED:</span>
+            <span className="text-bh-bone-500">{timeEst}</span>
+            <span className="text-bh-border-strong hidden sm:inline">|</span>
+            <span className="text-bh-bone-500 hidden sm:inline">{timeUtc}</span>
           </div>
 
           <div className="hidden md:flex items-center gap-3" data-testid="system-status">
@@ -355,7 +358,7 @@ export default function Layout() {
                   title={schedulerView.detail}
                   testId="status-scheduler"
                 />
-                <span className="text-slate-300">·</span>
+                <span className="text-bh-border-strong">·</span>
                 <StatusPill
                   tone={status!.tradingMode === 'live' ? 'warn' : 'info'}
                   label={`TRADING: ${String(status!.tradingMode || 'unknown').toUpperCase()}`}
@@ -363,7 +366,7 @@ export default function Layout() {
                 />
                 {status!.alpaca && (
                   <>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-bh-border-strong">·</span>
                     <StatusPill
                       tone={status!.alpaca.connected ? 'ok' : 'bad'}
                       label={`ALPACA ${status!.alpaca.connected ? '✓' : '✗'}`}
@@ -374,7 +377,7 @@ export default function Layout() {
                 )}
                 {status!.polymarket && (
                   <>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-bh-border-strong">·</span>
                     <StatusPill
                       tone={status!.polymarket.mode === 'live' ? 'warn' : 'info'}
                       label={`POLYMARKET: ${String(status!.polymarket.mode || 'unknown').toUpperCase()}${status!.polymarket.usConnected ? ' · US verified' : status!.polymarket.usConfigured ? ' · US unverified' : ' · US not configured'}`}
@@ -384,7 +387,7 @@ export default function Layout() {
                 )}
                 {llmHealthy !== null && (
                   <>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-bh-border-strong">·</span>
                     <StatusPill
                       tone={llmHealthy ? 'ok' : 'bad'}
                       label={`AI: ${llmProvider || 'UNKNOWN'} ${llmHealthy ? '✓' : '✗'}`}
@@ -404,9 +407,12 @@ export default function Layout() {
 
         <LiveTicker />
 
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
+        <main className={`flex-1 overflow-y-auto p-3 sm:p-6 ${isCockpit ? 'bg-bh-ink-900 bh-chakra-lines' : 'bg-slate-50'}`}>
           <ErrorBoundary resetKey={location.pathname}>
-            <Outlet />
+            {/* Presentational wrapper only: page-enter transition on the cockpit. */}
+            <div key={location.pathname} className={isCockpit ? 'bh-page-enter' : undefined}>
+              <Outlet />
+            </div>
           </ErrorBoundary>
         </main>
       </div>
