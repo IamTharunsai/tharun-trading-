@@ -431,6 +431,22 @@ export function initScheduler() {
           return;
         }
         await edge.runPolymarketEdgeScan();
+
+        // Reachability for the qualification-gated live lane (was dead
+        // code — tests only). In paper mode polymarketLiveAllowed() is
+        // false and this stays a pure env check: nothing is imported and
+        // nothing changes. When the live gate passes, the sweep re-checks
+        // the full existing liveQualification readiness inside
+        // predictionExecution and remains fail-closed — no qualification
+        // row, no orders.
+        try {
+          const { polymarketLiveAllowed } = await import('../trading/liveGate');
+          if (polymarketLiveAllowed(process.env, isKillSwitchActive()).allowed) {
+            const { runLivePredictionSweep } = await import('../trading/predictionExecution');
+            const sweep = await runLivePredictionSweep();
+            if (sweep.attempted) logger.info(`🎯 Polymarket live sweep: attempted ${sweep.attempted}, placed ${sweep.placed}`);
+          }
+        } catch (err: any) { logger.warn(`Polymarket live sweep skipped: ${err?.message || 'error'}`); }
       } catch (err: any) { markSchedulerFailure(); logger.warn(`Polymarket edge scan skipped: ${err?.message || err?.code || 'network error'}`); }
       return;
     }

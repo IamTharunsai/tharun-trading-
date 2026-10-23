@@ -160,6 +160,41 @@ export async function reconcilePendingPredictionExecutions() {
   return rows.length;
 }
 
+/**
+ * Production reachability for the live lane (01-process-flow.md F-01:
+ * executeLivePrediction was called only by tests, so the US lane could only
+ * ever trade on paper regardless of env). The scheduler's prediction_scan
+ * calls this after each edge scan. It is a no-op unless the EXISTING
+ * readiness path approves: polymarketLiveAllowed (live mode + confirmation
+ * phrase + POLYMARKET_US_LIVE + kill switch off) AND validateLiveQualification
+ * over a StrategyQualification row bound to the deployed revision and the
+ * credential scope (DSR ≥ 0.95, walk-forward, costs, execution, ledger,
+ * health — unexpired). Nothing here seeds, weakens or bypasses that evidence:
+ * with no qualification row the sweep reports the refusal and places nothing.
+ * Candidates are the scan's freshest actionable forecasts — planLivePrediction
+ * independently requires a prediction created within the last 5 minutes.
+ */
+export async function runLivePredictionSweep(limit = 3): Promise<{ attempted: number; placed: number; reason?: string }> {
+  let readiness: Awaited<ReturnType<typeof getPredictionLiveReadiness>>;
+  try {
+    readiness = await getPredictionLiveReadiness();
+  } catch {
+    return { attempted: 0, placed: 0, reason: 'Prediction live readiness unavailable' };
+  }
+  if (!readiness.ready) return { attempted: 0, placed: 0, reason: readiness.reason };
+  const candidates = await db.polymarketPrediction.findMany({
+    where: { venue: 'polymarket_us', decision: { in: ['YES', 'NO'] }, createdAt: { gte: new Date(Date.now() - 300000) } },
+    orderBy: { createdAt: 'desc' }, take: Math.max(1, Math.min(10, Math.floor(limit) || 3)) }
+  ).catch(() => []);
+  let placed = 0;
+  for (const candidate of candidates || []) {
+    const result = await executeLivePrediction(candidate.id).catch(() => ({ placed: false as const }));
+    if ((result as any)?.placed) placed++;
+  }
+  if (placed) logger.info('prediction_live_sweep_placed', { attempted: (candidates || []).length, placed });
+  return { attempted: (candidates || []).length, placed };
+}
+
 export async function executeLivePrediction(predictionId: string) {
   const readiness = await getPredictionLiveReadiness();
   if (!readiness.ready) return { placed: false, reason: readiness.reason };
