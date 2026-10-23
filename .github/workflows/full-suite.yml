@@ -1,0 +1,192 @@
+# Full-suite gate: runs EVERY backend test file (npm test), every env-gated
+# Postgres integration suite, and the frontend production build.
+#
+# Why this exists: ci.yml's backend job runs only ~26 curated test files, and
+# 33 backend test files are referenced by no workflow at all. The dedicated
+# Postgres workflows (broker-evidence, cash-flow-risk, prediction-recovery)
+# each exercise a single integration suite on its own disposable database;
+# nothing runs the whole suite, and the two TEST_DATABASE_URL suites
+# (postgres.integration, lifecycleStateMachine) run nowhere.
+#
+# Gating mechanism (read from the suites themselves, not invented):
+#   - predictionRecovery.postgres.integration.test.ts (7 tests) and
+#     predictionReduction.postgres.integration.test.ts (20 tests):
+#       RUN_PREDICTION_RECOVERY_POSTGRES=true
+#   - cashFlowRisk.postgres.integration.test.ts (14 tests):
+#       RUN_CASH_FLOW_POSTGRES=true
+#   - brokerEvidence.postgres.integration.test.ts (7 tests):
+#       RUN_BROKER_EVIDENCE_POSTGRES=true
+#   - predictionExecution.postgres.integration.test.ts (1 test):
+#       RUN_PREDICTION_POSTGRES_TESTS=true
+#   - postgres.integration.test.ts (3 tests) and
+#     lifecycleStateMachine.test.ts (3 tests):
+#       TEST_DATABASE_URL set (both copy it into DATABASE_URL)
+#
+# Why this is NOT one `npm test` with every gate switched on:
+#   1. The DATABASE_URL guards are mutually exclusive. Four of the gated
+#      suites hard-require
+#      postgresql://fixture:fixture@127.0.0.1:5432/fixture and throw
+#      ("Disposable fixture database required") on anything else, while
+#      predictionExecution hard-requires
+#      postgresql://postgres:postgres@localhost:5432/deployment_fixture and
+#      throws ("Only the disposable CI database is allowed") on anything
+#      else. One jest invocation has one DATABASE_URL, so no single run
+#      can satisfy both. predictionExecution therefore gets its own job
+#      that mirrors ci.yml's deployment-schema job, where it runs today.
+#   2. No integration suite cleans its tables, and suites assert global
+#      state (e.g. predictionExecution requires
+#      prisma.predictionExecution.count() === 1; several suites upsert the
+#      shared settings-1 row and create fixture owners). The dedicated
+#      workflows give each suite/group a FRESH disposable database; this
+#      workflow does the same by force-resetting the schema between gated
+#      groups. Groups follow the dedicated workflows' own pairings:
+#      predictionRecovery + predictionReduction share one database in
+#      prediction-recovery.yml, so they share one here too.
+#
+# DB setup: `npm run deploy:schema` — the repo's canonical schema command
+# (prisma/deploy-compat.sql, then `prisma db push` of the current schema),
+# the same command ci.yml's deployment-schema job runs against a fresh
+# database. The previous-schema rollout sequences in the dedicated
+# workflows (seed an old schema, push the new one, verify preservation)
+# stay owned by those workflows and are not duplicated here: every table,
+# column and index those migrations create is present in the current
+# schema.prisma, no migration creates a trigger or function, and the only
+# SQL-only extras are ENABLE ROW LEVEL SECURITY flags, which do not affect
+# the table-owner connection the suites use (no FORCE ROW LEVEL SECURITY
+# exists anywhere in the repo).
+#
+# --runInBand everywhere: every dedicated Postgres workflow runs Jest
+# serially; suites sharing a database would race in parallel workers.
+
+name: Full suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: full-suite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://fixture:fixture@127.0.0.1:5432/fixture
+      TEST_DATABASE_URL: postgresql://fixture:fixture@127.0.0.1:5432/fixture
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: fixture
+          POSTGRES_DB: fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm install
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Create the schema via the documented deployment path
+        run: npm run deploy:schema
+      - name: Run the FULL backend suite (all test files; the two TEST_DATABASE_URL suites run, the RUN_* suites stay gated off in this step)
+        run: npm test -- --runInBand
+      - name: Prediction recovery + reduction suites on a fresh disposable database
+        env:
+          RUN_PREDICTION_RECOVERY_POSTGRES: 'true'
+        run: |
+          npx prisma db push --schema=./prisma/schema.prisma --skip-generate --force-reset
+          npm run deploy:schema
+          npx jest --runInBand --runTestsByPath tests/predictionRecovery.postgres.integration.test.ts tests/predictionReduction.postgres.integration.test.ts
+      - name: Cash flow risk suite on a fresh disposable database
+        env:
+          RUN_CASH_FLOW_POSTGRES: 'true'
+        run: |
+          npx prisma db push --schema=./prisma/schema.prisma --skip-generate --force-reset
+          npm run deploy:schema
+          npx jest --runInBand --runTestsByPath tests/cashFlowRisk.postgres.integration.test.ts
+      - name: Broker evidence suite on a fresh disposable database
+        env:
+          RUN_BROKER_EVIDENCE_POSTGRES: 'true'
+        run: |
+          npx prisma db push --schema=./prisma/schema.prisma --skip-generate --force-reset
+          npm run deploy:schema
+          npx jest --runInBand --runTestsByPath tests/brokerEvidence.postgres.integration.test.ts
+
+  prediction-execution-postgres:
+    # Separate job because this suite's DATABASE_URL guard names a different
+    # disposable database (postgres@localhost/deployment_fixture) than the
+    # fixture database the other gated suites require. Mirrors the tail of
+    # ci.yml's deployment-schema job, where this suite runs today.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deployment_fixture
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: deployment_fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm install
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Create the schema via the documented deployment path
+        run: npm run deploy:schema
+      - name: Prediction execution suite on disposable PostgreSQL
+        env:
+          RUN_PREDICTION_POSTGRES_TESTS: 'true'
+        run: npx jest --runInBand --runTestsByPath tests/predictionExecution.postgres.integration.test.ts
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Build the frontend (tsc + vite build)
+        run: npm run build
