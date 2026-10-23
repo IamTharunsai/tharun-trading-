@@ -109,6 +109,15 @@ export function reduceDebateEvent(previous: DebateSessions, event: string, paylo
     };
     session.agents = { ...session.agents, [agentId]: state };
     session.entries = [...session.entries, { agentId, agentName: text(data.agentName, 100) || `Specialist ${agentId}`, content: reasoning || 'No argument supplied', round: final ? 3 : 1, vote: state.vote, receivedAt: now }].slice(-300);
+  } else if (event === 'debate:agent-error') {
+    // A specialist's final vote failed: mark the agent errored so the tally
+    // and council panel show the failure instead of a silent gap.
+    if (!validAgentId(agentId)) return previous;
+    const prior = session.agents[agentId];
+    session.agents = { ...session.agents, [agentId]: {
+      status: prior?.status ?? 'analyzing', vote: prior?.vote, confidence: prior?.confidence,
+      reasoning: prior?.reasoning, error: true, lastReceivedAt: now, round: evidenceRound(data.round) ?? prior?.round,
+    } };
   } else if (event === 'debate:cross-examination') {
     session.entries = [...session.entries,
       { agentId: crossExamAgentId(data.challenger), agentName: text(data.challenger, 100), content: text(data.challenge), round: 2, receivedAt: now },
