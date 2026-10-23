@@ -8,6 +8,8 @@ const db = new PrismaClient();
   } else {
     const row = await db.portfolioSnapshot.findUniqueOrThrow({ where: { id: 'cashflow-legacy' } });
     if (row.accountId !== null || row.brokerMode !== null || row.totalValue !== 90000 || row.pnlDay !== -10000 || row.pnlTotal !== -100 || row.riskDataComplete !== false || row.adjustedDailyPnl !== null) throw Error('Legacy observations changed');
+    const protectedTable = await db.$queryRawUnsafe(`SELECT relrowsecurity FROM pg_class WHERE oid = '"CapitalActivityCoverageObservation"'::regclass`);
+    if (protectedTable.length !== 1 || protectedTable[0].relrowsecurity !== true) throw Error('Capital coverage RLS missing');
     console.log('Legacy NAV, ownership and recorded loss preserved; risk remains explicitly unverified.');
   }
 })().finally(() => db.$disconnect()).catch(error => { console.error(error.message); process.exitCode = 1; });

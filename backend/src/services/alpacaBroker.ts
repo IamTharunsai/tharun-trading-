@@ -9,6 +9,7 @@ import { performance } from 'node:perf_hooks';
 import { isDeepStrictEqual } from 'node:util';
 import { logger } from '../utils/logger';
 import { isPlaceholderKey } from '../utils/apiKeys';
+import { ACTIVITY_HISTORY_START, parseActivityHistory, ActivityHistoryObservation } from './capitalActivityHistory';
 
 interface AlpacaOrderRequest {
   symbol: string;
@@ -146,9 +147,9 @@ export class AlpacaBroker {
   /**
    * Get account summary
    */
-  async getAccount(): Promise<AlpacaAccount> {
+  async getAccount(signal?: AbortSignal): Promise<AlpacaAccount> {
     try {
-      const response = await this.client.get('/v2/account');
+      const response = signal ? await this.client.get('/v2/account', { signal }) : await this.client.get('/v2/account');
       return response.data;
     } catch (error: any) {
       if (error?.response?.status === 401 || error?.response?.status === 403) {
@@ -301,6 +302,35 @@ export class AlpacaBroker {
 
   // https://docs.alpaca.markets/us/reference/getaccountportfoliohistory-1
   // Explicit ALL is essential: NONE/omission cannot establish capital coverage.
+  /** Complete finite Trading SSE read bound to this verified account. No orders. */
+  async getActivityHistoryVerified(accountId: string, until: string): Promise<ActivityHistoryObservation> {
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 30000);
+    let stream: any;
+    try {
+      const account = await this.getAccount(controller.signal);
+      const created = Date.parse(account.created_at), cutoff = Date.parse(until);
+      if (account.id !== accountId || account.currency !== 'USD' || !Number.isFinite(created)
+        || created < ACTIVITY_HISTORY_START + 1000 || !Number.isFinite(cutoff) || cutoff <= created || cutoff > Date.now()) {
+        throw new Error('ACTIVITY_HISTORY_ACCOUNT_UNAVAILABLE');
+      }
+      controller.signal.throwIfAborted();
+      const response = await this.client.get('/v2beta1/events/activities', { params: {
+        since: new Date(created - 1000).toISOString(), until,
+      }, responseType: 'stream', headers: { Accept: 'text/event-stream', 'Accept-Encoding': 'identity' },
+      decompress: false, maxRedirects: 0, timeout: 30000, signal: controller.signal });
+      stream = response.data;
+      if (response.status !== 200 || !String(response.headers?.['content-type']).toLowerCase().startsWith('text/event-stream')
+        || (response.headers?.['content-encoding'] && response.headers['content-encoding'] !== 'identity')) throw new Error('ACTIVITY_HISTORY_RESPONSE_INVALID');
+      const observation = await parseActivityHistory(stream, { accountId, accountCreatedAt: account.created_at,
+        since: new Date(created - 1000).toISOString(), until }, controller.signal);
+      const after = await this.getAccount(controller.signal);
+      controller.signal.throwIfAborted();
+      if (after.id !== account.id || after.created_at !== account.created_at || after.currency !== 'USD') throw new Error('ACTIVITY_HISTORY_ACCOUNT_CHANGED');
+      return observation;
+    } finally { clearTimeout(deadline); stream?.destroy(); }
+  }
+
   async getPortfolioHistoryVerified(start: string, end: string): Promise<AlpacaPortfolioHistory> {
     const response = await this.client.get('/v2/account/portfolio/history', { params: {
       start, end, timeframe: '5Min', intraday_reporting: 'continuous', pnl_reset: 'no_reset', cashflow_types: 'ALL',

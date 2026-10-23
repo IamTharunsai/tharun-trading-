@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": true, "rootDir": ".", "types": ["node", "jest"] },
-  "include": ["src/**/*.ts", "tests/cashFlowRisk.test.ts", "tests/cashFlowRisk.contract.test.ts", "tests/cashFlowRisk.postgres.integration.test.ts"]
+  "include": ["src/**/*.ts", "tests/capitalActivityHistory.test.ts", "tests/cashFlowRisk.test.ts", "tests/cashFlowRisk.contract.test.ts", "tests/cashFlowRisk.postgres.integration.test.ts"]
 }
