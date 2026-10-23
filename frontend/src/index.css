@@ -176,3 +176,215 @@ th {
 td {
   color: #0F172A !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   BHISHMA — WAR-ROOM DESIGN FOUNDATION (redesign, additive layer)
+   Mahabharata-inspired dark theme: deep ink surfaces layered like a
+   war-room at night, antique gold as the precious accent, ember
+   (coal-orange) as energy/danger, parchment/bone for text.
+   The legacy APEX light theme above is UNCHANGED — pages that have
+   not migrated yet keep it. Bhishma styles apply only inside a
+   `.bh-scope` subtree or via the `bh-*` Tailwind palette / utility
+   classes defined from these tokens.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Self-hosted lettering (SIL OFL 1.1 — see src/assets/fonts/README.md).
+   Same font files the Rainlight workspace already bundles; declaring the
+   faces here makes them available to the shell, login and cockpit
+   without any external/webfont request (offline builds keep working). */
+@font-face {
+  font-family: 'Alike';
+  src: url('./assets/fonts/Alike-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('./assets/fonts/IBMPlexSans-Variable.ttf') format('truetype');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Surfaces — layered ink/charcoal, warm-neutral (never blue-black) */
+  --bh-ink-950: #070605; /* page void — behind everything */
+  --bh-ink-900: #0D0B09; /* app background */
+  --bh-ink-850: #12100D; /* raised bar / header */
+  --bh-ink-800: #171410; /* panel surface */
+  --bh-ink-750: #1D1915; /* panel hover / inset well */
+  --bh-ink-700: #26211B; /* highest surface / chip */
+
+  /* Borders — bronze-tinted hairlines, not grey */
+  --bh-border:        #2E2820;
+  --bh-border-strong: #453B2C;
+  --bh-border-faint:  #211D17;
+
+  /* Text — parchment / bone tiers */
+  --bh-bone-100: #F2EAD8; /* primary text, numerals */
+  --bh-bone-300: #D9CFB8; /* secondary text */
+  --bh-bone-500: #A89B82; /* muted labels */
+  --bh-bone-600: #7E7360; /* faintest legible tier (large/mono labels only) */
+
+  /* Accents */
+  --bh-gold:        #C6A15B; /* antique gold — primary precious accent */
+  --bh-gold-bright: #E6CC8A; /* gold at full light (hover, wordmark) */
+  --bh-gold-deep:   #8C713C; /* gold in shadow (gradients, rules) */
+  --bh-gold-faint:  rgba(198, 161, 91, 0.12);
+  --bh-ember:        #E4571D; /* ember — energy / danger accent */
+  --bh-ember-bright: #FF7A33;
+  --bh-ember-deep:   #9A3412;
+  --bh-ember-faint:  rgba(228, 87, 29, 0.12);
+
+  /* Semantic — deliberately NOT the accent hues: up is a clear green,
+     down a true red (ember is orange, gold is muted brass), warn a
+     saturated marigold used only with an icon/label, info a steel blue.
+     Direction is never carried by colour alone (signs/arrows remain). */
+  --bh-up:   #34C26E;
+  --bh-down: #E5484D;
+  --bh-warn: #F2B33D;
+  --bh-info: #4C9AFF;
+
+  /* Shape */
+  --bh-radius:    0.625rem; /* 10px — panels */
+  --bh-radius-lg: 0.875rem; /* 14px — hero / login card */
+
+  /* Type pairing — display: Alike (carved, editorial serif) for the
+     wordmark, headings and hero numerals; body: IBM Plex Sans for
+     working text; JetBrains Mono (existing) for data/labels. */
+  --bh-font-display: 'Alike', Georgia, 'Times New Roman', serif;
+  --bh-font-body: 'IBM Plex Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* A Bhishma subtree: dark colour-scheme (scrollbars, form controls),
+   bone text on ink, body face by default. */
+.bh-scope {
+  color-scheme: dark;
+  background: var(--bh-ink-900);
+  /* No inherited color/font here on purpose: the shell wraps pages that
+     have not migrated yet, and their own light-theme classes must keep
+     winning inside their bodies. Migrated subtrees set bone text and
+     the Plex face explicitly on their roots. */
+}
+.bh-scope ::selection { background: rgba(198, 161, 91, 0.35); color: var(--bh-bone-100); }
+
+/* Faint chakra-line motif: two near-invisible concentric rings +
+   a hairline horizon rule, drawn with gradients only (no images).
+   Kept at <=4% gold so data always wins. Apply to a positioned,
+   overflow-hidden container; purely decorative. */
+.bh-chakra-lines {
+  background-image:
+    radial-gradient(circle at 85% -10%, transparent 0 148px, rgba(198, 161, 91, 0.05) 149px, transparent 150px),
+    radial-gradient(circle at 85% -10%, transparent 0 208px, rgba(198, 161, 91, 0.035) 209px, transparent 210px),
+    radial-gradient(circle at 85% -10%, transparent 0 268px, rgba(198, 161, 91, 0.025) 269px, transparent 270px),
+    linear-gradient(to bottom, rgba(198, 161, 91, 0.05), transparent 1px);
+  background-repeat: no-repeat;
+}
+
+/* Wordmark: display face, letterspaced, gold gradient clipped to text. */
+.bh-wordmark {
+  font-family: var(--bh-font-display);
+  letter-spacing: 0.14em;
+  background: linear-gradient(160deg, var(--bh-gold-bright) 0%, var(--bh-gold) 55%, var(--bh-gold-deep) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ─── Bhishma motion primitives ─────────────────────────────────────
+   CSS twins of the animate-bh-* Tailwind utilities (same names, same
+   keyframes) for use on plain elements. Reusable everywhere inside
+   .bh-scope; every primitive is neutralised under
+   prefers-reduced-motion at the bottom of this section. */
+@keyframes bh-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bh-fade-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bh-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+@keyframes bh-pulse-live {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 194, 110, 0.45); }
+  50%      { opacity: 0.75; box-shadow: 0 0 0 5px rgba(52, 194, 110, 0); }
+}
+@keyframes bh-glow-pulse {
+  from { box-shadow: 0 0 0 1px rgba(198, 161, 91, 0.35), 0 0 10px -2px rgba(198, 161, 91, 0.25); }
+  to   { box-shadow: 0 0 0 1px rgba(198, 161, 91, 0.55), 0 0 22px -2px rgba(198, 161, 91, 0.45); }
+}
+
+/* Page transition — apply to a route's top-level container. */
+.bh-page-enter { animation: bh-page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Panel reveal — single panel; stagger siblings with .bh-reveal-stagger
+   on the parent or set --bh-delay on each panel. */
+.bh-reveal { animation: bh-fade-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: var(--bh-delay, 0ms); }
+.bh-reveal-stagger > * { animation: bh-fade-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bh-reveal-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.bh-reveal-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.bh-reveal-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.bh-reveal-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.bh-reveal-stagger > *:nth-child(5) { animation-delay: 240ms; }
+.bh-reveal-stagger > *:nth-child(n+6) { animation-delay: 300ms; }
+
+/* Live-value pulse — dot/figure that is receiving live data. */
+.bh-live-dot { animation: bh-pulse-live 2s ease-in-out infinite; }
+
+/* Ticker shimmer — a gold light sweeping a live surface (e.g. the
+   ticker bar's edge or a loading/live value placeholder). */
+.bh-shimmer {
+  background-image: linear-gradient(100deg, transparent 30%, rgba(198, 161, 91, 0.14) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: bh-shimmer 2.4s linear infinite;
+}
+
+/* Hover glow for gold-accented controls/panels. */
+.bh-gold-hover { transition: box-shadow 0.25s ease, border-color 0.25s ease, color 0.25s ease; }
+.bh-gold-hover:hover {
+  border-color: var(--bh-border-strong);
+  box-shadow: 0 0 0 1px rgba(198, 161, 91, 0.45), 0 0 18px -2px rgba(198, 161, 91, 0.35);
+}
+.bh-gold-pulse { animation: bh-glow-pulse 2.2s ease-in-out infinite alternate; }
+
+/* Panel — the standard Bhishma surface (ink-800, bronze hairline). */
+.bh-panel {
+  background: var(--bh-ink-800);
+  border: 1px solid var(--bh-border);
+  border-radius: var(--bh-radius-lg);
+  box-shadow: 0 1px 0 0 rgba(242, 234, 216, 0.03) inset, 0 12px 32px -16px rgba(0, 0, 0, 0.65);
+}
+/* Form controls + tables, scoped to migrated panels (.bh-panel inside
+   .bh-scope) so unmigrated pages sharing the shell are untouched.
+   !important is required: the legacy global rules above use it too. */
+.bh-scope .bh-panel select, .bh-scope .bh-panel input, .bh-scope .bh-panel textarea {
+  background-color: var(--bh-ink-750) !important;
+  color: var(--bh-bone-100) !important;
+  border-color: var(--bh-border) !important;
+}
+.bh-scope .bh-panel select:focus, .bh-scope .bh-panel input:focus, .bh-scope .bh-panel textarea:focus {
+  border-color: var(--bh-gold-deep) !important;
+  box-shadow: 0 0 0 2px rgba(198, 161, 91, 0.22);
+}
+.bh-scope .bh-panel select option { background-color: var(--bh-ink-800) !important; color: var(--bh-bone-100) !important; }
+.bh-scope .bh-panel table { color: var(--bh-bone-100) !important; }
+.bh-scope .bh-panel th { color: var(--bh-bone-500) !important; }
+.bh-scope .bh-panel td { color: var(--bh-bone-100) !important; }
+
+/* ─── Reduced motion: every Bhishma primitive (and the legacy ticker /
+   pulse utilities used inside the shell) is disabled, not slowed. ── */
+@media (prefers-reduced-motion: reduce) {
+  .bh-page-enter, .bh-reveal, .bh-reveal-stagger > *,
+  .bh-live-dot, .bh-shimmer, .bh-gold-pulse,
+  .animate-bh-page-in, .animate-bh-fade-rise, .animate-bh-shimmer,
+  .animate-bh-pulse-live, .animate-ticker, .animate-pulse,
+  .animate-pulse-slow, .animate-glow, .animate-spin {
+    animation: none !important;
+  }
+  .bh-gold-hover { transition: none !important; }
+  .bh-scope { scroll-behavior: auto !important; }
+}

@@ -88,23 +88,23 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="flex flex-col gap-6 text-slate-900 max-w-7xl mx-auto">
+    <div className="bh-scope flex flex-col gap-6 text-bh-bone-100 max-w-7xl mx-auto font-plex">
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 p-5 rounded-xl bg-white border border-slate-200/90 shadow-sm">
+      <div className="bh-panel bh-reveal bh-chakra-lines flex items-center justify-between flex-wrap gap-4 p-5">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-2xl text-slate-900 tracking-tight">
+            <h1 className="font-alike text-3xl text-bh-bone-100 tracking-wide">
               Autonomous Trading Cockpit
             </h1>
-            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold">
-              INSTITUTIONAL SUITE
+            <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full bg-bh-gold/10 text-bh-gold-bright border border-bh-gold/30 font-bold">
+              WAR-ROOM SUITE
             </span>
           </div>
-          <p className="font-mono text-xs text-slate-500 mt-1 flex items-center gap-2">
+          <p className="font-mono text-xs text-bh-bone-500 mt-1 flex items-center gap-2">
             <span>{format(new Date(), 'EEEE, MMMM d yyyy')}</span>
             <span>·</span>
-            <span className="text-slate-600 font-bold flex items-center gap-1">
+            <span className="text-bh-bone-300 font-bold flex items-center gap-1">
               Agent committee · stocks, crypto & Polymarket
             </span>
           </p>
@@ -112,53 +112,53 @@ export default function DashboardPage() {
         <LastUpdated query={portfolioQ} label="Portfolio response" staleAfterMs={15000} />
         <div className="flex items-center gap-3 flex-wrap">
           {killSwitchActive || sysStatus?.killSwitch ? (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 font-mono text-xs text-red-700 font-bold">
-              <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" /> KILL SWITCH ACTIVE
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-bh bg-bh-ember/10 border border-bh-ember/40 font-mono text-xs text-bh-ember-bright font-bold">
+              <span className="w-2 h-2 rounded-full bg-bh-ember animate-pulse" /> KILL SWITCH ACTIVE
             </span>
           ) : (
             sysStatus?.scheduler ? (
-              <span data-testid="autotrading-status" title={schedulerView.detail} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-mono text-xs font-bold ${schedulerView.tone === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
-                <span className={`w-2 h-2 rounded-full ${schedulerView.tone === 'ok' ? 'bg-emerald-500' : 'bg-amber-600'}`} />
+              <span data-testid="autotrading-status" title={schedulerView.detail} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-bh border font-mono text-xs font-bold ${schedulerView.tone === 'ok' ? 'bg-bh-up/10 border-bh-up/30 text-bh-up' : 'bg-bh-warn/10 border-bh-warn/30 text-bh-warn'}`}>
+                <span className={`w-2 h-2 rounded-full ${schedulerView.tone === 'ok' ? 'bg-bh-up bh-live-dot' : 'bg-bh-warn'}`} />
                 {schedulerView.label}
               </span>
             ) : (
-              <span data-testid="autotrading-status" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-mono text-xs text-slate-500 font-bold">
-                <span className="w-2 h-2 rounded-full bg-slate-300" /> STATUS UNKNOWN
+              <span data-testid="autotrading-status" className="flex items-center gap-1.5 px-3 py-1.5 rounded-bh bg-bh-ink-750 border border-bh-border font-mono text-xs text-bh-bone-500 font-bold">
+                <span className="w-2 h-2 rounded-full bg-bh-bone-600" /> STATUS UNKNOWN
               </span>
             )
           )}
           {currentAnalysis && (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 font-mono text-xs text-blue-700 font-bold">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-bh bg-bh-info/10 border border-bh-info/30 font-mono text-xs text-bh-info font-bold">
               ANALYZING {currentAnalysis}
             </span>
           )}
-          <span data-testid="trading-mode" className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 font-mono text-xs text-slate-700 font-semibold">
+          <span data-testid="trading-mode" className="px-3 py-1.5 rounded-bh bg-bh-ink-750 border border-bh-border font-mono text-xs text-bh-bone-300 font-semibold">
             {tradingMode || import.meta.env.VITE_TRADING_MODE || 'UNKNOWN'} MODE
           </span>
         </div>
       </div>
 
-      <div className="text-sm text-slate-700" data-testid="scheduler-evidence-detail">
+      <div className="text-sm text-bh-bone-300" data-testid="scheduler-evidence-detail">
         <p>{schedulerView.detail}</p>
         {!!sysStatus?.schedulerRuntime?.jobHealth.failedJobs.length && <p>Jobs needing attention: {sysStatus.schedulerRuntime.jobHealth.failedJobs.slice(0, 24).join(', ')}.</p>}
       </div>
 
       {/* ── 1000-Trade Day HFT & Arbitrage Trigger Bar ─────────────────────── */}
-      <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-sm flex flex-wrap items-center justify-between gap-4">
+      <div className="bh-panel bh-reveal p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <Zap className="text-blue-600" size={18} />
-            <span className="font-mono text-xs font-bold text-slate-800">DAILY EXECUTION PACING:</span>
-            <span className="font-mono text-xs text-blue-800 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+            <Zap className="text-bh-gold" size={18} />
+            <span className="font-mono text-xs font-bold text-bh-bone-100">DAILY EXECUTION PACING:</span>
+            <span className="font-mono text-xs text-bh-gold-bright font-bold bg-bh-gold/10 border border-bh-gold/30 px-2 py-0.5 rounded">
               {num(portfolio?.tradesExecutedToday) ?? '—'} EXECUTED TODAY
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-3 text-xs font-mono text-slate-500">
-            <span>Broker: <strong className={`font-bold ${liveAccounts?.alpaca?.connected || portfolio?.brokerConnected ? 'text-emerald-700' : 'text-slate-500'}`}>{liveAccounts?.alpaca?.connected || portfolio?.brokerConnected ? 'CONNECTED' : 'NOT CONNECTED'}</strong></span>
+          <div className="hidden md:flex items-center gap-3 text-xs font-mono text-bh-bone-500">
+            <span>Broker: <strong className={`font-bold ${liveAccounts?.alpaca?.connected || portfolio?.brokerConnected ? 'text-bh-up' : 'text-bh-bone-500'}`}>{liveAccounts?.alpaca?.connected || portfolio?.brokerConnected ? 'CONNECTED' : 'NOT CONNECTED'}</strong></span>
             <span>·</span>
-            <span>Win Rate: <strong className="text-emerald-700 font-bold" data-testid="dashboard-winrate">{stats?.totalTrades && num(stats.winRate) !== null ? `${num(stats.winRate)!.toFixed(1)}%` : '—'}</strong></span>
+            <span>Win Rate: <strong className="text-bh-up font-bold" data-testid="dashboard-winrate">{stats?.totalTrades && num(stats.winRate) !== null ? `${num(stats.winRate)!.toFixed(1)}%` : '—'}</strong></span>
             <span>·</span>
-            <span>Open Positions: <strong className="text-blue-700 font-bold">{positionsList.length}</strong></span>
+            <span>Open Positions: <strong className="text-bh-gold-bright font-bold">{positionsList.length}</strong></span>
           </div>
         </div>
 
@@ -169,7 +169,7 @@ export default function DashboardPage() {
             data-testid="debate-trigger"
             onClick={() => selectedAsset && debateMutation.mutate(selectedAsset)}
             disabled={debateMutation.isPending || killSwitchActive || !selectedAsset}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+            className="bh-gold-hover flex items-center gap-1.5 px-3.5 py-1.5 rounded-bh bg-bh-gold-deep hover:bg-bh-gold text-bh-ink-950 font-mono text-xs font-bold transition-all disabled:opacity-50"
           >
             <Play size={13} />
             <span>{debateMutation.isPending ? 'STARTING COUNCIL...' : selectedAsset ? `RESEARCH ONLY: ${selectedAsset}` : 'PICK A SYMBOL'}</span>
@@ -179,7 +179,7 @@ export default function DashboardPage() {
             data-testid="scan-polymarket"
             onClick={() => scanMutation.mutate()}
             disabled={scanMutation.isPending}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-bh bg-bh-ember-deep hover:bg-bh-ember text-white font-mono text-xs font-bold transition-all disabled:opacity-50"
           >
             <Search size={13} />
             <span>{scanMutation.isPending ? 'SCANNING ARB...' : 'SCAN POLYMARKET ARB'}</span>
@@ -197,7 +197,7 @@ export default function DashboardPage() {
           value={loadingPortfolio ? '...' : fmtUsd(nav)}
           sub={`Cash: ${fmtUsd(cash)}${brokerEq !== null ? ` · Broker equity (Alpaca): ${fmtUsd(brokerEq)}` : ''}`}
           icon={<DollarSign size={16} />}
-          accent mono
+          accent mono variant="bhishma"
         />
         <StatCard
           testId="stat-pnl-day"
@@ -206,7 +206,7 @@ export default function DashboardPage() {
           sub={pnlDayPct === null ? undefined : fmtPct(pnlDayPct)}
           icon={pnlDayPos ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
           trend={pnlDay === null ? undefined : pnlDayPos ? 'up' : 'down'}
-          mono
+          mono variant="bhishma"
         />
         <StatCard
           testId="stat-polymarket"
@@ -214,7 +214,7 @@ export default function DashboardPage() {
           value={pmConnected && pmValue !== null ? fmtUsd(pmValue) : '—'}
           sub={pmConnected ? 'Connected account value' : 'Not connected'}
           icon={<Activity size={16} />}
-          mono
+          mono variant="bhishma"
         />
         <StatCard
           testId="stat-polymarket-us"
@@ -222,7 +222,7 @@ export default function DashboardPage() {
           value={pmUsCash === null ? '—' : fmtUsd(pmUsCash)}
           sub={pmUsQuery.isError ? 'Account request failed · check Settings' : pmUsQuery.isLoading ? 'Checking account…' : !pmUsConnected ? 'Not connected · check Settings' : pmUsCash === null ? 'USD balance unavailable' : `Buying power: ${fmtUsd(pmUsPower)}`}
           icon={<DollarSign size={16} />}
-          mono
+          mono variant="bhishma"
         />
         <StatCard
           testId="stat-open-positions"
@@ -230,7 +230,7 @@ export default function DashboardPage() {
           value={positionsList.length}
           sub={num(portfolio?.tradesExecutedToday) !== null ? `Trades Today: ${num(portfolio?.tradesExecutedToday)}` : undefined}
           icon={<BarChart2 size={16} />}
-          mono
+          mono variant="bhishma"
         />
       </div>
 
@@ -259,10 +259,10 @@ export default function DashboardPage() {
 
       {/* ── Market observations (OpenTerminal 5-panel + Polymarket Greed) */}
       <div>
-        <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-          <BarChart2 size={20} className="text-blue-600" />
+        <h2 className="font-alike text-xl text-bh-bone-100 mb-4 flex items-center gap-2">
+          <BarChart2 size={20} className="text-bh-gold" />
           Market observations
-          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-bh-gold/10 text-bh-gold-bright border border-bh-gold/30">
             SOURCE STATUS BELOW
           </span>
         </h2>
@@ -292,10 +292,10 @@ export default function DashboardPage() {
 
       {/* ── Macro observations (FinceptTerminal + OpenTerminal panels) ─── */}
       <div>
-        <h2 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-          <Globe size={20} className="text-emerald-600" />
+        <h2 className="font-alike text-xl text-bh-bone-100 mb-4 flex items-center gap-2">
+          <Globe size={20} className="text-bh-ember-bright" />
           Macro observations
-          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-bh-ember/10 text-bh-ember-bright border border-bh-ember/30">
             PROVIDER COVERAGE VARIES
           </span>
         </h2>
