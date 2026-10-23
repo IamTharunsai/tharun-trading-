@@ -17,6 +17,7 @@ import { intermarketService } from '../services/intermarketService';
 import { getMacroSnapshot, macroLine } from '../services/fredService';
 import { optionsFlowService } from '../services/optionsFlowService';
 import { getForecast } from '../services/kronosService';
+import { recordKronosForecast, recordCouncilForecast, barDurationMsFromCandles } from '../services/forecastScorecard';
 import { routedMessagesCreate, providerFor, LlmRequestOptions, createLlmDeadline } from '../utils/llmRouter';
 import { retryLlmRateLimit } from '../utils/llmRetry';
 import { openingArgumentSchema, finalVoteSchema, masterDecisionSchema, checkpointArgumentSchema, checkpointEvidenceSchema, exchangeSchema } from './responseSchemas';
@@ -667,6 +668,17 @@ export async function runInvestmentCommitteeDebate(
       `Expected return: ${kronosForecast.meanReturn >= 0 ? '+' : ''}${(kronosForecast.meanReturn * 100).toFixed(2)}%`
     : '';
 
+  // Persist the forecast in scoreable form before it is consumed as prose:
+  // the scorecard (forecastScorecard.ts) and the forecast gate read these
+  // rows, so Kronos accuracy becomes measurable and enforceable. Best-effort
+  // by design — recording never blocks or fails the debate.
+  if (kronosForecast && kronosForecast.predictedClose.length > 0) {
+    void recordKronosForecast({
+      asset, market: snapshot.market, forecast: kronosForecast, referencePrice: snapshot.price,
+      barDurationMs: barDurationMsFromCandles(snapshot.candles, snapshot.market),
+    }).catch(() => {});
+  }
+
   let stockMemory = currentStockMemory;
   let regimeLessons = currentRegimeLessons;
   let newsSummary = await buildNewsSummary(asset);
@@ -1121,6 +1133,17 @@ export async function runInvestmentCommitteeDebate(
     });
     if (!decision?.id) throw new Error('Decision storage returned no decision identity');
     transcript.decisionId = decision.id;
+    // The council's own final call is a forecast too: persist it (linked to
+    // this decision) so it is scored against the realized price on the same
+    // horizon as the Kronos forecast this debate consumed.
+    void recordCouncilForecast({
+      asset, market: snapshot.market, decision: transcript.finalDecision,
+      confidence: transcript.finalConfidence, referencePrice: snapshot.price,
+      horizonBars: kronosForecast?.predictedClose.length || 5,
+      barDurationMs: barDurationMsFromCandles(snapshot.candles, snapshot.market),
+      decisionId: decision.id,
+      metadata: { purpose: transcript.purpose, lane: executionLane, executionApproved: transcript.executionApproved, positionReview: !!positionReview },
+    }).catch(() => {});
     if (!positionReview) await recordDebate(asset, transcript.finalDecision).catch(() => {});
     await clearDebateCheckpoint(asset);
   } catch (dbErr) {

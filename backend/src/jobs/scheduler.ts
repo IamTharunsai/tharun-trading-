@@ -516,6 +516,14 @@ export function initScheduler() {
       const { markToMarketOpenPositions } = await import('../trading/executionEngine');
       await markToMarketOpenPositions();
     } catch (err) { markSchedulerFailure(); logger.error('Mark-to-market failed', { err }); }
+    // Score matured forecasts (ForecastRecord) against realized prices on
+    // the same 5-minute tick. Separate guard: a scoring failure is logged
+    // and never changes this job's outcome or the positions pass above.
+    try {
+      const { scoreMaturedForecasts } = await import('../services/forecastScorecard');
+      const scored = await scoreMaturedForecasts();
+      if (scored.scored) logger.info(`📊 Forecast scorecard: scored ${scored.scored} matured forecast(s), ${scored.pending} awaiting a price`);
+    } catch (err: any) { logger.warn(`Forecast scoring skipped: ${err?.message || 'error'}`); }
   });
 
   // ── Verify audit ledger chain integrity daily at 6 AM ────────────────────
