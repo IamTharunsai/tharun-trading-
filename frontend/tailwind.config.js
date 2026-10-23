@@ -87,11 +87,32 @@ export default {
         'bh-gold-glow': '0 0 0 1px rgba(198,161,91,0.45), 0 0 18px -2px rgba(198,161,91,0.35)',
       },
       animation: {
+        // -- Bhishma motion primitives (keyframes below; CSS twins in index.css) --
+        'bh-page-in':    'bh-page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'bh-fade-rise':  'bh-fade-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'bh-shimmer':    'bh-shimmer 2.4s linear infinite',
+        'bh-pulse-live': 'bh-pulse-live 2s ease-in-out infinite',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'glow':       'glow 2s ease-in-out infinite alternate',
         'ticker':     'ticker 30s linear infinite',
       },
       keyframes: {
+        'bh-page-in': {
+          '0%':   { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        'bh-fade-rise': {
+          '0%':   { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        'bh-shimmer': {
+          '0%':   { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' }
+        },
+        'bh-pulse-live': {
+          '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(52, 194, 110, 0.45)' },
+          '50%':      { opacity: '0.75', boxShadow: '0 0 0 5px rgba(52, 194, 110, 0)' }
+        },
         glow: {
           '0%':   { boxShadow: '0 0 5px rgba(245,158,11,0.3)' },
           '100%': { boxShadow: '0 0 20px rgba(245,158,11,0.6), 0 0 40px rgba(245,158,11,0.2)' }
