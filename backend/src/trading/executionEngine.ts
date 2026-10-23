@@ -502,7 +502,35 @@ export async function markToMarketOpenPositions(): Promise<void> {
   }
 }
 
-async function recordConfirmedExecution(signal: TradeSignal, intentId: string, order: { orderId?: string; fees?: number }, fillPrice: number, quantity: number, protection: string): Promise<void> {
+/**
+ * Re-anchor a signal's protection levels to an actual fill price. The debate
+ * engine computes stopLossPrice/takeProfitPrice from a pre-trade snapshot;
+ * by the time the broker fills, the market may have moved through them (a
+ * stored take-profit below the fill is already passed and can never pay).
+ * The intended percentage distances are preserved exactly and recomputed
+ * from the fill, so for a long the stop is always below and the target
+ * always above the price the position actually opened at. Degenerate
+ * inputs (no usable signal entry or levels) pass the signal levels through
+ * unchanged — inventing levels would be worse than keeping them.
+ */
+export function reanchorProtectionToFill(
+  signal: { entryPrice: number; stopLossPrice: number; takeProfitPrice: number },
+  fillPrice: number,
+): { stopLossPrice: number; takeProfitPrice: number } {
+  const entry = signal.entryPrice;
+  const sl = signal.stopLossPrice;
+  const tp = signal.takeProfitPrice;
+  if (!(entry > 0) || !(fillPrice > 0) || !(sl > 0) || !(tp > 0) || sl === entry || tp === entry) {
+    return { stopLossPrice: sl, takeProfitPrice: tp };
+  }
+  const stopPct = Math.abs(entry - sl) / entry;
+  const takePct = Math.abs(tp - entry) / entry;
+  return tp > entry
+    ? { stopLossPrice: fillPrice * (1 - stopPct), takeProfitPrice: fillPrice * (1 + takePct) }
+    : { stopLossPrice: fillPrice * (1 + stopPct), takeProfitPrice: fillPrice * (1 - takePct) };
+}
+
+export async function recordConfirmedExecution(signal: TradeSignal, intentId: string, order: { orderId?: string; fees?: number }, fillPrice: number, quantity: number, protection: string): Promise<void> {
   const { asset, market, direction, agentDecisionId } = signal;
   if (direction !== 'BUY' && direction !== 'SELL') throw new Error('Cannot record a non-trading direction');
   await prisma.$transaction(async tx => {
@@ -519,21 +547,26 @@ async function recordConfirmedExecution(signal: TradeSignal, intentId: string, o
     const priorQty = existing?.status === 'OPEN' && existing.pendingEntryIntentId !== intentId ? existing.quantity : 0;
     const aggregateQuantity = priorQty + quantity;
     const aggregatePrice = (priorQty * (existing?.entryPrice ?? 0) + quantity * fillPrice) / aggregateQuantity;
+    // Protection levels are stored against the price each row actually
+    // opened at: this fill for the new trade and a fresh position, the
+    // position's resulting average entry when adding to an existing one.
+    const fillProtection = reanchorProtectionToFill(signal, fillPrice);
+    const positionProtection = priorQty > 0 ? reanchorProtectionToFill(signal, aggregatePrice) : fillProtection;
     const position = await tx.position.upsert({ where: { scopeKey },
       create: { scopeKey, accountId: intent.accountId, brokerMode: intent.mode, asset, market,
         side: direction, entryPrice: fillPrice, currentPrice: fillPrice, quantity,
         status: 'OPEN', accountingStatus: 'RECONCILED', accountingError: null,
-        brokerObservedQuantity: quantity, protectionStatus: protection, stopLossPrice: signal.stopLossPrice,
-        takeProfitPrice: signal.takeProfitPrice, openedAt: new Date() },
+        brokerObservedQuantity: quantity, protectionStatus: protection, stopLossPrice: fillProtection.stopLossPrice,
+        takeProfitPrice: fillProtection.takeProfitPrice, openedAt: new Date() },
       update: { side: direction, entryPrice: aggregatePrice, currentPrice: fillPrice, quantity: aggregateQuantity,
         status: 'OPEN', accountingStatus: 'RECONCILED', accountingError: null, evidenceVersion: { increment: 1 },
-        pendingEntryIntentId: null, brokerObservedQuantity: aggregateQuantity, protectionStatus: protection, stopLossPrice: signal.stopLossPrice,
-        takeProfitPrice: signal.takeProfitPrice, ...(priorQty === 0 ? { openedAt: new Date() } : {}) },
+        pendingEntryIntentId: null, brokerObservedQuantity: aggregateQuantity, protectionStatus: protection, stopLossPrice: positionProtection.stopLossPrice,
+        takeProfitPrice: positionProtection.takeProfitPrice, ...(priorQty === 0 ? { openedAt: new Date() } : {}) },
     });
     await tx.trade.create({ data: { asset, market, type: direction, status: 'OPEN',
       entryPrice: fillPrice, quantity, fees: order.fees ?? 0, brokerOrderId: order.orderId,
       brokerConfirmed: true, accountId: intent.accountId, brokerMode: intent.mode, positionId: position.id,
-      agentDecisionId, stopLossPrice: signal.stopLossPrice, takeProfitPrice: signal.takeProfitPrice,
+      agentDecisionId, stopLossPrice: fillProtection.stopLossPrice, takeProfitPrice: fillProtection.takeProfitPrice,
       metadata: { lane: (intent.executionPlan as any)?.lane ?? 'COUNCIL' }, openedAt: new Date() } });
     await tx.agentDecision.update({ where: { id: agentDecisionId }, data: { executed: true,
       executionReason: `${direction} ${quantity.toFixed(4)} ${asset} @ $${fillPrice.toFixed(2)} | Order: ${order.orderId} | ${intent.mode.toUpperCase()}` } });
