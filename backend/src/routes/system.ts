@@ -1,3 +1,4 @@
+import { privateResponse } from '../middleware/privateResponse';
 // ── SYSTEM STATUS ─────────────────────────────────────────────────────────────
 // One honest status endpoint for the top bar and Settings page: which services
 // are actually connected and healthy right now. Replaces hardcoded
@@ -7,13 +8,16 @@ import { requireAuth, requireOwner } from '../middleware/auth';
 import { appConfig } from '../utils/config';
 import { getLlmHealth } from '../utils/llmRouter';
 import { isPlaceholderKey } from '../utils/apiKeys';
+import { getPolymarketRuntimeStatus } from '../services/polymarketRuntime';
+import { schedulerRuntime } from '../jobs/schedulerRuntime';
+import { getResearchServicesStatus, isResearchService, ResearchServiceError, runResearchService } from '../services/researchServices';
 
 const router = Router();
 router.use(requireAuth);
 
 const configured = (v?: string) => !isPlaceholderKey(v);
 
-router.get('/status', async (_req: Request, res: Response) => {
+router.get('/status', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   const [{ getLlmSpendToday }, { universe }, { getIntradayStatus }, { getLastBrokerSync }, { isKillSwitchActive }, pmUs] = await Promise.all([
     import('../agents/debateEngine'),
     import('../services/universeService'),
@@ -32,18 +36,22 @@ router.get('/status', async (_req: Request, res: Response) => {
   const spend = getLlmSpendToday();
   const intraday = await getIntradayStatus().catch(() => null);
   const u = universe.status();
+  const scheduler = schedulerRuntime.snapshot();
 
   res.json({
-    scheduler: 'online',
+    scheduler: scheduler.status,
+    schedulerRuntime: scheduler,
     killSwitch: isKillSwitchActive(),
     tradingMode: appConfig.TRADING_MODE,
     polymarket: {
-      mode: process.env.POLYMARKET_US_LIVE === 'true' ? 'live' : 'paper',
-      usConnected: pmUs.isPolymarketUSConfigured(),
+      ...getPolymarketRuntimeStatus(),
+      usConnected: pmUs.getPolymarketUSHealth().connected,
+      usStatus: pmUs.getPolymarketUSHealth().status,
+      usConfigured: pmUs.isPolymarketUSConfigured(),
     },
     llm: {
-      fast: { provider: llm.fast.provider, model: llm.fast.model, healthy: llm.fast.healthy, lastError: llm.fast.lastError },
-      smart: { provider: llm.smart.provider, model: llm.smart.model, healthy: llm.smart.healthy, lastError: llm.smart.lastError },
+      fast: llm.fast,
+      smart: llm.smart,
       spendTodayUsd: Number(spend.usd.toFixed(4)),
       callsToday: (spend as any).calls ?? null,
       budgetUsd: spend.budget,
@@ -79,6 +87,37 @@ router.post('/intraday/scan', requireOwner, async (req: Request, res: Response) 
 router.post('/broker-sync', requireOwner, async (_req: Request, res: Response) => {
   const { syncBrokerPositions } = await import('../services/brokerSync');
   res.json(await syncBrokerPositions());
+});
+
+// Owner-only: seed StrategyQualification records for the current git revision.
+// POST /api/system/admin/seed-qualification
+// Optional body: { ttlDays?: number }
+router.post('/admin/seed-qualification', requireOwner, async (req: Request, res: Response) => {
+  try {
+    const { seedAllStrategies } = await import('../scripts/seedQualification');
+    const ttlDays = Number(req.body?.ttlDays) || 90;
+    const result = await seedAllStrategies(ttlDays);
+    res.json({ ok: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+  }
+});
+
+// Research services have a separate, owner-only evidence boundary. Status reads
+// use authenticated readiness metadata and never invoke a model or spend quota.
+router.get('/research-services', requireOwner, async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await getResearchServicesStatus());
+});
+router.post('/research-services/:service', requireOwner, async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isResearchService(req.params.service)) return res.status(404).json({ error: 'unknown_research_service' });
+  try {
+    res.json(await runResearchService(req.params.service, req.body));
+  } catch (error) {
+    const failure = error instanceof ResearchServiceError ? error : new ResearchServiceError('service_unavailable', 502);
+    res.status(failure.status).json({ error: failure.code });
+  }
 });
 
 export default router;

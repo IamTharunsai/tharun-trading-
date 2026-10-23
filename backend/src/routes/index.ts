@@ -1,6 +1,13 @@
+import { deepDiveRouter } from './deepDive';
+import { agentSessionsRouter } from './agentSessions';
+import { privateResponse } from '../middleware/privateResponse';
+import { recordPredictionSimulation, listPredictionSimulations } from './predictionSimulation';
+import { entryDecisionWhere } from '../trading/decisionVisibility';
+import { respondWithDashboardEvidence } from './dashboardMarketResponse';
 // ── AUTH ROUTES ───────────────────────────────────────────────────────────────
 import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { prisma } from '../utils/prisma';
@@ -17,10 +24,11 @@ import axios from 'axios';
 
 // ── /api/auth ─────────────────────────────────────────────────────────────────
 import rateLimit from 'express-rate-limit';
-import { revokeToken } from '../middleware/auth';
+import { revokeToken, boundedAuthStore } from '../middleware/auth';
 import { appConfig } from '../utils/config';
 
 export const authRouter = Router();
+authRouter.use(privateResponse);
 
 // Dedicated rate limiter for authentication attempts (10 attempts per 15 min per IP)
 const authLimiter = rateLimit({
@@ -70,9 +78,9 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 
     // Short-lived 2-hour access token
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role || 'OWNER' },
+      { userId: user.id, email: user.email, role: user.role },
       appConfig.JWT_SECRET,
-      { expiresIn: '2h' }
+      { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
     );
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
@@ -86,7 +94,7 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
       user: {
         id: user.id,
         email: user.email,
-        role: user.role || 'OWNER',
+        role: user.role,
         totpEnabled: user.totpEnabled
       }
     });
@@ -97,17 +105,21 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response) => {
 
 // Secure logout with token revocation
 authRouter.post('/logout', requireAuth, async (req: AuthRequest, res: Response) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (token) {
-    await revokeToken(token);
+  const token = req.headers.authorization!.slice('Bearer '.length);
+  const result = await revokeToken(token);
+  if (!result.persisted) {
+    res.setHeader('Retry-After', '1');
+    return res.status(503).json({ success: false, revocationConfirmed: false, code: 'LOGOUT_UNCONFIRMED',
+      error: 'Session blocked on this server; persistent revocation is not confirmed.' });
   }
   const ipAddress = req.ip || 'unknown';
-  if (req.user?.email) {
-    await prisma.authAuditLog.create({
-      data: { email: req.user.email, ipAddress, action: 'LOGOUT', success: 1 }
-    }).catch(() => {});
+  const logoutEmail = req.user?.email;
+  if (logoutEmail) {
+    void boundedAuthStore(() => prisma.authAuditLog.create({
+      data: { email: logoutEmail, ipAddress, action: 'LOGOUT', success: 1 }
+    })).catch(() => {});
   }
-  res.json({ success: true, message: 'Logged out successfully. Session invalidated.' });
+  res.json({ success: true, revocationConfirmed: true, message: 'Persistent session revocation confirmed.' });
 });
 
 // Secure first-run Owner account setup (Only permitted when zero OWNER accounts exist in database)
@@ -156,7 +168,7 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
   const token = jwt.sign(
     { userId: user.id, email: user.email, role: 'OWNER' },
     appConfig.JWT_SECRET,
-    { expiresIn: '2h' }
+    { algorithm: 'HS256', expiresIn: '2h', jwtid: randomUUID() }
   );
 
   res.status(201).json({
@@ -167,12 +179,11 @@ authRouter.post('/setup-owner', authLimiter, async (req: Request, res: Response)
 });
 
 authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
-  const user = await prisma.user.findUnique({ where: { id: req.userId } });
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  const user = req.user!;
   res.json({
     id: user.id,
     email: user.email,
-    role: user.role || 'OWNER',
+    role: user.role,
     totpEnabled: user.totpEnabled,
     lastLogin: user.lastLogin
   });
@@ -180,7 +191,7 @@ authRouter.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
 
 // ── /api/trades ───────────────────────────────────────────────────────────────
 export const tradesRouter = Router();
-tradesRouter.use(requireAuth);
+tradesRouter.use(privateResponse, requireOwner);
 
 tradesRouter.get('/', async (req: Request, res: Response) => {
   const { page = '1', limit = '50', asset, status, market } = req.query;
@@ -246,20 +257,21 @@ tradesRouter.post('/:id/close', requireOwner, async (req: Request, res: Response
   if (!trade || trade.status !== 'OPEN') {
     return res.status(404).json({ error: 'Open trade not found' });
   }
-  const position = await prisma.position.findFirst({ where: { asset: trade.asset, status: 'OPEN' } });
+  const position = trade.positionId ? await prisma.position.findUnique({ where: { id: trade.positionId } }) : null;
   if (!position) {
     return res.status(404).json({ error: 'No open position for this trade\'s asset' });
   }
   // Never trust a client-supplied exit price (it let the caller write any P&L).
   const exitPrice = getCurrentPrices()[trade.asset] ?? position.currentPrice ?? trade.entryPrice;
   const result: any = await closePosition(position, exitPrice, 'manual_close');
-  if (result.closed === false) return res.status(502).json({ error: 'Broker exit failed — position still open' });
+  if (!result.closed) return res.status(result.pending ? 202 : 502).json({ closed: false, pending: !!result.pending,
+    orderId: result.orderId, error: result.error || 'Broker exit is not confirmed; position remains under monitoring' });
   res.json({ closed: true, pnl: result.pnl, pnlPct: result.pnlPct });
 });
 
 // ── /api/portfolio ────────────────────────────────────────────────────────────
 export const portfolioRouter = Router();
-portfolioRouter.use(requireAuth);
+portfolioRouter.use(privateResponse, requireOwner);
 
 portfolioRouter.get('/', async (_req: Request, res: Response) => {
   try {
@@ -314,11 +326,29 @@ portfolioRouter.get('/snapshots', async (req: Request, res: Response) => {
 
 portfolioRouter.get('/positions', async (_req: Request, res: Response) => {
   try {
-    const positions = await prisma.position.findMany({ where: { status: 'OPEN' } });
-    res.json(Array.isArray(positions) ? positions : []);
+    const portfolio = await getPortfolioState();
+    res.json(portfolio.positions);
   } catch (err: any) {
-    res.json([]);
+    res.status(503).json({ error: 'Verified current-account positions unavailable' });
   }
+});
+
+portfolioRouter.get('/position-research', requireOwner, async (_req: Request, res: Response) => {
+  try {
+    const { getPositionResearchStatus } = await import('../services/positionResearch');
+    res.json({ reviews: await getPositionResearchStatus(), executionAuthority: false });
+  } catch {
+    res.status(503).json({ error: 'Current-account position research is unavailable' });
+  }
+});
+
+portfolioRouter.get('/position-research/:decisionId', requireOwner, async (req: Request, res: Response) => {
+  try {
+    const { getPositionResearchDecision } = await import('../services/positionResearch');
+    const result = await getPositionResearchDecision(req.params.decisionId);
+    if (!result) return res.status(404).json({ error: 'Current-account position research not found' });
+    res.json(result);
+  } catch { res.status(503).json({ error: 'Current-account position research is unavailable' }); }
 });
 
 portfolioRouter.get('/live-accounts', async (_req: Request, res: Response) => {
@@ -333,13 +363,14 @@ portfolioRouter.get('/live-accounts', async (_req: Request, res: Response) => {
 // ── /api/agents ───────────────────────────────────────────────────────────────
 export const agentsRouter = Router();
 agentsRouter.use(requireAuth);
+agentsRouter.use('/sessions', agentSessionsRouter);
 
-agentsRouter.post('/trigger-debate', async (req: Request, res: Response) => {
+agentsRouter.post('/trigger-debate', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const { asset = 'BTC', market = 'crypto' } = req.body;
     const { runDebateForAsset } = await import('../jobs/scheduler');
     res.json({ message: `Debate triggered for ${asset}`, asset, status: 'running' });
-    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true }).catch(() => {});
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true, purpose: 'RESEARCH' }).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: 'Failed to trigger debate' });
   }
@@ -414,7 +445,7 @@ agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Resp
     const { runDebateForAsset } = await import('../jobs/scheduler');
     // Respond immediately, run debate in background
     res.json({ message: `🏛️ Full debate starting for ${asset} (${market}) — check DebateRoom for live updates`, asset, market, status: 'running' });
-    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true }).catch((err: any) => {
+    runDebateForAsset(asset, market as 'crypto' | 'stocks' | 'forex', { bypassGate: true, purpose: 'ENTRY' }).catch((err: any) => {
       console.error('run-and-trade debate failed:', err?.message);
     });
   } catch (err: any) {
@@ -422,15 +453,15 @@ agentsRouter.post('/run-and-trade', requireOwner, async (req: Request, res: Resp
   }
 });
 
-agentsRouter.get('/decisions', async (req: Request, res: Response) => {
+agentsRouter.get('/decisions', privateResponse, requireOwner, async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query;
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-  const decisions = await prisma.agentDecision.findMany({ skip, take: parseInt(limit as string), orderBy: { timestamp: 'desc' } });
+  const decisions = await prisma.agentDecision.findMany({ where: entryDecisionWhere(), skip, take: parseInt(limit as string), orderBy: { timestamp: 'desc' } });
   res.json(decisions);
 });
 
-agentsRouter.get('/decisions/:id', async (req: Request, res: Response) => {
-  const decision = await prisma.agentDecision.findUnique({ where: { id: req.params.id } });
+agentsRouter.get('/decisions/:id', privateResponse, requireOwner, async (req: Request, res: Response) => {
+  const decision = await prisma.agentDecision.findFirst({ where: entryDecisionWhere({ id: req.params.id }) });
   if (!decision) return res.status(404).json({ error: 'Not found' });
   res.json(decision);
 });
@@ -443,7 +474,7 @@ marketRouter.use(requireAuth);
 async function portfolioAndWatchlist(): Promise<{ portfolio: string[]; watchlist: string[] }> {
   const [positions, decisions] = await Promise.all([
     prisma.position.findMany({ where: { status: 'OPEN' }, select: { asset: true } }).catch(() => []),
-    prisma.agentDecision.findMany({ orderBy: { timestamp: 'desc' }, take: 200, select: { asset: true } }).catch(() => []),
+    prisma.agentDecision.findMany({ where: entryDecisionWhere(), orderBy: { timestamp: 'desc' }, take: 200, select: { asset: true } }).catch(() => []),
   ]);
   let broker: string[] = [];
   try {
@@ -549,66 +580,88 @@ marketRouter.get('/chart/:symbol', async (req: Request, res: Response) => {
 });
 
 marketRouter.get('/news', async (req: Request, res: Response) => {
-  const { limit = '20' } = req.query;
-  const take = Math.min(parseInt(limit as string) || 20, 200);
-  const rows = await prisma.newsItem.findMany({ take: take * 5, orderBy: { publishedAt: 'desc' } });
-  // The ingest stored the same article many times; show each story once.
-  const seen = new Set<string>();
-  const news = rows.filter((n: any) => {
-    const key = String(n.url || n.title || n.id).toLowerCase().trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, take);
-  res.json(news);
+  try {
+    const parsedLimit = Number(req.query.limit ?? 20);
+    const take = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(Math.floor(parsedLimit), 200)) : 20;
+    const rows = await prisma.newsItem.findMany({ take: take * 5, orderBy: { publishedAt: 'desc' } });
+    // The ingest stored the same article many times; show each story once.
+    const seen = new Set<string>();
+    const news = rows.filter((n: any) => {
+      const key = String(n.url || n.title || n.id).toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, take);
+    res.json(news);
+  } catch {
+    res.status(503).json({ error: 'news_feed_unavailable' });
+  }
 });
 
-marketRouter.get('/predictions', async (req: Request, res: Response) => {
+marketRouter.get('/predictions', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null }, orderBy: { createdAt: 'desc' } });
-    // Enrich with trueYesProbability so frontend normalizePrediction() works
-    // (targetPrice is stored as ourEstimatedProbability * 100)
-    const enriched = predictions.map((p: any) => ({
-      ...p,
-      trueYesProbability: p.targetPrice != null ? p.targetPrice / 100 : null,
-      noPrice: p.noPrice ?? (p.yesPrice != null ? 1 - p.yesPrice : null),
-    }));
+
+    // If the DB rows are missing live prices, try enriching from polymarketEdge's PolymarketPrediction table
+    // (populated every scan cycle) so the UI never shows "—" odds.
+    const slugsNeedingPrices = predictions
+      .filter((p: any) => p.yesPrice == null && p.asset === 'POLYMARKET')
+      .map((p: any) => p.title?.slice(0, 300))
+      .filter(Boolean);
+
+    let livePriceMap: Record<string, { yesPrice: number; noPrice: number }> = {};
+    if (slugsNeedingPrices.length > 0) {
+      try {
+        const liveRows: any[] = await (prisma as any).polymarketPrediction.findMany({
+          where: { outcome: null },
+          select: { question: true, marketMid: true, bestBid: true, bestAsk: true },
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+        });
+        for (const r of liveRows) {
+          const mid = r.marketMid != null ? Number(r.marketMid)
+            : r.bestBid != null && r.bestAsk != null ? (Number(r.bestBid) + Number(r.bestAsk)) / 2
+            : null;
+          if (mid != null && r.question) {
+            livePriceMap[r.question.slice(0, 300)] = { yesPrice: mid, noPrice: 1 - mid };
+          }
+        }
+      } catch { /* polymarketPrediction table may not exist in all envs */ }
+    }
+
+    const enriched = predictions.map((p: any) => {
+      const live = livePriceMap[p.title?.slice(0, 300) ?? ''];
+      const yesPrice = p.yesPrice ?? live?.yesPrice ?? null;
+      const noPrice = p.noPrice ?? live?.noPrice ?? (yesPrice != null ? 1 - yesPrice : null);
+      return {
+        ...p,
+        yesPrice,
+        noPrice,
+        trueYesProbability: p.targetPrice != null ? p.targetPrice / 100 : null,
+      };
+    });
     res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch predictions' });
   }
 });
 
-marketRouter.post('/predictions/scan', async (_req: Request, res: Response) => {
+marketRouter.post('/predictions/scan', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   try {
-    // Actually run the scanner — returns ALL scanned markets (not just actionable)
-    // so the UI can display market intelligence even when portfolio has no balance
-    const { scanPolymarketOpportunities } = await import('../services/polymarket');
-    const { getPortfolioState } = await import('../services/portfolio');
-
-    let portfolioValue = 0;
-    try {
-      const portfolio = await getPortfolioState();
-      portfolioValue = portfolio.totalValue ?? 0;
-    } catch { /* proceed with zero balance — scanner still returns market data */ }
-
-    const opportunities = await scanPolymarketOpportunities(portfolioValue);
-    const actionable = opportunities.filter(o => o.recommendedSide !== 'SKIP' && o.betSizeUSD >= 1);
-
+    const predictions = await prisma.prediction.findMany({ where: { resolvedAt: null } });
     res.json({
       success: true,
-      message: `Scanned ${opportunities.length} markets — ${actionable.length} actionable with current balance ($${portfolioValue.toFixed(0)}).`,
-      opportunities,
-      actionableCount: actionable.length,
+      message: `Polymarket scan complete — ${predictions.length} open market${predictions.length === 1 ? '' : 's'} tracked.`,
+      opportunities: predictions,
       scannedAt: new Date().toISOString()
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Scan failed', detail: err.message });
+    res.status(500).json({ error: 'Scan failed' });
   }
 });
 
 // Polymarket US (regulated exchange) — account + market data. Owner-only.
-marketRouter.get('/polymarket-us/account', requireOwner, async (_req: Request, res: Response) => {
+marketRouter.get('/polymarket-us/account', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   try {
     const svc = await import('../services/polymarketUS');
     if (!svc.isPolymarketUSConfigured()) return res.json({ connected: false, reason: 'POLYMARKET_KEY_ID / POLYMARKET_SECRET_KEY not set' });
@@ -627,108 +680,34 @@ marketRouter.get('/polymarket-us/events', async (req: Request, res: Response) =>
   }
 });
 
-marketRouter.post('/predictions/wager', requireOwner, async (req: Request, res: Response) => {
+// Polymarket edge engine scorecard: every prediction vs. the real resolution
+// (Brier / log loss vs. the market price, calibration buckets, paper P&L
+// after fees, expected vs. realized edge). Use it to prove an edge on paper
+// before considering live trading.
+marketRouter.get('/polymarket/scorecard', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
-    const { predictionId, outcome = 'YES', amount = 10 } = req.body;
-    const pred = await prisma.prediction.findUnique({ where: { id: predictionId } });
-    if (!pred) return res.status(404).json({ error: 'Prediction market not found' });
-
-    const price = outcome === 'YES' ? pred.yesPrice : pred.noPrice;
-    if (!price || price <= 0 || price >= 1) return res.status(400).json({ error: 'Prediction has no valid price for that outcome' });
-    const shares = parseFloat((amount / price).toFixed(2));
-
-    const trade = await prisma.trade.create({
-      data: {
-        id: `poly-wager-${Date.now()}`,
-        asset: 'POLYMARKET',
-        market: 'polymarket',
-        type: outcome === 'YES' ? 'BUY' : 'SELL',
-        entryPrice: price,
-        quantity: shares,
-        status: 'OPEN',
-        stopLossPrice: 0,
-        takeProfitPrice: 1, // share-based accounting marker (see polymarket.ts)
-        metadata: {
-          title: pred.title,
-          predictionId: pred.id,
-          expectedValue: pred.expectedValue,
-          kellyFraction: pred.kellyFraction,
-          wagerUsd: amount,
-          outcome
-        }
-      }
-    });
-
-    res.json({
-      success: true,
-      trade,
-      message: `✅ Polymarket Wager Placed: $${amount.toFixed(2)} on ${outcome} @ ${(price * 100).toFixed(0)}¢ (Est. Payout: $${shares.toFixed(2)})`
-    });
+    const days = Math.max(0, Math.min(3650, parseInt(String(req.query.days || '0')) || 0));
+    const { computeScorecard } = await import('../services/polymarketEdge');
+    res.json(await computeScorecard(days ? { days } : {}));
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Wager execution failed' });
+    res.status(500).json({ error: err?.message || 'Scorecard failed' });
   }
 });
 
-marketRouter.post('/ai-deep-dive', async (req: Request, res: Response) => {
+marketRouter.get('/polymarket/edge/predictions', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
-    const { symbol, assetClass = 'stock' } = req.body || {};
-    if (!symbol) return res.status(400).json({ error: 'symbol is required' });
-    let analysis = '';
-
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const { GoogleGenAI } = await import('@google/genai');
-        const ai = new GoogleGenAI();
-        const prompt = `You are the Lead Quantitative Researcher and Chief Risk Officer at an elite autonomous quantitative hedge fund (Bloomberg Terminal / Institutional tier).
-Conduct a comprehensive, surgical, deep-dive analysis on ${symbol} (${assetClass}).
-Provide:
-1. Executive Verdict (STRONG BUY, BUY, NEUTRAL, TRIM, SHORT) with Conviction Score (0-100%)
-2. Multi-Timeframe Technical Microstructure (Order flow, Key Liquidity Pools, Wyckoff Accumulation/Distribution Phase, Support/Resistance)
-3. Fundamental & Macro Catalyst Analysis (DCF Multiple, Margin of Safety, Earnings Catalysts, Fed Rate Sensitivity)
-4. Polymarket / Sentiment Alignment (Smart money positioning, Put/Call Skew, Retail Sentiment Divergence)
-5. Institutional Execution Parameters: Exact Entry Price, Trailing Stop-Loss (in $ and %), Take-Profit Target 1, Target 2, Recommended Kelly Criterion Position Size (0-15% of portfolio).
-Keep it dense, quantitative, institutional, and structured with clear headings.`;
-
-        const resAi = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt
-        });
-        analysis = resAi.text || '';
-      } catch (e: any) {
-        console.warn('Gemini deep dive fallback:', e.message);
-      }
-    }
-
-    if (!analysis) {
-      analysis = `### 1. Executive Verdict: STRONG ACCUMULATION (86% Conviction)
-${symbol} presents an institutional asymmetric risk/reward opportunity. Multi-timeframe trend structure exhibits pristine higher-low compression with institutional absorption at key volume shelf nodes.
-
-### 2. Microstructure & Technical Alignment
-- **Market Structure**: Wyckoff Phase D (Sign of Strength) confirmation.
-- **Liquidity Pools**: Resting sell-side liquidity at +4.8% and +9.2% above current price.
-- **Momentum & Volatility**: RSI (14) sitting at 58.4 in healthy expansion corridor; Bollinger Band contraction suggests impending volatility breakout.
-
-### 3. Macro & Quantitative Catalysts
-- Zero debt refinancing drag over next 24 months; operating leverage accelerating.
-- Correlation to broader indices remains contained (Beta: 1.18), providing idiosyncratic alpha.
-
-### 4. Risk-Weighted Execution Parameters
-- **Recommended Entry**: Market / Limit at current bid-ask midpoint.
-- **Dynamic Hard Stop-Loss**: -3.4% below swing liquidity sweep.
-- **Take-Profit Targets**: TP1 @ +6.2% (scale 50%), TP2 @ +12.8% (runner).
-- **Kelly Sizing**: 8.5% of total portfolio equity.`;
-    }
-
-    res.json({
-      symbol,
-      assetClass,
-      analysis,
-      timestamp: new Date().toISOString()
-    });
+    const take = Math.max(1, Math.min(500, parseInt(String(req.query.limit || '50')) || 50));
+    const rows = await (prisma as any).polymarketPrediction.findMany({ orderBy: { createdAt: 'desc' }, take });
+    res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'AI Deep Dive failed' });
+    res.status(500).json({ error: 'Failed to fetch Polymarket predictions' });
   }
 });
+
+marketRouter.post('/predictions/wager', privateResponse, requireOwner, recordPredictionSimulation);
+marketRouter.get('/predictions/simulations', privateResponse, requireOwner, listPredictionSimulations);
+
+marketRouter.use('/ai-deep-dive', deepDiveRouter);
 
 // ── Upcoming IPOs (Finnhub, cached 6h) ─────────────────────────────────────────
 marketRouter.get('/ipo-calendar', async (_req: Request, res: Response) => {
@@ -795,15 +774,16 @@ marketRouter.get('/all-stocks', async (req: Request, res: Response) => {
 });
 
 // ── Stock Universe — every asset agents have analyzed ─────────────────────────
-marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
+marketRouter.get('/stocks-universe', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   try {
     const [rawDecisions, allFundamentals, allTrades, openPositions, memories] = await Promise.all([
       (prisma.agentDecision?.groupBy ? prisma.agentDecision.groupBy({
+        where: entryDecisionWhere(),
         by: ['asset', 'signal'],
         _count: { asset: true },
         _max: { timestamp: true, avgConfidence: true },
         orderBy: { _max: { timestamp: 'desc' } }
-      }) : prisma.agentDecision.findMany().then((decs: any[]) => {
+      }) : prisma.agentDecision.findMany({ where: entryDecisionWhere() }).then((decs: any[]) => {
         const m = new Map<string, any>();
         for (const d of decs || []) {
           const k = `${d.asset}_${d.signal}`;
@@ -923,14 +903,14 @@ marketRouter.get('/stocks-universe', async (_req: Request, res: Response) => {
 });
 
 // ── Single stock detail — trades + decisions + candles ────────────────────────
-marketRouter.get('/stock/:symbol', async (req: Request, res: Response) => {
+marketRouter.get('/stock/:symbol', privateResponse, requireOwner, async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
     const market = (req.query.market as string) || 'stocks';
     const [fund, trades, decisions, memory, position] = await Promise.all([
       prisma.companyFundamentals.findUnique({ where: { symbol } }),
       prisma.trade.findMany({ where: { asset: symbol }, orderBy: { openedAt: 'desc' }, take: 30 }),
-      prisma.agentDecision.findMany({ where: { asset: symbol }, orderBy: { timestamp: 'desc' }, take: 5 }),
+      prisma.agentDecision.findMany({ where: entryDecisionWhere({ asset: symbol }), orderBy: { timestamp: 'desc' }, take: 5 }),
       prisma.stockMemory.findUnique({ where: { symbol } }),
       prisma.position.findFirst({ where: { asset: symbol, status: 'OPEN' } }),
     ]);
@@ -971,7 +951,7 @@ marketRouter.get('/stock/:symbol/candles', async (req: Request, res: Response) =
 
 // ── /api/journal ──────────────────────────────────────────────────────────────
 export const journalRouter = Router();
-journalRouter.use(requireAuth);
+journalRouter.use(privateResponse, requireOwner);
 
 journalRouter.get('/', async (req: Request, res: Response) => {
   const { limit = '30' } = req.query;
@@ -985,7 +965,7 @@ journalRouter.get('/:date', async (req: Request, res: Response) => {
   res.json(journal);
 });
 
-journalRouter.post('/generate', requireAuth, async (_req: Request, res: Response) => {
+journalRouter.post('/generate', async (_req: Request, res: Response) => {
   const { generateDailyJournal } = await import('../services/journalGenerator');
   await generateDailyJournal();
   res.json({ message: 'Journal generated' });
@@ -993,22 +973,29 @@ journalRouter.post('/generate', requireAuth, async (_req: Request, res: Response
 
 // ── /api/settings ─────────────────────────────────────────────────────────────
 export const settingsRouter = Router();
-settingsRouter.use(requireAuth);
+settingsRouter.use(privateResponse, requireOwner);
 
 settingsRouter.get('/', async (_req: Request, res: Response) => {
   const { accountManager } = await import('../services/accountManager');
+  const { readRiskSettings } = await import('../utils/config');
+  const { getActiveMode } = await import('../trading/brokerRouter');
+  const { isSentimentEnabled } = await import('../services/sentimentService');
+  const risk = readRiskSettings();
   res.json({
-    tradingMode: process.env.TRADING_MODE || 'paper',
+    // Effective mode from the live gate (not the raw env var).
+    tradingMode: getActiveMode(),
     stopLossMethod: 'ATR-based (dynamic per trade, not a fixed %)',
     takeProfitMethod: '2.5x the ATR-based stop distance (min 2:1 risk/reward)',
     maxRiskPerTrade: process.env.MAX_RISK_PER_TRADE_PCT || '1',
-    maxPositionSize: process.env.MAX_POSITION_SIZE_PCT || '10',
-    dailyLossLimit: process.env.DAILY_LOSS_LIMIT_PCT || '5',
-    weeklyDrawdownLimit: process.env.WEEKLY_DRAWDOWN_LIMIT_PCT || '10',
-    maxDrawdown: process.env.MAX_DRAWDOWN_ALL_TIME_PCT || '20',
-    cashReserve: process.env.CASH_RESERVE_PCT || '30',
-    maxTradesPerDay: process.env.MAX_TRADES_PER_DAY || '50',
-    minAgentConfidence: process.env.MIN_AGENT_CONFIDENCE || '65',
+    maxPositionSize: String(risk.maxPositionSizePct),
+    dailyLossLimit: String(risk.dailyLossLimitPct),
+    weeklyDrawdownLimit: String(risk.weeklyDrawdownLimitPct),
+    maxDrawdown: String(risk.maxDrawdownPct),
+    cashReserve: String(risk.cashReservePct),
+    maxTradesPerDay: String(risk.maxTradesPerDay),
+    maxOpenPositions: String(risk.maxOpenPositions),
+    minAgentConfidence: String(risk.minAgentConfidence),
+    sentimentEnabled: isSentimentEnabled(),
     minVotesToExecute: process.env.MIN_VOTES_TO_EXECUTE || '5',
     cacheStatus: redis.status === 'ready' ? 'Redis (connected)' : 'None — running without cache',
     kronosServiceConfigured: !!process.env.KRONOS_SERVICE_URL,
@@ -1062,38 +1049,14 @@ settingsRouter.post('/disconnect', requireOwner, async (req: Request, res: Respo
 export const killSwitchRouter = Router();
 killSwitchRouter.use(requireAuth);
 
-killSwitchRouter.post('/activate', async (_req: Request, res: Response) => {
+killSwitchRouter.post('/activate', privateResponse, requireOwner, async (_req: Request, res: Response) => {
   activateKillSwitch();
-  // Actually flatten at the broker. The old version only flipped DB rows to
-  // CLOSED in live mode, leaving every real position and order open.
-  const result: any = { active: true, timestamp: new Date().toISOString(), broker: 'not-connected' };
-  try {
-    const { getTradingBroker } = await import('../trading/brokerRouter');
-    const broker = getTradingBroker();
-    if (broker) {
-      await broker.cancelAllOrders().catch(() => {});
-      const closed = await broker.closeAllPositions();
-      result.broker = 'flattened';
-      result.brokerOrders = closed.length;
-    }
-  } catch (err: any) {
-    result.broker = 'FLATTEN_FAILED — close positions manually in Alpaca';
-    result.error = err?.response?.data?.message || err.message;
-  }
-  const open = await prisma.position.findMany({ where: { status: 'OPEN' } });
-  const prices = getCurrentPrices();
-  for (const p of open) {
-    await prisma.position.update({ where: { id: p.id }, data: { status: 'CLOSED' } });
-    const t = await prisma.trade.findFirst({ where: { asset: p.asset, status: 'OPEN' } });
-    if (t) {
-      const px = prices[p.asset] ?? p.currentPrice;
-      const pnl = (p.side === 'SELL' ? p.entryPrice - px : px - p.entryPrice) * p.quantity;
-      await prisma.trade.update({ where: { id: t.id }, data: { status: 'CLOSED', exitPrice: px, pnl, pnlPct: (pnl / (p.entryPrice * p.quantity)) * 100, closedAt: new Date(), exitReason: 'kill_switch' } });
-    }
-  }
-  res.json(result);
+  const { liquidateCurrentAccount } = await import('../trading/killLiquidation');
+  const result = await liquidateCurrentAccount();
+  res.status(result.pending.length || result.errors.length ? 202 : 200).json({
+    active: true, timestamp: new Date().toISOString(), ...result,
+  });
 });
-
 // Resuming trading is owner-only.
 killSwitchRouter.post('/deactivate', requireOwner, async (_req: Request, res: Response) => {
   deactivateKillSwitch();
@@ -1123,7 +1086,7 @@ greedRouter.post('/', requireOwner, async (req: Request, res: Response) => {
     const { activateGreedAgent, deactivateGreedAgent } = await import('../services/polymarketMoneyGreed');
     if (active) {
       const result = await activateGreedAgent(greedMode);
-      res.json(result);
+      res.status(409).json(result);
     } else {
       const result = await deactivateGreedAgent();
       res.json(result);
@@ -1145,215 +1108,49 @@ greedRouter.delete('/', requireOwner, async (_req: Request, res: Response) => {
 
 // ── /api/market — New OpenTerminal panel endpoints ───────────────────────────
 
-// Sector performance (S&P 500 sectors)
-marketRouter.get('/sectors', async (_req: Request, res: Response) => {
-  try {
-    // Try Alpha Vantage, fall back to mock data
-    const sectors = [
-      { name: 'Technology', ticker: 'XLK', change: 1.24, marketCap: 4800 },
-      { name: 'Healthcare', ticker: 'XLV', change: -0.31, marketCap: 1800 },
-      { name: 'Financials', ticker: 'XLF', change: 0.87, marketCap: 2100 },
-      { name: 'Energy', ticker: 'XLE', change: -1.12, marketCap: 900 },
-      { name: 'Consumer Disc.', ticker: 'XLY', change: 0.54, marketCap: 1500 },
-      { name: 'Industrials', ticker: 'XLI', change: 0.21, marketCap: 1200 },
-      { name: 'Materials', ticker: 'XLB', change: -0.44, marketCap: 600 },
-      { name: 'Utilities', ticker: 'XLU', change: 0.08, marketCap: 400 },
-      { name: 'Real Estate', ticker: 'XLRE', change: -0.67, marketCap: 350 },
-      { name: 'Comm. Services', ticker: 'XLC', change: 0.95, marketCap: 1100 },
-      { name: 'Cons. Staples', ticker: 'XLP', change: -0.15, marketCap: 800 },
-    ];
-    res.json({ sectors, updatedAt: new Date().toISOString() });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+// Dashboard figures are provider observations. A failed feed never becomes a sample quote.
+marketRouter.get('/sectors', (_req: Request, res: Response) => respondWithDashboardEvidence(res, async () => {
+  const { getDashboardSectors } = await import('../services/dashboardMarketEvidence');
+  return getDashboardSectors();
+}));
+
+marketRouter.get('/treasury/yields', (_req: Request, res: Response) => respondWithDashboardEvidence(res, async () => {
+  const { getDashboardTreasuryYields } = await import('../services/dashboardMarketEvidence');
+  return getDashboardTreasuryYields();
+}));
+
+marketRouter.get('/crypto/top20', (_req: Request, res: Response) => respondWithDashboardEvidence(res, async () => {
+  const { getDashboardCryptoAssets } = await import('../services/dashboardMarketEvidence');
+  return getDashboardCryptoAssets();
+}, 'crypto'));
+
+marketRouter.get('/crypto/overview', (_req: Request, res: Response) => respondWithDashboardEvidence(res, async () => {
+  const { getDashboardCryptoOverview } = await import('../services/dashboardMarketEvidence');
+  return getDashboardCryptoOverview();
+}));
+
+marketRouter.get('/options', (_req: Request, res: Response) => {
+  res.status(501).json({ error: 'options_provider_not_configured', status: 'unavailable', observedAt: null, receivedAt: new Date().toISOString() });
 });
 
-// Treasury yields
-marketRouter.get('/treasury/yields', async (_req: Request, res: Response) => {
-  try {
-    // Mock data — replace with FRED API: https://fred.stlouisfed.org/series/DGS10
-    const yields = {
-      '1M': 5.28, '3M': 5.25, '6M': 5.18, '1Y': 5.02,
-      '2Y': 4.85, '3Y': 4.72, '5Y': 4.64, '7Y': 4.68,
-      '10Y': 4.71, '20Y': 4.95, '30Y': 4.89,
-      spread_2y10y: 4.71 - 4.85,
-      inverted: (4.71 - 4.85) < 0,
-      updatedAt: new Date().toISOString(),
-    };
-    res.json(yields);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+marketRouter.get('/screener', (_req: Request, res: Response) => respondWithDashboardEvidence(res, async () => {
+  const { getDashboardScreener } = await import('../services/dashboardMarketEvidence');
+  const { getAllStocksDetailed } = await import('../services/marketData');
+  return getDashboardScreener(getAllStocksDetailed());
+}));
 
-// Top 20 crypto (CoinGecko free API)
-marketRouter.get('/crypto/top20', async (_req: Request, res: Response) => {
-  try {
-    const response = await axios.get(
-      'https://api.coingecko.com/api/v3/coins/markets',
-      { params: { vs_currency: 'usd', order: 'market_cap_desc', per_page: 20, page: 1 }, timeout: 8000 }
-    );
-    res.json(response.data);
-  } catch {
-    // Mock fallback
-    res.json([
-      { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', current_price: 64200, price_change_percentage_24h: 1.2, market_cap: 1260000000000, total_volume: 28000000000 },
-      { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', current_price: 2490, price_change_percentage_24h: -0.8, market_cap: 300000000000, total_volume: 12000000000 },
-    ]);
-  }
-});
+// The Fincept integration currently contains example dates, forecasts and breadth values.
+// Do not expose those templates as a live economic feed. Configured FRED observations remain available.
+marketRouter.get('/economic/indicators', (_req: Request, res: Response) => respondWithDashboardEvidence(res, async () => {
+  const { getDashboardMacroIndicators } = await import('../services/dashboardMarketEvidence');
+  return getDashboardMacroIndicators();
+}));
 
-// Crypto market overview (dominance, fear & greed)
-marketRouter.get('/crypto/overview', async (_req: Request, res: Response) => {
-  try {
-    const [globalRes, fngRes] = await Promise.allSettled([
-      axios.get('https://api.coingecko.com/api/v3/global', { timeout: 8000 }),
-      axios.get('https://api.alternative.me/fng/', { timeout: 8000 }),
-    ]);
-    const global = globalRes.status === 'fulfilled' ? globalRes.value.data.data : null;
-    const fng = fngRes.status === 'fulfilled' ? fngRes.value.data.data?.[0] : null;
-    res.json({
-      btcDominance: global?.market_cap_percentage?.btc ?? 52.4,
-      ethDominance: global?.market_cap_percentage?.eth ?? 17.2,
-      totalMarketCap: global?.total_market_cap?.usd ?? 2400000000000,
-      fearGreedIndex: fng ? { value: parseInt(fng.value), label: fng.value_classification } : { value: 62, label: 'Greed' },
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Options chain
-marketRouter.get('/options', async (req: Request, res: Response) => {
-  try {
-    const { symbol = 'SPY', expiry = '30d' } = req.query;
-    // Source: Polygon.io or Tradier — panel uses mock data if not available
-    res.status(501).json({ error: 'Options data provider not configured — panel uses mock data', symbol, expiry });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Market screener — live data from Alpaca snapshots
-marketRouter.get('/screener', async (_req: Request, res: Response) => {
-  try {
-    const { getCurrentPrices } = await import('../services/marketData');
-    const prices = getCurrentPrices();
-    const symbols = Object.keys(prices).filter(s => !s.includes('/')).slice(0, 50);
-
-    // Fetch real snapshots from Alpaca for change%, volume, VWAP
-    const ALPACA_KEY = process.env.ALPACA_API_KEY;
-    const ALPACA_SECRET = process.env.ALPACA_SECRET_KEY;
-
-    let snapshots: Record<string, any> = {};
-    if (ALPACA_KEY && ALPACA_SECRET && symbols.length > 0) {
-      try {
-        const { default: axios } = await import('axios');
-        const chunks = [];
-        for (let i = 0; i < symbols.length; i += 20) chunks.push(symbols.slice(i, i + 20));
-
-        for (const chunk of chunks) {
-          const resp = await axios.get('https://data.alpaca.markets/v2/stocks/snapshots', {
-            headers: { 'APCA-API-KEY-ID': ALPACA_KEY, 'APCA-API-SECRET-KEY': ALPACA_SECRET },
-            params: { symbols: chunk.join(',') },
-            timeout: 8000
-          });
-          Object.assign(snapshots, resp.data);
-        }
-      } catch { /* fall back to price-only mode */ }
-    }
-
-    const SECTOR_MAP: Record<string, string> = {
-      AAPL: 'Tech', MSFT: 'Tech', NVDA: 'Tech', GOOGL: 'Tech', META: 'Tech', AMZN: 'Tech', TSLA: 'Tech',
-      JPM: 'Finance', BAC: 'Finance', GS: 'Finance', MS: 'Finance',
-      JNJ: 'Healthcare', PFE: 'Healthcare', UNH: 'Healthcare',
-      XOM: 'Energy', CVX: 'Energy', COP: 'Energy',
-      SPY: 'ETF', QQQ: 'ETF', IWM: 'ETF', DIA: 'ETF',
-    };
-
-    const data = symbols.map(sym => {
-      const snap = snapshots[sym];
-      const price = prices[sym] ?? (snap?.latestTrade?.p ?? 0);
-      const prevClose = snap?.prevDailyBar?.c ?? price;
-      const change1d = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
-      const volume = snap?.dailyBar?.v ?? snap?.prevDailyBar?.v ?? 0;
-      const vwap = snap?.dailyBar?.vw ?? 0;
-
-      // Compute RSI-14 approximation from daily close vs prev close
-      // (simplified: use price vs vwap as a directional proxy when no candles available)
-      const rsiProxy = vwap > 0
-        ? Math.min(80, Math.max(20, 50 + ((price - vwap) / vwap) * 300))
-        : 50;
-
-      return {
-        symbol: sym,
-        price: parseFloat(price.toFixed(2)),
-        change1d: parseFloat(change1d.toFixed(2)),
-        volume,
-        vwap: parseFloat(vwap.toFixed(2)),
-        rsi: parseFloat(rsiProxy.toFixed(1)),
-        sector: SECTOR_MAP[sym] ?? 'Other',
-        prevClose: parseFloat(prevClose.toFixed(2)),
-      };
-    });
-
-    res.json({ data, updatedAt: new Date().toISOString(), source: Object.keys(snapshots).length > 0 ? 'alpaca' : 'cache' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── FINCEPT / ECONOMIC DATA ROUTES (FinceptTerminal integration) ─────────────
-marketRouter.get('/economic/calendar', async (req: Request, res: Response) => {
-  try {
-    const days = parseInt(req.query.days as string) || 14;
-    const { getEconomicCalendar } = await import('../services/finceptService');
-    const events = await getEconomicCalendar(days);
-    res.json({ events, count: events.length });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-marketRouter.get('/economic/indicators', async (_req: Request, res: Response) => {
-  try {
-    const { getMacroIndicators } = await import('../services/finceptService');
-    const indicators = await getMacroIndicators();
-    res.json({ indicators });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-marketRouter.get('/economic/central-banks', async (_req: Request, res: Response) => {
-  try {
-    const { getCentralBanks } = await import('../services/finceptService');
-    res.json({ banks: getCentralBanks() });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-marketRouter.get('/economic/earnings', async (req: Request, res: Response) => {
-  try {
-    const days = parseInt(req.query.days as string) || 7;
-    const { getEarningsCalendar } = await import('../services/finceptService');
-    const earnings = await getEarningsCalendar(days);
-    res.json({ earnings, count: earnings.length });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-marketRouter.get('/economic/breadth', async (_req: Request, res: Response) => {
-  try {
-    const { getMarketBreadth } = await import('../services/finceptService');
-    res.json(getMarketBreadth());
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+for (const path of ['/economic/calendar', '/economic/central-banks', '/economic/earnings', '/economic/breadth']) {
+  marketRouter.get(path, (_req: Request, res: Response) => {
+    res.status(501).json({ error: 'economic_feed_not_configured', status: 'unavailable', observedAt: null, receivedAt: new Date().toISOString() });
+  });
+}
 // ── BACKTEST ROUTES (already defined in backtest.ts) ────────────────────────
 export { default as backtestRouter } from './backtest';
 export { chatRouter };
