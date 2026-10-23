@@ -12,6 +12,11 @@ export default {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         display: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        // -- Bhishma redesign foundation (additive; existing families untouched) --
+        // Display: Alike - self-hosted (src/assets/fonts), carved editorial serif.
+        alike: ['Alike', 'Georgia', '"Times New Roman"', 'serif'],
+        // Body: IBM Plex Sans - self-hosted variable font, the workhorse.
+        plex: ['"IBM Plex Sans"', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       colors: {
         apex: {
@@ -35,7 +40,51 @@ export default {
           muted:         '#64748B',
           subtle:        '#94A3B8',
           navy:          '#0F172A',
+        },
+        // -- Bhishma war-room palette (mirrors --bh-* custom properties in src/index.css) --
+        bh: {
+          ink: {
+            950: '#070605',
+            900: '#0D0B09',
+            850: '#12100D',
+            800: '#171410',
+            750: '#1D1915',
+            700: '#26211B',
+          },
+          border:        '#2E2820',
+          'border-strong': '#453B2C',
+          'border-faint':  '#211D17',
+          bone: {
+            100: '#F2EAD8',
+            300: '#D9CFB8',
+            500: '#A89B82',
+            600: '#7E7360',
+          },
+          gold: {
+            DEFAULT: '#C6A15B',
+            bright:  '#E6CC8A',
+            deep:    '#8C713C',
+            dim:     '#3A2F1B',
+          },
+          ember: {
+            DEFAULT: '#E4571D',
+            bright:  '#FF7A33',
+            deep:    '#9A3412',
+            dim:     '#3D1E0E',
+          },
+          up:   '#34C26E',
+          down: '#E5484D',
+          warn: '#F2B33D',
+          info: '#4C9AFF',
         }
+      },
+      borderRadius: {
+        bh: '0.625rem',
+        'bh-lg': '0.875rem',
+      },
+      boxShadow: {
+        'bh-panel': '0 1px 0 0 rgba(242,234,216,0.03) inset, 0 12px 32px -16px rgba(0,0,0,0.65)',
+        'bh-gold-glow': '0 0 0 1px rgba(198,161,91,0.45), 0 0 18px -2px rgba(198,161,91,0.35)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
