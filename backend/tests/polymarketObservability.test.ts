@@ -166,3 +166,20 @@ test('(c) a row with no recommendation keeps both at 0', () => {
   const out = displayEvKelly({ fair: fairOf(0.70) as any, mid: 0.55, decision: 'NEUTRAL' });
   expect(out).toEqual({ expectedValue: 0, kellyFraction: 0 });
 });
+
+test('(c) a SKIP row with a computed best-edge side is priced on that side, not zeroed', () => {
+  const out = displayEvKelly({ fair: fairOf(0.70) as any, mid: 0.55, decision: 'SKIP', side: 'YES' });
+  expect(out.expectedValue).toBeCloseTo(0.15, 10);
+  expect(out.kellyFraction).toBeCloseTo((0.70 - 0.55) / (1 - 0.55), 10);
+});
+
+test('(c) a SKIP row with no computed side keeps both at 0', () => {
+  const out = displayEvKelly({ fair: fairOf(0.70) as any, mid: 0.55, decision: 'SKIP' });
+  expect(out).toEqual({ expectedValue: 0, kellyFraction: 0 });
+});
+
+test('(c) the bet decision takes precedence over the fallback side', () => {
+  const out = displayEvKelly({ fair: fairOf(0.20) as any, mid: 0.55, decision: 'NO', side: 'YES' });
+  expect(out.expectedValue).toBeCloseTo(0.35, 10);
+  expect(out.kellyFraction).toBeCloseTo((0.80 - 0.45) / (1 - 0.45), 10);
+});
