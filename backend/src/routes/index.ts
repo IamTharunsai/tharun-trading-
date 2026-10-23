@@ -19,6 +19,7 @@ import backtestRoutes from './backtest';
 import { chatRouter } from './chat';
 import intelligenceRouter from './intelligence';
 import { closePosition } from '../trading/riskManager';
+import { getVerifiedAccountScope } from '../trading/accountScope';
 import { getCurrentPrices } from '../services/marketData';
 import axios from 'axios';
 
@@ -227,29 +228,38 @@ tradesRouter.get('/lifecycle/:correlationId', async (req: Request, res: Response
 });
 
 tradesRouter.get('/stats', async (req: Request, res: Response) => {
-  const { market } = req.query;
-  const where: any = { status: 'CLOSED' };
-  if (market && market !== 'all') where.market = market;
+  try {
+    const { market } = req.query;
+    // Scope to the verified account and its active broker mode, the same
+    // whereScope the capital-risk evidence path uses (services/portfolio.ts).
+    // Pooling every account and mode made the reported win rate and P&L mix
+    // unrelated books; unscoped legacy rows are not silently assigned either.
+    const scope = await getVerifiedAccountScope();
+    const where: any = { status: 'CLOSED', accountId: scope.accountId, brokerMode: scope.mode };
+    if (market && market !== 'all') where.market = market;
 
-  const all = await prisma.trade.findMany({ where });
-  const winners = all.filter((t: any) => (t.pnl || 0) > 0);
-  const losers = all.filter((t: any) => (t.pnl || 0) < 0);
-  const totalPnl = all.reduce((s: any, t: any) => s + (t.pnl || 0), 0);
-  const avgWin = winners.length ? winners.reduce((s: any, t: any) => s + (t.pnl || 0), 0) / winners.length : 0;
-  const avgLoss = losers.length ? losers.reduce((s: any, t: any) => s + (t.pnl || 0), 0) / losers.length : 0;
+    const all = await prisma.trade.findMany({ where });
+    const winners = all.filter((t: any) => (t.pnl || 0) > 0);
+    const losers = all.filter((t: any) => (t.pnl || 0) < 0);
+    const totalPnl = all.reduce((s: any, t: any) => s + (t.pnl || 0), 0);
+    const avgWin = winners.length ? winners.reduce((s: any, t: any) => s + (t.pnl || 0), 0) / winners.length : 0;
+    const avgLoss = losers.length ? losers.reduce((s: any, t: any) => s + (t.pnl || 0), 0) / losers.length : 0;
 
-  res.json({
-    totalTrades: all.length,
-    winRate: all.length ? (winners.length / all.length * 100).toFixed(1) : 0,
-    totalPnl: totalPnl.toFixed(2),
-    avgWin: avgWin.toFixed(2),
-    avgLoss: avgLoss.toFixed(2),
-    bestTrade: all.sort((a: any, b: any) => (b.pnl || 0) - (a.pnl || 0))[0],
-    worstTrade: all.sort((a: any, b: any) => (a.pnl || 0) - (b.pnl || 0))[0],
-    // Profit factor = gross profit / gross loss (not avgWin/avgLoss, which is the payoff ratio).
-    payoffRatio: Math.abs(avgLoss) > 0 ? (avgWin / Math.abs(avgLoss)).toFixed(2) : null,
-    profitFactor: losers.length ? (winners.reduce((s: number, t: any) => s + (t.pnl || 0), 0) / Math.abs(losers.reduce((s: number, t: any) => s + (t.pnl || 0), 0))).toFixed(2) : null
-  });
+    res.json({
+      totalTrades: all.length,
+      winRate: all.length ? (winners.length / all.length * 100).toFixed(1) : 0,
+      totalPnl: totalPnl.toFixed(2),
+      avgWin: avgWin.toFixed(2),
+      avgLoss: avgLoss.toFixed(2),
+      bestTrade: all.sort((a: any, b: any) => (b.pnl || 0) - (a.pnl || 0))[0],
+      worstTrade: all.sort((a: any, b: any) => (a.pnl || 0) - (b.pnl || 0))[0],
+      // Profit factor = gross profit / gross loss (not avgWin/avgLoss, which is the payoff ratio).
+      payoffRatio: Math.abs(avgLoss) > 0 ? (avgWin / Math.abs(avgLoss)).toFixed(2) : null,
+      profitFactor: losers.length ? (winners.reduce((s: number, t: any) => s + (t.pnl || 0), 0) / Math.abs(losers.reduce((s: number, t: any) => s + (t.pnl || 0), 0))).toFixed(2) : null
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch trade stats' });
+  }
 });
 
 tradesRouter.post('/:id/close', requireOwner, async (req: Request, res: Response) => {
