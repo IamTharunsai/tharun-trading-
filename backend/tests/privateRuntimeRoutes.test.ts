@@ -30,6 +30,7 @@ jest.mock('../src/services/journalGenerator', () => ({ generateDailyJournal: jes
 jest.mock('../src/services/marketData', () => ({ getCurrentPrices: jest.fn().mockReturnValue({ AAPL: 100 }), buildMarketSnapshot: jest.fn().mockResolvedValue({ candles: [], indicators: {}, price: 100 }) }));
 jest.mock('../src/services/accountManager', () => ({ accountManager: { getLiveAccountsSummary: jest.fn().mockReturnValue({ alpaca: { connected: false, accountNumber: 'PRIVATE_ACCOUNT' } }), testAndSaveAlpaca: jest.fn(), testAndSavePolymarket: jest.fn(), disconnectAlpaca: jest.fn(), disconnectPolymarket: jest.fn() } }));
 jest.mock('../src/trading/brokerRouter', () => ({ getActiveMode: jest.fn().mockReturnValue('paper') }));
+jest.mock('../src/trading/accountScope', () => ({ getVerifiedAccountScope: jest.fn().mockResolvedValue({ accountId: 'fixture-account', mode: 'paper', broker: {} }) }));
 jest.mock('../src/services/sentimentService', () => ({ isSentimentEnabled: jest.fn().mockReturnValue(false) }));
 jest.mock('../src/services/agentActivityMonitor', () => ({ agentActivityMonitor: {
   getActivities: jest.fn().mockReturnValue([{ content: 'PRIVATE_ACTIVITY' }]), getRecentActivities: jest.fn().mockReturnValue([]),
@@ -122,7 +123,7 @@ const businessModules = [
   '../src/services/teamSessions',
   '../src/services/portfolio', '../src/services/portfolioAccounting', '../src/services/positionResearch', '../src/services/groundedDeepDive', '../src/agents/orchestrator',
   '../src/trading/riskManager', '../src/trading/killLiquidation', '../src/jobs/scheduler', '../src/services/journalGenerator',
-  '../src/services/marketData', '../src/services/accountManager', '../src/trading/brokerRouter', '../src/services/sentimentService',
+  '../src/services/marketData', '../src/services/accountManager', '../src/trading/brokerRouter', '../src/trading/accountScope', '../src/services/sentimentService',
   '../src/services/agentActivityMonitor', '../src/services/geopoliticalDataService', '../src/services/agentActivityLogger',
   '../src/services/agentResourceLearning', '../src/services/geopoliticalIntelligence', '../src/services/intermarketService', '../src/services/fredService',
   '../src/services/copyTradingEngine', '../src/utils/llmRouter', '../src/services/polymarketRuntime', '../src/services/researchServices',
